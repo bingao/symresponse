@@ -1,111 +1,110 @@
-/* SymResponse: a unified framework for response theory
-   Copyright 2024 Bin Gao
-
-   This Source Code Form is subject to the terms of the Mozilla Public
-   License, v. 2.0. If a copy of the MPL was not distributed with this
-   file, You can obtain one at http://mozilla.org/MPL/2.0/.
-
-   This file implements the Lagrangian in atomic-orbital density matrix based
-   response theory.
-
-   2024-01-30, Bin Gao:
-   * first version
-*/
-
 #include <symengine/add.h>
 #include <symengine/mul.h>
+#include <symengine/number.h>
+#include <symengine/constants.h>
+#include <symengine/matrices/matrix_add.h>
+#include <symengine/matrices/matrix_mul.h>
+#include <symengine/matrices/trace.h>
+#include <symengine/symengine_exception.h>
 
 #include "SymResponse/LagrangianDAO.hpp"
 
 namespace SymResponse
 {
     LagrangianDAO::LagrangianDAO(
-        const SymEngine::RCP<const Tinned::ElectronicState>& D,
         const SymEngine::RCP<const Tinned::Perturbation>& a,
+        const SymEngine::RCP<const Tinned::OneElecDensity>& D,
         const SymEngine::RCP<const SymEngine::Basic>& S,
         const SymEngine::RCP<const SymEngine::Basic>& H,
         const SymEngine::RCP<const SymEngine::Basic>& G,
         const SymEngine::RCP<const SymEngine::Basic>& Exc,
         const SymEngine::RCP<const SymEngine::Basic>& Fxc,
         const SymEngine::RCP<const SymEngine::Basic>& hnuc
-    ) : D_(D),
-        Dt_(Tinned::make_dt_operator(D)),
-        a_(a)
+    ) : sym_elimination_(true), a_(a), D_(D)
     {
         if (!S.is_null()) {
-            S_ = SymEngine::rcp_dynamic_cast<const Tinned::OneElecOperator>(S);
-            St_ = Tinned::make_dt_operator(S_);
+            if (SymEngine::is_a_sub<const Tinned::OneElecOperator>(*S)) {
+                S_ = SymEngine::rcp_dynamic_cast<const Tinned::OneElecOperator>(S);
+            }
+            else {
+                throw SymEngine::SymEngineException(
+                    "LagrangianDAO gets an overlap matrix with invalid type!"
+                );
+            }
         }
-        SymEngine::vec_basic F_terms;
         SymEngine::vec_basic E_terms;
+        SymEngine::vec_basic F_terms;
         if (!H.is_null()) {
-            F_terms.push_back(H);
             E_terms.push_back(SymEngine::trace(SymEngine::matrix_mul({H, D})));
+            F_terms.push_back(H);
         }
         if (!G.is_null()) {
-            F_terms.push_back(G);
-            auto op = SymEngine::rcp_dynamic_cast<const Tinned::TwoElecOperator>(G);
-            // We simply use the same name for two-electron operator and energy
-            E_terms.push_back(Tinned::make_2el_energy(op->get_name(), op));
+            if (SymEngine::is_a_sub<const Tinned::TwoElecOperator>(*G)) {
+                auto op = SymEngine::rcp_dynamic_cast<const Tinned::TwoElecOperator>(G);
+                // We simply use the same name for two-electron operator and energy
+                E_terms.push_back(Tinned::make_2el_energy(op->get_name(), op));
+                F_terms.push_back(G);
+            }
+            else {
+                throw SymEngine::SymEngineException(
+                    "LagrangianDAO gets a two-electron matrix with invalid type!"
+                );
+            }
         }
         if (!Exc.is_null()) E_terms.push_back(Exc);
         if (!Fxc.is_null()) F_terms.push_back(Fxc);
         if (!hnuc.is_null()) E_terms.push_back(hnuc);
 
         if (E_terms.empty()) throw SymEngine::SymEngineException(
-            "LagrangianDAO got null generalized energy!"
+            "LagrangianDAO gets nothing for generalized energy!"
         );
         if (F_terms.empty()) throw SymEngine::SymEngineException(
-            "LagrangianDAO got null generalized Fock operator!"
+            "LagrangianDAO gets nothing for generalized Fock operator!"
         );
 
-        auto E = SymEngine::add(E_terms);
+        E_ = SymEngine::add(E_terms);
         F_ = SymEngine::matrix_add(F_terms);
 
-        auto E_a = E->diff(a);
+        // |i\frac{\partial `D_`}{\partial t}>
+        auto Dt = Tinned::make_dt_operator(D);
         auto D_a = D->diff(a);
-        // The first term in Equation (98), J. Chem. Phys. 129, 214108 (2008)
-        auto Ea_ = Tinned::remove_if(E_a, SymEngine::set_basic({D_a}));
+        auto F_a = F_->diff(a);
 
         auto one_half = SymEngine::div(SymEngine::one, SymEngine::two);
         auto minus_one_half = SymEngine::div(SymEngine::minus_one, SymEngine::two);
         // Null overlap operator means it is an identity operator
         if (S.is_null()) {
-            // \frac{\partial D}{\partial t}D-D\frac{\partial D}{\partial t}
-            W_ = SymEngine::matrix_add({
-                SymEngine::matrix_mul(SymEngine::vec_basic({D, F_, D})),
-                SymEngine::matrix_mul(SymEngine::vec_basic({one_half, Dt_, D})),
-                SymEngine::matrix_mul(SymEngine::vec_basic({minus_one_half, D, Dt_}))
-            });
-            // = D^{a}D-DD^{a}
-            lambda_ =
-
-            // Y = FD-DF-i\frac{\partial D}{\partial t}
-            Y_ = SymEngine::matrix_add(SymEngine::vec_basic({
-                SymEngine::matrix_mul(SymEngine::vec_basic({F_, D})),
-                SymEngine::matrix_mul(SymEngine::vec_basic({
-                    SymEngine::minus_one, D, F_
-                })),
-                SymEngine::matrix_mul(SymEngine::vec_basic({
-                    SymEngine::minus_one, Dt_
-                }))
-            }));
-
-            // = F^{a}D+DF^{a}-F^{a}
-            zeta_ =
-
-            // Z = D*D-D
-            Z_ = SymEngine::matrix_add(SymEngine::vec_basic({
-                SymEngine::matrix_mul(SymEngine::vec_basic({D, D})),
-                SymEngine::matrix_mul(SymEngine::vec_basic({SymEngine::minus_one, D}))
-            }));
+            throw SymEngine::SymEngineException(
+                "LagrangianDAO has not implemented for orthonormal basis!"
+            );
+            //// = D^{a}D-DD^{a}
+            //lambda_ =
+            //// Y = FD-DF-i\frac{\partial D}{\partial t}
+            //Y_ = SymEngine::matrix_add(SymEngine::vec_basic({
+            //    SymEngine::matrix_mul(SymEngine::vec_basic({F_, D})),
+            //    SymEngine::matrix_mul(SymEngine::vec_basic({
+            //        SymEngine::minus_one, D, F_
+            //    })),
+            //    SymEngine::matrix_mul(SymEngine::vec_basic({
+            //        SymEngine::minus_one, Dt
+            //    }))
+            //}));
+            //// = F^{a}D+DF^{a}-F^{a}
+            //zeta_ =
+            //// Z = D*D-D
+            //Z_ = SymEngine::matrix_add(SymEngine::vec_basic({
+            //    SymEngine::matrix_mul(SymEngine::vec_basic({D, D})),
+            //    SymEngine::matrix_mul(SymEngine::vec_basic({SymEngine::minus_one, D}))
+            //}));
         }
         else {
+            // |i\frac{\partial `S_`}{\partial t}>
+            auto St = Tinned::make_dt_operator(S_);
             // Equation (95), J. Chem. Phys. 129, 214108 (2008)
             W_ = SymEngine::matrix_add({
                 SymEngine::matrix_mul(SymEngine::vec_basic({D, F_, D})),
-                SymEngine::matrix_mul(SymEngine::vec_basic({one_half, Dt_, S, D})),
-                SymEngine::matrix_mul(SymEngine::vec_basic({minus_one_half, D, S, Dt_}))
+                SymEngine::matrix_mul(SymEngine::vec_basic({one_half, Dt, S, D})),
+                SymEngine::matrix_mul(SymEngine::vec_basic({minus_one_half, D, S, Dt}))
             });
             // Equation (220), J. Chem. Phys. 129, 214108 (2008)
             lambda_ = SymEngine::matrix_add(SymEngine::vec_basic({
@@ -121,34 +120,33 @@ namespace SymResponse
                     SymEngine::minus_one, S, D, F_
                 })),
                 SymEngine::matrix_mul(SymEngine::vec_basic({
-                    SymEngine::minus_one, S, Dt_, S
+                    SymEngine::minus_one, S, Dt, S
                 })),
                 SymEngine::matrix_mul(SymEngine::vec_basic({
-                    minus_one_half, St_, D, S
+                    minus_one_half, St, D, S
                 })),
                 SymEngine::matrix_mul(SymEngine::vec_basic({
-                    minus_one_half, S, D, St_
+                    minus_one_half, S, D, St
                 }))
             }));
-            // Equation (224), J. Chem. Phys. 129, 214108 (2008)
-            auto F_a = F_->diff(a);
             auto S_a = S->diff(a);
+            // Equation (224), J. Chem. Phys. 129, 214108 (2008)
             zeta_ = SymEngine::matrix_add(SymEngine::vec_basic({
                 SymEngine::matrix_mul(SymEngine::vec_basic({F_a, D, S})),
                 SymEngine::matrix_mul(SymEngine::vec_basic({
-                    SymEngine::minus_one, F, D, S_a
+                    SymEngine::minus_one, F_, D, S_a
                 })),
-                SymEngine::matrix_mul(SymEngine::vec_basic({one_half, St_, D, S_a})),
-                SymEngine::matrix_mul(SymEngine::vec_basic({S, Dt_, S_a})),
+                SymEngine::matrix_mul(SymEngine::vec_basic({one_half, St, D, S_a})),
+                SymEngine::matrix_mul(SymEngine::vec_basic({S, Dt, S_a})),
                 SymEngine::matrix_mul(SymEngine::vec_basic({S, D, F_a})),
                 SymEngine::matrix_mul(SymEngine::vec_basic({
                     SymEngine::minus_one, S_a, D, F_
                 })),
                 SymEngine::matrix_mul(SymEngine::vec_basic({
-                    minus_one_half, S_a, D, St_
+                    minus_one_half, S_a, D, St
                 })),
                 SymEngine::matrix_mul(SymEngine::vec_basic({
-                    SymEngine::minus_one, S_a, Dt_, S
+                    SymEngine::minus_one, S_a, Dt, S
                 })),
                 SymEngine::matrix_mul(SymEngine::vec_basic({SymEngine::minus_one, F_a}))
             }));
@@ -157,31 +155,74 @@ namespace SymResponse
                 SymEngine::matrix_mul(SymEngine::vec_basic({D, S, D})),
                 SymEngine::matrix_mul(SymEngine::vec_basic({SymEngine::minus_one, D}))
             }));
-            // Equation (216), J. Chem. Phys. 129, 214108 (2008)
-            La_ = ;
         }
     }
 
     SymEngine::RCP<const SymEngine::Basic> LagrangianDAO::get_response_functions(
-        const SymEngine::multiset_basic& perturbations,
-        const unsigned int k
-    ) noexcept
+        const Tinned::PerturbationTuple& exten_perturbations,
+        const Tinned::PerturbationTuple& inten_perturbations,
+        const unsigned int min_wfn_extern
+    )
     {
-        auto Ea = Ea_;
-        auto W = SymEngine::matrix_symbol(std::string("W"));
-        auto SW = SymEngine::matrix_mul(SymEngine::vec_basic({S_, W}));
-        auto SaW = SymEngine::matrix_mul();
-        auto lambda = SymEngine::matrix_symbol(std::string("lambda"));
-        auto zeta = SymEngine::matrix_symbol(std::string("zeta"));
-        for (const auto& p: perturbations) {
-            Ea = Ea->diff(p);
+        // Verify all perturbations and we put `a` into extensive perturbations
+        auto all_exten_perturbations = exten_perturbations;
+        all_exten_perturbations.insert(a_);
+        verify_perturbations(all_exten_perturbations, inten_perturbations);
+        // Construct the response functions according to elimination rules
+        if (sym_elimination_) {
+            if (!inten_perturbations.empty()) throw SymEngine::SymEngineException(
+                "LagrangianDAO has not implemented for intensive perturbations!"
+            );
         }
-        if (k > 0) {
-            // `perturbations.size()` == k+n+1
-            unsigned int kmax = perturbations.size()%2 == 0
-                ? perturbations.size()/2 : (perturbations.size()-1)/2;
-            if (k > kmax)
-            unsigned int n = perturbations.size()-k-1;
+        else {
+            auto E_a = E_->diff(a_);
+            auto D_a = D_->diff(a_);
+            auto S_a = S_->diff(a_);
+            // Make artificial multipliers for elimination
+            auto lambda = Tinned::make_1el_density(
+                D_->get_name()+std::string("-tdscf-multiplier")
+            );
+            auto zeta = Tinned::make_1el_density(
+                D_->get_name()+std::string("-idempotency-multiplier")
+            );
+            // Time-averaged quasi-energy derivative Lagrangian
+            auto La = SymEngine::add(SymEngine::vec_basic({
+                // The first term in Equation (98), J. Chem. Phys. 129, 214108 (2008)
+                Tinned::remove_if(E_a, SymEngine::set_basic({D_a})),
+                // Pulay term
+                SymEngine::mul(
+                    SymEngine::minus_one,
+                    SymEngine::trace(SymEngine::matrix_mul({S_a, W_}))
+                ),
+                // TDSCF equation
+                SymEngine::mul(
+                    SymEngine::minus_one,
+                    SymEngine::trace(SymEngine::matrix_mul({lambda, Y_}))
+                ),
+                // Idempotency constraint
+                SymEngine::mul(
+                    SymEngine::minus_one,
+                    SymEngine::trace(SymEngine::matrix_mul({zeta, Z_}))
+                )
+            }));
+            // Differentiate time-averaged quasi-energy derivative Lagrangian
+            for (const auto& p: exten_perturbations) La = La->diff(p);
+            for (const auto& p: inten_perturbations) La = La->diff(p);
+            // Eliminate peturbed density matrices and multipliers
+            auto result = eliminate_parameters(
+                La,
+                D_,
+                SymEngine::set_basic({lambda, zeta}),
+                exten_perturbations,
+                min_wfn_extern
+            );
+            // Replace artificial multipliers with real differentiated ones
+            return Tinned::replace_with_derivatives<Tinned::OneElecDensity>(
+                result,
+                Tinned::TinnedBasicMap<Tinned::OneElecDensity>({
+                    {lambda, lambda_}, {zeta, zeta_}
+                })
+            );
         }
     }
 

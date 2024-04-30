@@ -5,7 +5,7 @@
    License, v. 2.0. If a copy of the MPL was not distributed with this
    file, You can obtain one at http://mozilla.org/MPL/2.0/.
 
-   This file is the header file of Lagrangian in response theory.
+   This file is the header file of quasi-energy Lagrangian in response theory.
 
    2024-01-30, Bin Gao:
    * first version
@@ -13,61 +13,120 @@
 
 #pragma once
 
+#include <cmath>
+
+#include <symengine/basic.h>
+#include <symengine/constants.h>
+#include <symengine/dict.h>
+#include <symengine/number.h>
+#include <symengine/symengine_exception.h>
+#include <symengine/symengine_rcp.h>
+
+#include <Tinned.hpp>
+
 namespace SymResponse
 {
+    // Abstract quasi-energy Lagrangian class, can also be used for
+    // quasi-energy without Lagrangian multipliers
     class Lagrangian
     {
         protected:
-            // Truncate perturbed quantities `x`'s in `expression` after `k`-th
-            // order when involving the perturbation `a`
-            template<typename T>
-            inline SymEngine::RCP<const SymEngine::Basic> make_k_truncation(
-                const SymEngine::RCP<const SymEngine::Basic>& expression,
-                const SymEngine::RCP<T>& x,
-                const unsigned int k,
-                const SymEngine::RCP<const Tinned::Perturbation>& a
+            // Verify that: (i) at least one extensive perturbation, (ii) sum
+            // of all perturbations' frequencies should be zero, and (iii)
+            // extensive and intensive perturbations should be disjoint
+            inline void verify_perturbations(
+                const Tinned::PerturbationTuple& exten_perturbations,
+                const Tinned::PerturbationTuple& inten_perturbations
             ) const
             {
-                auto all_x = Tinned::find_all<T>(expression, x);
-                SymEngine::set_basic higher_x;
-                for (const auto& xp: all_x) {
-                    auto derivative = xp->get_derivative();
-                    if (derivative.find(a) != derivative.end() && derivative.size() > k)
-                        higher_x.insert(xp);
+                if (exten_perturbations.empty()) throw SymEngine::SymEngineException(
+                    "Lagrangian requires at least one extensive perturbation!"
+                );
+                SymEngine::RCP<const SymEngine::Number> sum_freq = SymEngine::zero;
+                for (const auto& p: exten_perturbations)
+                    sum_freq = SymEngine::addnum(sum_freq, p->get_frequency());
+                if (!inten_perturbations.empty()) {
+                    for (const auto& p: inten_perturbations) {
+                        sum_freq = SymEngine::addnum(sum_freq, p->get_frequency());
+                        if (exten_perturbations.find(p)!=exten_perturbations.end())
+                            throw SymEngine::SymEngineException(
+                                "Lagrangian gets a same extensive and intensive perturbation!"
+                            );
+                    }
                 }
-                return higher_x.empty()
-                    ? expression : Tinned::remove_if(expression, higher_x);
+                if (!sum_freq->is_zero()) throw SymEngine::SymEngineException(
+                    "Lagrangian gets perturbations with invalid frequencies!"
+                );
             }
 
-            // Truncate perturbed quantities `x`'s in `expression` after `n`-th
-            // order
-            template<typename T>
-            inline SymEngine::RCP<const SymEngine::Basic> make_n_truncation(
-                const SymEngine::RCP<const SymEngine::Basic>& expression,
-                const SymEngine::RCP<T>& x,
-                const unsigned int n
-            ) const
+            // Eliminate wave function parameters (`wfn`) and Lagrangian
+            // multipliers (`multipliers`) from the Lagrangian `L` according to
+            // Table IV and V, J. Chem. Phys. 129, 214103 (2008). Other
+            // parameters see the function `get_response_functions()`.
+            inline SymEngine::RCP<const SymEngine::Basic> eliminate_parameters(
+                const SymEngine::RCP<const SymEngine::Basic>& L,
+                const SymEngine::RCP<const SymEngine::Basic>& wfn,
+                const SymEngine::set_basic& multipliers,
+                const Tinned::PerturbationTuple& exten_perturbations,
+                const unsigned int min_wfn_extern = 0
+            )
             {
-                auto all_x = Tinned::find_all<T>(expression, x);
-                SymEngine::set_basic higher_x;
-                for (const auto& xp: all_x)
-                    if (xp->get_derivative().size() > n) higher_x.insert(xp);
-                return higher_x.empty()
-                    ? expression : Tinned::remove_if(expression, higher_x);
+                // Minimum order for the elimination of wave function
+                // parameters, as the next integer of the floor function of the
+                // half number of perturbations
+                auto min_wfn_order = static_cast<unsigned int>(std::floor(0.5*exten_perturbations.size())) + 1;
+                if (min_wfn_extern>0) {
+                    if (min_wfn_extern<min_wfn_order) {
+                        throw SymEngine::SymEngineException(
+                            "Lagrangian::eliminate_parameters() gets an invalid minimum order "
+                            + std::to_string(min_wfn_extern)
+                        );
+                    }
+                    else {
+                        min_wfn_order = min_wfn_extern;
+                    }
+                }
+                auto result = min_wfn_extern<=exten_perturbations.size()
+                    ? Tinned::eliminate(L, wfn, exten_perturbations, min_wfn_order)
+                    : L;
+                // Minimum order for the elimination of Lagrangian multipliers
+                unsigned int min_multiplier_order = min_wfn_extern<=exten_perturbations.size()
+                    ? exten_perturbations.size()-min_wfn_order+1 : 0;
+                // For MCSCF, an empty `multipliers` can be used
+                for (const auto& multiplier: multipliers)
+                    result = Tinned::eliminate(
+                        result, multiplier, exten_perturbations, min_multiplier_order
+                    );
+                return result;
             }
 
         public:
-            explicit Lagrangian() {}
+            explicit Lagrangian() = default;
+
             // Get response functions
             virtual SymEngine::RCP<const SymEngine::Basic> get_response_functions(
-                const SymEngine::multiset_basic& perturbations
-            ) noexcept = 0;
-            // Get residues
-            virtual SymEngine::RCP<const SymEngine::Basic> get_residues(
-                const SymEngine::multiset_basic& perturbations
-            ) noexcept = 0;
-            SymEngine::set_basic get_states() noexcept;
-            SymEngine::RCP<const SymEngine::Basic> get_rhs() noexcept;
+                // Extensive perturbations
+                const Tinned::PerturbationTuple& exten_perturbations,
+                // Intensive perturbations
+                const Tinned::PerturbationTuple& inten_perturbations = {},
+                // Minimum order of differentiated wave function parameters with
+                // respect to extensive perturbations to be eliminated.
+                // Default value is 0 that means it will be automatically
+                // determined as the next integer of the floor function of the
+                // half number of extensive perturbations. For values greater
+                // than the number of extensive perturbations, it means no
+                // elimination of wave function parameters so that more
+                // Lagrangian multipliers can be eliminated.
+                const unsigned int min_wfn_extern = 0
+            ) = 0;
+
+            //// Get residues. Other parameters see the function `get_response_functions()`.
+            //virtual SymEngine::RCP<const SymEngine::Basic> get_residues(
+            //    const Tinned::PerturbationTuple& exten_perturbations,
+            //    const Tinned::PerturbationTuple& inten_perturbations = {},
+            //    const unsigned int min_wfn_extern = 0
+            //) = 0;
+
             virtual ~Lagrangian() noexcept = default;
     };
 }

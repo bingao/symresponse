@@ -16,10 +16,7 @@
 
 #include <symengine/basic.h>
 #include <symengine/dict.h>
-#include <symengine/constants.h>
 #include <symengine/symengine_rcp.h>
-#include <symengine/matrices/matrix_add.h>
-#include <symengine/matrices/matrix_mul.h>
 
 #include <Tinned.hpp>
 
@@ -27,63 +24,40 @@
 
 namespace SymResponse
 {
-    /* Lagrangian in atomic-orbital density matrix based response theory.
-
-       In the framework of atomic-orbital (AO) density matrix based response
-       theory, we need to store:
-
-       . overlap operator,
-       . zero-, one- and two-electron operators, and exchange-correlation (XC)
-         functional derivative in the Hamiltonian,
-       . reference state,
-       . excited states, and
-       . a linear response solver.
-
-       Because response theory These quantities
-
-       Among them, different operators in the Hamiltonian will be stored in a
-       corresponding `std::vector` as one may need several such operators in
-       the Hamiltonian.
-     */
+    /* Time-averaged quasi-energy derivative Lagrangian */
     class LagrangianDAO: virtual public Lagrangian
     {
         protected:
-            // One-electron spin-orbital density matrix
-            SymEngine::RCP<const Tinned::ElectronicState> D_;
-            // |i\frac{\partial `D_`}{\partial t}>
-            SymEngine::RCP<const TemporumOperator> Dt_;
-            // Perturbation a
+            // Whether elimination rules performed in a (almost) symmetric form
+            // or not [see Sec. IV G 3, J. Chem. Phys. 129, 214108 (2008)]
+            bool sym_elimination_;
+            // Perturbation $a$
             SymEngine::RCP<const Tinned::Perturbation> a_;
+            // One-electron spin-orbital density matrix
+            SymEngine::RCP<const Tinned::OneElecDensity> D_;
             // Overlap
             SymEngine::RCP<const Tinned::OneElecOperator> S_;
-            // |i\frac{\partial `S_`}{\partial t}>
-            SymEngine::RCP<const TemporumOperator> St_;
 
+            // Generalized energy
+            SymEngine::RCP<const SymEngine::Basic> E_;
             // Generalized Fock matrix, the sum of one-electron operator(s),
             // two-electron operator(s) and exchange-correlation potential(s)
             SymEngine::RCP<const SymEngine::Basic> F_;
-
-            // Generalized energy derivative with respect to the perturbation a
-            // while removing the corresponding perturbed density matrix
-            SymEngine::RCP<const SymEngine::Basic> Ea_;
-
             // Generalized energy-weighted density matrix
             SymEngine::RCP<const SymEngine::Basic> W_;
-            // Lagrangian multiplier \lambda
+            // Lagrangian multiplier $\lambda$
             SymEngine::RCP<const SymEngine::Basic> lambda_;
             // TDSCF equation
             SymEngine::RCP<const SymEngine::Basic> Y_;
-            // Lagrangian multiplier \zeta
+            // Lagrangian multiplier $\zeta$
             SymEngine::RCP<const SymEngine::Basic> zeta_;
             // Idempotency constraint
             SymEngine::RCP<const SymEngine::Basic> Z_;
-            // Lagrangian function
-            SymEngine::RCP<const SymEngine::Basic> La_;
 
         public:
             explicit LagrangianDAO(
-                const SymEngine::RCP<const Tinned::ElectronicState>& D,
                 const SymEngine::RCP<const Tinned::Perturbation>& a,
+                const SymEngine::RCP<const Tinned::OneElecDensity>& D,
                 const SymEngine::RCP<const SymEngine::Basic>& S = SymEngine::RCP<const SymEngine::Basic>(),
                 const SymEngine::RCP<const SymEngine::Basic>& H = SymEngine::RCP<const SymEngine::Basic>(),
                 const SymEngine::RCP<const SymEngine::Basic>& G = SymEngine::RCP<const SymEngine::Basic>(),
@@ -91,16 +65,35 @@ namespace SymResponse
                 const SymEngine::RCP<const SymEngine::Basic>& Fxc = SymEngine::RCP<const SymEngine::Basic>(),
                 const SymEngine::RCP<const SymEngine::Basic>& hnuc = SymEngine::RCP<const SymEngine::Basic>()
             );
+
             virtual SymEngine::RCP<const SymEngine::Basic> get_response_functions(
-                const SymEngine::multiset_basic& perturbations,
-                const unsigned int k = 0
-            ) noexcept override;
-            virtual SymEngine::RCP<const SymEngine::Basic> get_residues(
-                const SymEngine::multiset_basic& perturbations,
-                const unsigned int k = 0
-            ) noexcept override;
-            SymEngine::set_basic get_states() noexcept;
-            SymEngine::RCP<const SymEngine::Basic> get_rhs() noexcept;
+                // Extensive perturbations without `a`
+                const Tinned::PerturbationTuple& exten_perturbations,
+                const Tinned::PerturbationTuple& inten_perturbations = {},
+                const unsigned int min_wfn_extern = 0
+            ) override;
+
+            //virtual SymEngine::RCP<const SymEngine::Basic> get_residues(
+            //    // Extensive perturbations without `a`
+            //    const Tinned::PerturbationTuple& exten_perturbations,
+            //    const Tinned::PerturbationTuple& inten_perturbations = {},
+            //    const unsigned int min_wfn_extern = 0
+            //) override;
+
+            // Set elimination rules performed either in an asymmetric
+            // (`false`) or (almost) symmetric (`true`) form
+            inline void set_elimination_form(const bool sym_elimination) noexcept
+            {
+                sym_elimination_ = sym_elimination;
+            }
+
+            // Whether elimination rules performed in an asymmetric (`false`)
+            // or (almost) symmetric (`true`) form
+            inline bool get_elimination_form() const noexcept
+            {
+                return sym_elimination_;
+            }
+
             virtual ~LagrangianDAO() noexcept = default;
     };
 }

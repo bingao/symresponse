@@ -2,11 +2,12 @@
 cmake_minimum_required(VERSION 3.14 FATAL_ERROR)
 
 # Project name
-project(SymResponse VERSION 1.0.0 LANGUAGES CXX)
+project(SymResponse VERSION 0.1.0 LANGUAGES CXX)
 
 # Options for making the library
 option(BUILD_SHARED_LIBS "Build shared library." OFF)
 option(BUILD_TESTING "Build tests." ON)
+#option(BUILD_EXAMPLES "Build examples." ON)
 
 # From https://gitlab.com/CLIUtils/modern-cmake.git
 #
@@ -23,10 +24,8 @@ message("SymEngine version: " ${SymEngine_VERSION})
 
 # Find Tinned, Tinned_DIR can be set by users in advance
 set(CMAKE_PREFIX_PATH ${Tinned_DIR} ${CMAKE_PREFIX_PATH})
-find_package(Tinned REQUIRED CONFIG
-             PATH_SUFFIXES lib/cmake/tinned)
+find_package(Tinned REQUIRED CONFIG PATH_SUFFIXES lib/cmake/tinned)
 message("Tinned_DIR: " ${Tinned_DIR})
-message("Tinned version: " ${Tinned_VERSION})
 
 # Use the same build mode and C++ flags of SymEngine
 set(CMAKE_BUILD_TYPE ${SYMENGINE_BUILD_TYPE})
@@ -51,6 +50,71 @@ endif()
 #    set(CMAKE_Fortran_MODULE_DIRECTORY ${PARENT_MODULE_DIR})
 #endif()
 
+# Include Tinned and SymEngine header file directories
+set(SYMRESPONSE_INCLUDE_DIRS ${LIB_SYMRESPONSE_PATH}/include)
+include_directories(
+    ${SYMRESPONSE_INCLUDE_DIRS}
+    ${TINNED_INCLUDE_DIR}
+    ${SYMENGINE_INCLUDE_DIRS}
+)
+
+# SymResponse library source codes
+add_subdirectory(src)
+
+# Use `CMAKE_INSTALL_DATADIR`
+include(GNUInstallDirs)
+
+# Generate a config file, modified from
+# https://cmake.org/cmake/help/v3.14/module/CMakePackageConfigHelpers.html
+# https://cmake.org/cmake/help/latest/guide/tutorial/Adding%20Export%20Configuration.html
+#
+# find_package(SymResponse REQUIRED)
+# target_link_libraries(... symresponse)
+set(INCLUDE_INSTALL_DIR ${CMAKE_INSTALL_INCLUDEDIR}
+    CACHE PATH "Location of include directory")
+install(TARGETS symresponse
+        EXPORT SymResponseTargets
+        ARCHIVE DESTINATION ${CMAKE_INSTALL_LIBDIR}
+        LIBRARY DESTINATION ${CMAKE_INSTALL_LIBDIR}
+        RUNTIME DESTINATION ${CMAKE_INSTALL_BINDIR}
+        INCLUDES DESTINATION ${INCLUDE_INSTALL_DIR})
+# Install include headers
+install(FILES ${SYMRESPONSE_INCLUDE_DIRS}/SymResponse.hpp
+        DESTINATION ${INCLUDE_INSTALL_DIR})
+install(DIRECTORY ${SYMENGINE_INCLUDE_DIRS}/SymResponse
+        DESTINATION ${INCLUDE_INSTALL_DIR})
+# Install generated `SymResponseTargets.cmake`
+set(SYMRESPONSE_INSTALL_CMAKE_DIR ${CMAKE_INSTALL_LIBDIR}/cmake/symresponse)
+#set(SYMRESPONSE_INSTALL_CMAKE_DIR ${CMAKE_INSTALL_DATADIR}/symresponse/cmake)
+install(EXPORT SymResponseTargets
+        FILE SymResponseTargets.cmake
+        DESTINATION ${SYMRESPONSE_INSTALL_CMAKE_DIR})
+# Helpers functions for creating config files
+include(CMakePackageConfigHelpers)
+# Generate the config file that includes the exports
+configure_package_config_file(
+    ${LIB_SYMRESPONSE_PATH}/SymResponseConfig.cmake.in
+    ${PROJECT_BINARY_DIR}/SymResponseConfig.cmake
+    INSTALL_DESTINATION ${SYMRESPONSE_INSTALL_CMAKE_DIR}
+    PATH_VARS INCLUDE_INSTALL_DIR
+    #NO_SET_AND_CHECK_MACRO
+    #NO_CHECK_REQUIRED_COMPONENTS_MACRO
+)
+# Create a version file
+write_basic_package_version_file(
+    ${PROJECT_BINARY_DIR}/SymResponseConfigVersion.cmake
+    VERSION ${PROJECT_VERSION}
+    COMPATIBILITY AnyNewerVersion
+)
+install(FILES
+        ${PROJECT_BINARY_DIR}/SymResponseConfig.cmake
+        ${PROJECT_BINARY_DIR}/SymResponseConfigVersion.cmake
+        DESTINATION ${SYMRESPONSE_INSTALL_CMAKE_DIR})
+
+# `export` lets one use SymResponse without installing it
+#export(TARGETS symresponse FILE "${PROJECT_BINARY_DIR}/SymResponseTargets.cmake")
+export(EXPORT SymResponseTargets FILE "${PROJECT_BINARY_DIR}/SymResponseTargets.cmake")
+
 ## Uninstalls target, modified from (accessing date 2015-09-27)
 ## http://cmake.org/Wiki/CMake_FAQ#Can_I_do_.22make_uninstall.22_with_CMake.3F
 #configure_file("${LIB_SYMRESPONSE_PATH}/cmake/cmake_uninstall.cmake.in"
@@ -69,7 +133,7 @@ message("CMAKE_INSTALL_PREFIX: ${CMAKE_INSTALL_PREFIX}")
 message("LIB_SYMRESPONSE_PATH: ${LIB_SYMRESPONSE_PATH}")
 message("SYMENGINE_INCLUDE_DIRS: ${SYMENGINE_INCLUDE_DIRS}")
 message("SYMENGINE_LIBRARIES: ${SYMENGINE_LIBRARIES}")
-#message("TINNED_INCLUDE_DIRS: ${TINNED_INCLUDE_DIRS}")
-#message("TINNED_LIBRARIES: ${TINNED_LIBRARIES}")
+message("Tinned include directory: ${TINNED_INCLUDE_DIR}")
+#message("Tinned library: ${tinned}")
 message("BUILD_SHARED_LIBS: ${BUILD_SHARED_LIBS}")
 message("BUILD_TESTING: ${BUILD_TESTING}")
