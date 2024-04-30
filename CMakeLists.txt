@@ -61,6 +61,14 @@ include_directories(
 # SymResponse library source codes
 add_subdirectory(src)
 
+# Testing only in the main project, and not if it is included through
+# add_subdirectory(). Learnt from Modern CMake at
+# https://gitlab.com/CLIUtils/modern-cmake
+if((CMAKE_PROJECT_NAME STREQUAL PROJECT_NAME) AND BUILD_TESTING)
+    include(CTest)
+    add_subdirectory(tests)
+endif()
+
 # Use `CMAKE_INSTALL_DATADIR`
 include(GNUInstallDirs)
 
@@ -137,3 +145,4 @@ message("Tinned include directory: ${TINNED_INCLUDE_DIR}")
 #message("Tinned library: ${tinned}")
 message("BUILD_SHARED_LIBS: ${BUILD_SHARED_LIBS}")
 message("BUILD_TESTING: ${BUILD_TESTING}")
+#message("BUILD_EXAMPLES: ${BUILD_EXAMPLES}")

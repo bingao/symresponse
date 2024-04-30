@@ -13,5 +13,5 @@
 
 #pragma once
 
-#include "SymReponse/Lagrangian.hpp"
-#include "SymReponse/LagrangianDAO.hpp"
+#include "SymResponse/Lagrangian.hpp"
+#include "SymResponse/LagrangianDAO.hpp"

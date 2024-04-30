@@ -20,7 +20,7 @@ namespace SymResponse
         const SymEngine::RCP<const SymEngine::Basic>& Exc,
         const SymEngine::RCP<const SymEngine::Basic>& Fxc,
         const SymEngine::RCP<const SymEngine::Basic>& hnuc
-    ) : sym_elimination_(true), a_(a), D_(D)
+    ) : sym_elimination_(false), a_(a), D_(D)
     {
         if (!S.is_null()) {
             if (SymEngine::is_a_sub<const Tinned::OneElecOperator>(*S)) {
@@ -170,6 +170,7 @@ namespace SymResponse
         verify_perturbations(all_exten_perturbations, inten_perturbations);
         // Construct the response functions according to elimination rules
         if (sym_elimination_) {
+            //FIXME: to implement for both cases: with/without intensive perturbations
             if (!inten_perturbations.empty()) throw SymEngine::SymEngineException(
                 "LagrangianDAO has not implemented for intensive perturbations!"
             );
@@ -179,11 +180,11 @@ namespace SymResponse
             auto D_a = D_->diff(a_);
             auto S_a = S_->diff(a_);
             // Make artificial multipliers for elimination
-            auto lambda = Tinned::make_1el_density(
-                D_->get_name()+std::string("-tdscf-multiplier")
+            auto lambda = Tinned::make_lagrangian_multiplier(
+                std::string("tdscf-multiplier")
             );
-            auto zeta = Tinned::make_1el_density(
-                D_->get_name()+std::string("-idempotency-multiplier")
+            auto zeta = Tinned::make_lagrangian_multiplier(
+                std::string("idempotency-multiplier")
             );
             // Time-averaged quasi-energy derivative Lagrangian
             auto La = SymEngine::add(SymEngine::vec_basic({
@@ -217,9 +218,9 @@ namespace SymResponse
                 min_wfn_extern
             );
             // Replace artificial multipliers with real differentiated ones
-            return Tinned::replace_with_derivatives<Tinned::OneElecDensity>(
+            return Tinned::replace_with_derivatives<Tinned::LagMultiplier>(
                 result,
-                Tinned::TinnedBasicMap<Tinned::OneElecDensity>({
+                Tinned::TinnedBasicMap<Tinned::LagMultiplier>({
                     {lambda, lambda_}, {zeta, zeta_}
                 })
             );
