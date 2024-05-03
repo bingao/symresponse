@@ -15,12 +15,13 @@ namespace SymResponse
         const SymEngine::RCP<const Tinned::Perturbation>& a,
         const SymEngine::RCP<const Tinned::OneElecDensity>& D,
         const SymEngine::RCP<const SymEngine::Basic>& S,
-        const SymEngine::RCP<const SymEngine::Basic>& H,
+        const SymEngine::vec_basic& H,
         const SymEngine::RCP<const SymEngine::Basic>& G,
         const SymEngine::RCP<const SymEngine::Basic>& Exc,
         const SymEngine::RCP<const SymEngine::Basic>& Fxc,
-        const SymEngine::RCP<const SymEngine::Basic>& hnuc
-    ) : sym_elimination_(false), a_(a), D_(D)
+        const SymEngine::RCP<const SymEngine::Basic>& hnuc,
+        const bool sym_elimination
+    ) : sym_elimination_(sym_elimination), a_(a), D_(D)
     {
         if (!S.is_null()) {
             if (SymEngine::is_a_sub<const Tinned::OneElecOperator>(*S)) {
@@ -34,9 +35,13 @@ namespace SymResponse
         }
         SymEngine::vec_basic E_terms;
         SymEngine::vec_basic F_terms;
-        if (!H.is_null()) {
-            E_terms.push_back(SymEngine::trace(SymEngine::matrix_mul({H, D})));
-            F_terms.push_back(H);
+        if (!H.empty()) {
+            //E_terms.push_back(SymEngine::trace(
+            //    SymEngine::matrix_mul({SymEngine::matrix_add(H), D})
+            //));
+            for (const auto& op: H)
+                E_terms.push_back(SymEngine::trace(SymEngine::matrix_mul({op, D})));
+            F_terms = H;
         }
         if (!G.is_null()) {
             if (SymEngine::is_a_sub<const Tinned::TwoElecOperator>(*G)) {
@@ -190,20 +195,16 @@ namespace SymResponse
             auto La = SymEngine::add(SymEngine::vec_basic({
                 // The first term in Equation (98), J. Chem. Phys. 129, 214108 (2008)
                 Tinned::remove_if(E_a, SymEngine::set_basic({D_a})),
-                // Pulay term
                 SymEngine::mul(
                     SymEngine::minus_one,
-                    SymEngine::trace(SymEngine::matrix_mul({S_a, W_}))
-                ),
-                // TDSCF equation
-                SymEngine::mul(
-                    SymEngine::minus_one,
-                    SymEngine::trace(SymEngine::matrix_mul({lambda, Y_}))
-                ),
-                // Idempotency constraint
-                SymEngine::mul(
-                    SymEngine::minus_one,
-                    SymEngine::trace(SymEngine::matrix_mul({zeta, Z_}))
+                    SymEngine::add(SymEngine::vec_basic({
+                        // Pulay term
+                        SymEngine::trace(SymEngine::matrix_mul({S_a, W_})),
+                        // TDSCF equation
+                        SymEngine::trace(SymEngine::matrix_mul({lambda, Y_})),
+                        // Idempotency constraint
+                        SymEngine::trace(SymEngine::matrix_mul({zeta, Z_}))
+                    }))
                 )
             }));
             // Differentiate time-averaged quasi-energy derivative Lagrangian

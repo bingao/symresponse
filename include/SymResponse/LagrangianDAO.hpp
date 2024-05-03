@@ -59,11 +59,12 @@ namespace SymResponse
                 const SymEngine::RCP<const Tinned::Perturbation>& a,
                 const SymEngine::RCP<const Tinned::OneElecDensity>& D,
                 const SymEngine::RCP<const SymEngine::Basic>& S = SymEngine::RCP<const SymEngine::Basic>(),
-                const SymEngine::RCP<const SymEngine::Basic>& H = SymEngine::RCP<const SymEngine::Basic>(),
+                const SymEngine::vec_basic& H = {},
                 const SymEngine::RCP<const SymEngine::Basic>& G = SymEngine::RCP<const SymEngine::Basic>(),
                 const SymEngine::RCP<const SymEngine::Basic>& Exc = SymEngine::RCP<const SymEngine::Basic>(),
                 const SymEngine::RCP<const SymEngine::Basic>& Fxc = SymEngine::RCP<const SymEngine::Basic>(),
-                const SymEngine::RCP<const SymEngine::Basic>& hnuc = SymEngine::RCP<const SymEngine::Basic>()
+                const SymEngine::RCP<const SymEngine::Basic>& hnuc = SymEngine::RCP<const SymEngine::Basic>(),
+                const bool sym_elimination = false
             );
 
             virtual SymEngine::RCP<const SymEngine::Basic> get_response_functions(
@@ -92,6 +93,66 @@ namespace SymResponse
             inline bool get_elimination_form() const noexcept
             {
                 return sym_elimination_;
+            }
+
+            // Get perturbation $a$
+            inline SymEngine::RCP<const Tinned::Perturbation> get_perturbation_a() const noexcept
+            {
+                return a_;
+            }
+
+            // Get one-electron spin-orbital density matrix
+            inline SymEngine::RCP<const Tinned::OneElecDensity> get_density() const noexcept
+            {
+                return D_;
+            }
+
+            // Get overlap matrix
+            inline SymEngine::RCP<const Tinned::OneElecOperator> get_overlap() const noexcept
+            {
+                return S_;
+            }
+
+            // Get generalized energy
+            inline SymEngine::RCP<const SymEngine::Basic> get_generalized_energy() const noexcept
+            {
+                return E_;
+            }
+
+            // Get generalized Fock matrix
+            inline SymEngine::RCP<const SymEngine::Basic> get_generalized_fock() const noexcept
+            {
+                return F_;
+            }
+
+            // Get generalized energy-weighted density matrix
+            inline SymEngine::RCP<const SymEngine::Basic> get_ew_density() const noexcept
+            {
+                return W_;
+            }
+
+            // Get Lagrangian multiplier $\lambda$
+            inline SymEngine::RCP<const SymEngine::Basic> get_tdscf_multiplier() const noexcept
+            {
+                return lambda_;
+            }
+
+            // Get TDSCF equation
+            inline SymEngine::RCP<const SymEngine::Basic> get_tdscf_equation() const noexcept
+            {
+                return Y_;
+            }
+
+            // Get Lagrangian multiplier $\zeta$
+            inline SymEngine::RCP<const SymEngine::Basic> get_idempotency_multiplier() const noexcept
+            {
+                return zeta_;
+            }
+
+            // Get idempotency constraint
+            inline SymEngine::RCP<const SymEngine::Basic> get_idempotency_constraint() const noexcept
+            {
+                return Z_;
             }
 
             virtual ~LagrangianDAO() noexcept = default;
