@@ -1,5 +1,7 @@
 #define CATCH_CONFIG_MAIN
 
+#include <iostream>
+
 #include <string>
 #include <utility>
 
@@ -22,9 +24,11 @@ using namespace SymResponse;
 
 TEST_CASE("Test density matrix-based response theory", "[LagrangianDAO]")
 {
-    auto a = Tinned::make_perturbation(std::string("a"));
-    auto b = Tinned::make_perturbation(std::string("b"));
-    auto c = Tinned::make_perturbation(std::string("c"));
+    //FIXME: perturbation with zero frequency
+    auto a = Tinned::make_perturbation(std::string("a"), SymEngine::two);
+    auto b = Tinned::make_perturbation(std::string("b"), SymEngine::minus_one);
+    auto c = Tinned::make_perturbation(std::string("c"), SymEngine::minus_one);
+    //FIXME: some operators do not depend on all perturbations
     auto dependencies = Tinned::PertDependency({
         std::make_pair(a, 99), std::make_pair(b, 99), std::make_pair(c, 99)
     });
@@ -41,7 +45,8 @@ TEST_CASE("Test density matrix-based response theory", "[LagrangianDAO]")
     auto hnuc = Tinned::make_nonel_function(std::string("hnuc"), dependencies);
 
     auto lagrangian = LagrangianDAO(
-        a, D, S, SymEngine::vec_basic({h, V, T}), G, Exc, Fxc, hnuc
+        //a, D, S, SymEngine::vec_basic({h, V, T}), G, Exc, Fxc, hnuc
+        a, D, S, SymEngine::vec_basic({h}), G
     );
 
     // Compute Equation (235), J. Chem. Phys. 129, 214108 (2008)
@@ -82,5 +87,10 @@ TEST_CASE("Test density matrix-based response theory", "[LagrangianDAO]")
         SymEngine::trace(SymEngine::matrix_mul({SymEngine::minus_one, zeta, Z_bc_1}))
     }));
 
+std::cout << Tinned::latexify(result, 16) << "\n\n";
+std::cout << Tinned::stringify(result, false) << "\n";
+
     REQUIRE(SymEngine::eq(*result, *ref));
+
+    //FIXME: other elimination rules
 }

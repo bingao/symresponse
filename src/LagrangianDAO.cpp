@@ -207,24 +207,36 @@ namespace SymResponse
                     }))
                 )
             }));
+
+//FIXME: combine together into a function in base class
             // Differentiate time-averaged quasi-energy derivative Lagrangian
-            for (const auto& p: exten_perturbations) La = La->diff(p);
-            for (const auto& p: inten_perturbations) La = La->diff(p);
+            auto perturbations = exten_perturbations;
+            perturbations.insert(inten_perturbations.begin(), inten_perturbations.end());
+            auto result = Tinned::differentiate(La, perturbations);
             // Eliminate peturbed density matrices and multipliers
-            auto result = eliminate_parameters(
-                La,
+            result = eliminate_parameters(
+                result,
                 D_,
                 SymEngine::set_basic({lambda, zeta}),
                 exten_perturbations,
                 min_wfn_extern
             );
+            //check result.is_null()
+//FIXME: done
+
             // Replace artificial multipliers with real differentiated ones
-            return Tinned::replace_with_derivatives<Tinned::LagMultiplier>(
+            result = Tinned::replace_all<Tinned::LagMultiplier>(
                 result,
                 Tinned::TinnedBasicMap<Tinned::LagMultiplier>({
                     {lambda, lambda_}, {zeta, zeta_}
                 })
             );
+            // Remove unperturbed time-differentiated density and overlap
+            // matrices, and replace their perturbed ones with corresponding
+            // perturbed density and overlap matrices multiplied by sums of
+            // perturbation frequencies
+//FIXME: check if result.is_null()
+            return Tinned::clean_temporum(result);
         }
     }
 
