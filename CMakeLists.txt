@@ -89,8 +89,12 @@ install(TARGETS symresponse
 # Install include headers
 install(FILES ${SYMRESPONSE_INCLUDE_DIRS}/SymResponse.hpp
         DESTINATION ${INCLUDE_INSTALL_DIR})
+# Pattern matching option from https://stackoverflow.com/a/67883070
 install(DIRECTORY ${SYMENGINE_INCLUDE_DIRS}/SymResponse
-        DESTINATION ${INCLUDE_INSTALL_DIR})
+        DESTINATION ${INCLUDE_INSTALL_DIR}
+        FILES_MATCHING
+        PATTERN "*.hpp"
+        PATTERN "*.swp" EXCLUDE)
 # Install generated `SymResponseTargets.cmake`
 set(SYMRESPONSE_INSTALL_CMAKE_DIR ${CMAKE_INSTALL_LIBDIR}/cmake/symresponse)
 #set(SYMRESPONSE_INSTALL_CMAKE_DIR ${CMAKE_INSTALL_DATADIR}/symresponse/cmake)
