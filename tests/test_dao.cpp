@@ -66,13 +66,13 @@ TEST_CASE("Test third-order quasienergy derivative Lagrangian with S^{a} = 0", "
     auto Y = lagrangian.get_tdscf_equation();
     auto Z = lagrangian.get_idempotency_constraint();
 
+    auto h_a = h->diff(a);
+    auto V_a = V->diff(a);
     auto F = SymEngine::matrix_add(SymEngine::vec_basic({h, V, T, G, Fxc}));
     auto F_a = Tinned::differentiate(F, Tinned::PerturbationTuple({a}));
     REQUIRE(SymEngine::eq(
         *F_a,
-        *SymEngine::matrix_add(SymEngine::vec_basic({
-            h->diff(a), V->diff(a), G->diff(a), Fxc->diff(a)
-        }))
+        *SymEngine::matrix_add({h_a, V_a, G->diff(a), Fxc->diff(a)})
     ));
 
     REQUIRE(SymEngine::eq(
@@ -88,6 +88,57 @@ TEST_CASE("Test third-order quasienergy derivative Lagrangian with S^{a} = 0", "
     auto L_abc_0_2 = lagrangian.get_response_functions(
         Tinned::PerturbationTuple({b, c}), {}, 3
     );
+
+    // Compute only the first term of Equation (237), J. Chem. Phys. 129, 214108 (2008)
+    auto D_a = D->diff(a);
+    auto E_a = Tinned::differentiate(E, Tinned::PerturbationTuple({a}));
+    // The first term in Equation (98), J. Chem. Phys. 129, 214108 (2008)
+    auto E_0a = Tinned::remove_if(E_a, SymEngine::set_basic({D_a}));
+    REQUIRE(SymEngine::eq(
+        *E_0a,
+        *SymEngine::add({
+            SymEngine::trace(SymEngine::matrix_mul({h_a, D})),
+            SymEngine::trace(SymEngine::matrix_mul({V_a, D})),
+            Tinned::make_2el_energy(
+                SymEngine::make_rcp<const Tinned::TwoElecOperator>(
+                    G->get_name(), D, dependencies, SymEngine::multiset_basic({a})
+                )
+            ),
+            Tinned::remove_if(
+                Tinned::differentiate(Exc, Tinned::PerturbationTuple({a})),
+                SymEngine::set_basic({D_a})
+            ),
+            hnuc->diff(a)
+        })
+    ));
+    auto E_0a_bc = Tinned::differentiate(E_0a, Tinned::PerturbationTuple({b, c}));
+
+    REQUIRE(SymEngine::eq(*L_abc_0_2, *E_0a_bc));
+
+    // Response function in Equation (235), J. Chem. Phys. 129, 214108 (2008)
+    auto L_abc_1_1 = lagrangian.get_response_functions(
+        Tinned::PerturbationTuple({b, c}), {}, 2
+    );
+
+    // Compute the first and last two terms of Equation (235), J. Chem. Phys. 129, 214108 (2008)
+    auto D_bc = (D->diff(b))->diff(c);
+    auto Y_bc_1 = Tinned::remove_if(
+        Tinned::differentiate(Y, Tinned::PerturbationTuple({b, c})),
+        SymEngine::set_basic({D_bc})
+    );
+    auto Z_bc_1 = Tinned::remove_if(
+        Tinned::differentiate(Z, Tinned::PerturbationTuple({b, c})),
+        SymEngine::set_basic({D_bc})
+    );
+
+    // `ref` is computed by following Equation (235), J. Chem. Phys. 129, 214108 (2008)
+    auto ref = SymEngine::add({
+        Tinned::remove_if(E_0a_bc, SymEngine::set_basic({D_bc})),
+        SymEngine::trace(SymEngine::matrix_mul({SymEngine::minus_one, lambda, Y_bc_1})),
+        SymEngine::trace(SymEngine::matrix_mul({SymEngine::minus_one, zeta, Z_bc_1}))
+    });
+
+    REQUIRE(SymEngine::eq(*L_abc_1_1, *Tinned::clean_temporum(ref)));
 }
 
 TEST_CASE("Test third-order quasienergy derivative Lagrangian", "[LagrangianDAO]")
@@ -190,6 +241,10 @@ TEST_CASE("Test third-order quasienergy derivative Lagrangian", "[LagrangianDAO]
 
     REQUIRE(SymEngine::eq(*L_abc_1_1, *Tinned::clean_temporum(ref)));
 }
+
+// perturbation with zero frequency
+
+// some operators do not depend on all perturbations
 
 TEST_CASE("Test fouth-order quasienergy derivative Lagrangian", "[LagrangianDAO]")
 {
@@ -379,9 +434,8 @@ TEST_CASE("Test fouth-order quasienergy derivative Lagrangian", "[LagrangianDAO]
     REQUIRE(SymEngine::eq(*L_abcd_1_2, *Tinned::clean_temporum(ref)));
 }
 
-//FIXME: perturbation with zero frequency
-//FIXME: some operators do not depend on all perturbations
-// speical case, L^{fggg}_{2,1}
 // non-empty intensive perturbations
+
+// speical case, L^{fggg}_{2,1}
 
 //std::cout << Tinned::latexify(result, 16) << "\n\n";
