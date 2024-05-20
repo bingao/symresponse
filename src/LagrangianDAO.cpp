@@ -14,25 +14,15 @@ namespace SymResponse
     LagrangianDAO::LagrangianDAO(
         const SymEngine::RCP<const Tinned::Perturbation>& a,
         const SymEngine::RCP<const Tinned::OneElecDensity>& D,
-        const SymEngine::RCP<const SymEngine::Basic>& S,
+        const SymEngine::RCP<const Tinned::OneElecOperator>& S,
         const SymEngine::vec_basic& H,
-        const SymEngine::RCP<const SymEngine::Basic>& G,
-        const SymEngine::RCP<const SymEngine::Basic>& Exc,
-        const SymEngine::RCP<const SymEngine::Basic>& Fxc,
-        const SymEngine::RCP<const SymEngine::Basic>& hnuc,
+        const SymEngine::RCP<const Tinned::TwoElecOperator>& G,
+        const SymEngine::RCP<const Tinned::ExchCorrEnergy>& Exc,
+        const SymEngine::RCP<const Tinned::ExchCorrPotential>& Fxc,
+        const SymEngine::RCP<const Tinned::NonElecFunction>& hnuc,
         const bool sym_elimination
-    ) : sym_elimination_(sym_elimination), a_(a), D_(D)
+    ) : sym_elimination_(sym_elimination), a_(a), D_(D), S_(S)
     {
-        if (!S.is_null()) {
-            if (SymEngine::is_a_sub<const Tinned::OneElecOperator>(*S)) {
-                S_ = SymEngine::rcp_dynamic_cast<const Tinned::OneElecOperator>(S);
-            }
-            else {
-                throw SymEngine::SymEngineException(
-                    "LagrangianDAO gets an overlap matrix with invalid type!"
-                );
-            }
-        }
         SymEngine::vec_basic E_terms;
         SymEngine::vec_basic F_terms;
         if (!H.empty()) {
@@ -44,17 +34,8 @@ namespace SymResponse
             F_terms = H;
         }
         if (!G.is_null()) {
-            if (SymEngine::is_a_sub<const Tinned::TwoElecOperator>(*G)) {
-                auto op = SymEngine::rcp_dynamic_cast<const Tinned::TwoElecOperator>(G);
-                // We simply use the same name for two-electron operator and energy
-                E_terms.push_back(Tinned::make_2el_energy(op->get_name(), op));
-                F_terms.push_back(G);
-            }
-            else {
-                throw SymEngine::SymEngineException(
-                    "LagrangianDAO gets a two-electron matrix with invalid type!"
-                );
-            }
+            E_terms.push_back(Tinned::make_2el_energy(G));
+            F_terms.push_back(G);
         }
         if (!Exc.is_null()) E_terms.push_back(Exc);
         if (!Fxc.is_null()) F_terms.push_back(Fxc);
@@ -100,8 +81,8 @@ namespace SymResponse
             //});
         }
         else {
-            // |i\frac{\partial `S_`}{\partial t}>
-            auto St = Tinned::make_dt_operator(S_);
+            // |i\frac{\partial `S`}{\partial t}>
+            auto St = Tinned::make_dt_operator(S);
             // Equation (95), J. Chem. Phys. 129, 214108 (2008)
             W_ = SymEngine::matrix_add({
                 SymEngine::matrix_mul({D, F_, D}),
@@ -162,10 +143,13 @@ namespace SymResponse
         if (sym_elimination_) {
             //FIXME: to implement for both cases: with/without intensive perturbations
             if (!inten_perturbations.empty()) throw SymEngine::SymEngineException(
-                "LagrangianDAO has not implemented for intensive perturbations!"
+                "LagrangianDAO::get_response_functions has not implemented for intensive perturbations!"
             );
         }
         else {
+            if (S_.is_null()) throw SymEngine::SymEngineException(
+                "LagrangianDAO::get_response_functions has not implemented for orthonormal basis!"
+            );
             SymEngine::vec_basic constraints;
             auto S_a = S_->diff(a_);
             // Pulay term

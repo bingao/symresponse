@@ -58,12 +58,17 @@ namespace SymResponse
             explicit LagrangianDAO(
                 const SymEngine::RCP<const Tinned::Perturbation>& a,
                 const SymEngine::RCP<const Tinned::OneElecDensity>& D,
-                const SymEngine::RCP<const SymEngine::Basic>& S = SymEngine::RCP<const SymEngine::Basic>(),
+                const SymEngine::RCP<const Tinned::OneElecOperator>&
+                    S = SymEngine::RCP<const Tinned::OneElecOperator>(),
                 const SymEngine::vec_basic& H = {},
-                const SymEngine::RCP<const SymEngine::Basic>& G = SymEngine::RCP<const SymEngine::Basic>(),
-                const SymEngine::RCP<const SymEngine::Basic>& Exc = SymEngine::RCP<const SymEngine::Basic>(),
-                const SymEngine::RCP<const SymEngine::Basic>& Fxc = SymEngine::RCP<const SymEngine::Basic>(),
-                const SymEngine::RCP<const SymEngine::Basic>& hnuc = SymEngine::RCP<const SymEngine::Basic>(),
+                const SymEngine::RCP<const Tinned::TwoElecOperator>&
+                    G = SymEngine::RCP<const Tinned::TwoElecOperator>(),
+                const SymEngine::RCP<const Tinned::ExchCorrEnergy>&
+                    Exc = SymEngine::RCP<const Tinned::ExchCorrEnergy>(),
+                const SymEngine::RCP<const Tinned::ExchCorrPotential>&
+                    Fxc = SymEngine::RCP<const Tinned::ExchCorrPotential>(),
+                const SymEngine::RCP<const Tinned::NonElecFunction>&
+                    hnuc = SymEngine::RCP<const Tinned::NonElecFunction>(),
                 const bool sym_elimination = false
             );
 
