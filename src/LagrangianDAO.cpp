@@ -104,7 +104,7 @@ namespace SymResponse
             });
             auto S_a = S->diff(a);
             // Equation (224), J. Chem. Phys. 129, 214108 (2008)
-            zeta_ = Tinned::is_zero_quantity(*S_a)
+            zeta_ = Tinned::is_zero_quantity(S_a)
                   ? SymEngine::matrix_add({
                         SymEngine::matrix_mul({F_a, D, S}),
                         SymEngine::matrix_mul({S, D, F_a}),
@@ -153,7 +153,7 @@ namespace SymResponse
             SymEngine::vec_basic constraints;
             auto S_a = S_->diff(a_);
             // Pulay term
-            if (!Tinned::is_zero_quantity(*S_a)) constraints.push_back(
+            if (!Tinned::is_zero_quantity(S_a)) constraints.push_back(
                 SymEngine::trace(SymEngine::matrix_mul({S_a, W_}))
             );
             // Make artificial multipliers for elimination

@@ -14,11 +14,13 @@
 #pragma once
 
 #include <cmath>
+#include <limits>
 
 #include <symengine/basic.h>
 #include <symengine/constants.h>
 #include <symengine/dict.h>
 #include <symengine/number.h>
+#include <symengine/real_double.h>
 #include <symengine/symengine_exception.h>
 #include <symengine/symengine_rcp.h>
 
@@ -36,7 +38,9 @@ namespace SymResponse
             // extensive and intensive perturbations should be disjoint
             inline void verify_perturbations(
                 const Tinned::PerturbationTuple& exten_perturbations,
-                const Tinned::PerturbationTuple& inten_perturbations
+                const Tinned::PerturbationTuple& inten_perturbations,
+                const SymEngine::RCP<const SymEngine::Number>&
+                    threshold = SymEngine::real_double(std::numeric_limits<double>::epsilon())
             ) const
             {
                 if (exten_perturbations.empty()) throw SymEngine::SymEngineException(
@@ -54,9 +58,10 @@ namespace SymResponse
                             );
                     }
                 }
-                if (!sum_freq->is_zero()) throw SymEngine::SymEngineException(
-                    "Lagrangian gets perturbations with invalid frequencies!"
-                );
+                if (!Tinned::is_zero_number(sum_freq, threshold))
+                    throw SymEngine::SymEngineException(
+                        "Lagrangian gets perturbations with non-zero sum frequencies!"
+                    );
             }
 
             // Differentiate quasi-energy Lagrangian `L`, and then eliminate
@@ -80,7 +85,7 @@ namespace SymResponse
                 );
                 auto result = Tinned::differentiate(L, perturbations);
                 // Usually the differentiated quasi-energy Lagrangian cannot be zero
-                if (Tinned::is_zero_quantity(*result)) return result;
+                if (Tinned::is_zero_quantity(result)) return result;
                 // Minimum order for the elimination of wave function
                 // parameters, as the next integer of the floor function of the
                 // half number of perturbations

@@ -86,6 +86,13 @@ namespace SymResponse
             //    const unsigned int min_wfn_extern = 0
             //) override;
 
+//src/solvers/linear_davidson_solver_class.F90
+//
+//            // Generalized response linear equations
+//            virtual SymEngine::RCP<const SymEngine::Basic> get_linear_equation(
+//                LHS, RHS
+//            ) override;
+
             // Set elimination rules performed either in an asymmetric
             // (`false`) or (almost) symmetric (`true`) form
             inline void set_elimination_form(const bool sym_elimination) noexcept
@@ -159,6 +166,11 @@ namespace SymResponse
             {
                 return Z_;
             }
+
+//get_()
+//get_pulay_term()
+//get_()
+//get_()
 
             virtual ~LagrangianDAO() noexcept = default;
     };
