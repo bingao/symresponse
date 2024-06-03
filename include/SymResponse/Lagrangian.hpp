@@ -7,6 +7,9 @@
 
    This file is the header file of quasi-energy Lagrangian in response theory.
 
+   2024-06-02, Bin Gao:
+   * rewrite by using template method pattern
+
    2024-01-30, Bin Gao:
    * first version
 */
@@ -17,7 +20,6 @@
 #include <limits>
 
 #include <symengine/basic.h>
-#include <symengine/constants.h>
 #include <symengine/dict.h>
 #include <symengine/number.h>
 #include <symengine/real_double.h>
@@ -33,6 +35,20 @@ namespace SymResponse
     class Lagrangian
     {
         protected:
+            // Verify sum of perturbations' frequencies
+            virtual bool verify_perturbation_frequencies(
+                const Tinned::PerturbationTuple& exten_perturbations,
+                const Tinned::PerturbationTuple& inten_perturbations,
+                const SymEngine::RCP<const SymEngine::Number>&
+                    threshold = SymEngine::real_double(std::numeric_limits<double>::epsilon())
+            ) const noexcept;
+
+            // Verify that extensive and intensive perturbations should be disjoint
+            virtual bool verify_perturbation_disjointedness(
+                const Tinned::PerturbationTuple& exten_perturbations,
+                const Tinned::PerturbationTuple& inten_perturbations
+            ) const noexcept;
+
             // Verify that: (i) at least one extensive perturbation, (ii) sum
             // of all perturbations' frequencies should be zero, and (iii)
             // extensive and intensive perturbations should be disjoint
@@ -46,87 +62,50 @@ namespace SymResponse
                 if (exten_perturbations.empty()) throw SymEngine::SymEngineException(
                     "Lagrangian requires at least one extensive perturbation!"
                 );
-                SymEngine::RCP<const SymEngine::Number> sum_freq = SymEngine::zero;
-                for (const auto& p: exten_perturbations)
-                    sum_freq = SymEngine::addnum(sum_freq, p->get_frequency());
-                if (!inten_perturbations.empty()) {
-                    for (const auto& p: inten_perturbations) {
-                        sum_freq = SymEngine::addnum(sum_freq, p->get_frequency());
-                        if (exten_perturbations.find(p)!=exten_perturbations.end())
-                            throw SymEngine::SymEngineException(
-                                "Lagrangian gets a same extensive and intensive perturbation!"
-                            );
-                    }
-                }
-                if (!Tinned::is_zero_number(sum_freq, threshold))
-                    throw SymEngine::SymEngineException(
-                        "Lagrangian gets perturbations with non-zero sum frequencies!"
-                    );
+                if (!verify_perturbation_frequencies(
+                    exten_perturbations, inten_perturbations, threshold
+                )) throw SymEngine::SymEngineException(
+                    "Lagrangian gets perturbations with non-zero sum frequencies!"
+                );
+                if (!verify_perturbation_disjointedness(
+                    exten_perturbations, inten_perturbations
+                )) throw SymEngine::SymEngineException(
+                    "Lagrangian gets a same extensive and intensive perturbation!"
+                );
             }
 
-            // Differentiate quasi-energy Lagrangian `L`, and then eliminate
-            // wave function parameter (`wfn`) and Lagrangian multipliers
-            // (`multipliers`) from its derivative according to Table IV and V,
-            // J. Chem. Phys. 129, 214103 (2008). Other parameters see the
-            // function `get_response_functions()`.
-            inline SymEngine::RCP<const SymEngine::Basic> diff_and_eliminate(
+            // Get the time-averaged quasi-energy (derivative) Lagrangian
+            virtual SymEngine::RCP<const SymEngine::Basic> get_lagrangian() const noexcept = 0;
+
+            // Eliminate differentiated wave function parameter with respect to
+            // extensive perturbations `exten_perturbations` from the
+            // derivative of quasi-energy Lagrangian `L`. Orders of
+            // differentiated wave function parameter to be eliminated are from
+            // the minimum one `min_wfn_order` to the maximum one as the size
+            // of `exten_perturbations`.
+            virtual SymEngine::RCP<const SymEngine::Basic> eliminate_wavefunction_parameter(
                 const SymEngine::RCP<const SymEngine::Basic>& L,
                 const Tinned::PerturbationTuple& exten_perturbations,
-                const Tinned::PerturbationTuple& inten_perturbations,
-                const SymEngine::RCP<const SymEngine::Basic>& wfn,
-                const SymEngine::set_basic& multipliers,
-                const unsigned int min_wfn_extern = 0
-            )
-            {
-                // Differentiate quasi-energy Lagrangian
-                auto perturbations = exten_perturbations;
-                if (!inten_perturbations.empty()) perturbations.insert(
-                    inten_perturbations.begin(), inten_perturbations.end()
-                );
-                auto result = Tinned::differentiate(L, perturbations);
-                // Usually the differentiated quasi-energy Lagrangian cannot be zero
-                if (Tinned::is_zero_quantity(result)) return result;
-                // Minimum order for the elimination of wave function
-                // parameters, as the next integer of the floor function of the
-                // half number of perturbations
-                auto min_wfn_order
-                    = static_cast<unsigned int>(std::floor(0.5*exten_perturbations.size()))
-                    + 1;
-                if (min_wfn_extern>0) {
-                    if (min_wfn_extern<min_wfn_order) {
-                        throw SymEngine::SymEngineException(
-                            "Lagrangian::diff_and_eliminate() gets an invalid minimum order "
-                            + std::to_string(min_wfn_extern)
-                        );
-                    }
-                    else {
-                        min_wfn_order = min_wfn_extern;
-                    }
-                }
-                // Eliminate wave function parameter
-                if (min_wfn_extern<=exten_perturbations.size())
-                    result = Tinned::eliminate(
-                        result, wfn, exten_perturbations, min_wfn_order
-                    );
-                // Minimum order for the elimination of Lagrangian multipliers
-                unsigned int min_multiplier_order
-                    = min_wfn_extern<=exten_perturbations.size()
-                    ? exten_perturbations.size()-min_wfn_order+1 : 0;
-                // For MCSCF, an empty `multipliers` can be used
-                for (const auto& multiplier: multipliers)
-                    result = Tinned::eliminate(
-                        result, multiplier, exten_perturbations, min_multiplier_order
-                    );
-                // Usually `result` cannot be null after elimination
-                if (result.is_null()) return SymEngine::zero;
-                return result;
-            }
+                const unsigned int min_wfn_order
+            ) = 0;
+
+            // Eliminate differentiated Lagrangian multipliers with respect to
+            // extensive perturbations `exten_perturbations` from the
+            // derivative of quasi-energy Lagrangian `L`. Orders of
+            // differentiated Lagrangian multipliers to be eliminated are from
+            // the minimum one `min_multiplier_order` to the maximum one as the
+            // size of `exten_perturbations`.
+            virtual SymEngine::RCP<const SymEngine::Basic> eliminate_lagrangian_multipliers(
+                const SymEngine::RCP<const SymEngine::Basic>& L,
+                const Tinned::PerturbationTuple& exten_perturbations,
+                const unsigned int min_multiplier_order
+            ) = 0;
 
         public:
             explicit Lagrangian() = default;
 
-            // Get response functions
-            virtual SymEngine::RCP<const SymEngine::Basic> get_response_functions(
+            // Get response functions by using template method pattern
+            inline SymEngine::RCP<const SymEngine::Basic> get_response_functions(
                 // Extensive perturbations
                 const Tinned::PerturbationTuple& exten_perturbations,
                 // Intensive perturbations
@@ -140,7 +119,59 @@ namespace SymResponse
                 // elimination of wave function parameters so that more
                 // Lagrangian multipliers can be eliminated.
                 const unsigned int min_wfn_extern = 0
-            ) = 0;
+            )
+            {
+                // Verify perturbations
+                verify_perturbations(exten_perturbations, inten_perturbations);
+                // Differentiate the quasi-energy (derivative) Lagrangian
+                auto perturbations = exten_perturbations;
+                if (!inten_perturbations.empty()) perturbations.insert(
+                    inten_perturbations.begin(), inten_perturbations.end()
+                );
+                auto result = Tinned::differentiate(get_lagrangian(), perturbations);
+                // Usually the differentiated quasi-energy Lagrangian cannot be zero
+                if (Tinned::is_zero_quantity(result)) return result;
+                // Minimum order for the elimination of wave function
+                // parameters is the next integer of the floor function of the
+                // half number of perturbations, according to Table IV, J.
+                // Chem. Phys. 129, 214103 (2008)
+                auto min_wfn_order
+                    = static_cast<unsigned int>(std::floor(0.5*exten_perturbations.size()))+1;
+                if (min_wfn_extern>0) {
+                    if (min_wfn_extern<min_wfn_order) {
+                        throw SymEngine::SymEngineException(
+                            "Lagrangian::get_response_functions() gets an invalid minimum order "
+                            + std::to_string(min_wfn_extern)
+                        );
+                    }
+                    else {
+                        min_wfn_order = min_wfn_extern;
+                    }
+                }
+                // Eliminate wave function parameter
+                if (min_wfn_extern<=exten_perturbations.size())
+                    result = eliminate_wavefunction_parameter(
+                        result, exten_perturbations, min_wfn_order
+                    );
+                // Minimum order for the elimination of Lagrangian multipliers,
+                // see Table V, J.  Chem. Phys. 129, 214103 (2008)
+                unsigned int min_multiplier_order
+                    = min_wfn_extern<=exten_perturbations.size()
+                    ? exten_perturbations.size()-min_wfn_order+1 : 0;
+                // Eliminate Lagrangian multipliers
+                result = eliminate_lagrangian_multipliers(
+                    result, exten_perturbations, min_multiplier_order
+                );
+                // Usually `result` cannot be null after elimination
+                if (result.is_null()) return SymEngine::zero;
+                // Remove unperturbed time-differentiated quantities (and
+                // unperturbed T matrix for the AO density matrix-based
+                // response theory) as well as their perturbed ones but with
+                // zero sum of perturbation frequencies. Replace those with
+                // non-zero sum of frequencies by corresponding derivatives in
+                // the frequency domain multiplied by the sum of frequencies.
+                return Tinned::clean_temporum(result);
+            }
 
             //// Get residues. Other parameters see the function `get_response_functions()`.
             //virtual SymEngine::RCP<const SymEngine::Basic> get_residues(

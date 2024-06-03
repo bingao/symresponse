@@ -1,7 +1,7 @@
 # SymResponse
 
-A unified framework for response theory at different levels of electronic
-structure theory.
+A unified framework for response theory at different levels of
+electronic-structure theory.
 
 ## License
 

@@ -1,3 +1,7 @@
+#ifndef NDEBUG
+#include <iostream>
+#endif
+
 #include <symengine/add.h>
 #include <symengine/mul.h>
 #include <symengine/number.h>
@@ -81,6 +85,10 @@ namespace SymResponse
             //});
         }
         else {
+            //FIXME: to implement for both cases: with/without intensive perturbations
+            if (sym_elimination_) throw SymEngine::SymEngineException(
+                "LagrangianDAO has not implemented for almost symmetric form of elimination!"
+            );
             // |i\frac{\partial `S`}{\partial t}>
             auto St = Tinned::make_dt_operator(S);
             // Equation (95), J. Chem. Phys. 129, 214108 (2008)
@@ -89,6 +97,14 @@ namespace SymResponse
                 SymEngine::matrix_mul({one_half, Dt, S, D}),
                 SymEngine::matrix_mul({minus_one_half, D, S, Dt})
             });
+            // Terms of differentiated quasi-energy derivative Lagrangian with
+            // respect to the perturbation `a`
+            SymEngine::vec_basic La_terms;
+            // Pulay term
+            auto S_a = S->diff(a);
+            if (!Tinned::is_zero_quantity(S_a)) La_terms.push_back(
+                SymEngine::trace(SymEngine::matrix_mul({S_a, W_}))
+            );
             // Equation (220), J. Chem. Phys. 129, 214108 (2008)
             lambda_ = SymEngine::matrix_add({
                 SymEngine::matrix_mul({D_a, S, D}),
@@ -102,7 +118,13 @@ namespace SymResponse
                 SymEngine::matrix_mul({minus_one_half, St, D, S}),
                 SymEngine::matrix_mul({minus_one_half, S, D, St})
             });
-            auto S_a = S->diff(a);
+            // Make an "artificial" Lagrangian multiplier for elimination
+            tdscf_multiplier_ = Tinned::make_lagrangian_multiplier(
+                std::string("tdscf-multiplier")
+            );
+            La_terms.push_back(
+                SymEngine::trace(SymEngine::matrix_mul({tdscf_multiplier_, Y_}))
+            );
             // Equation (224), J. Chem. Phys. 129, 214108 (2008)
             zeta_ = Tinned::is_zero_quantity(S_a)
                   ? SymEngine::matrix_add({
@@ -126,82 +148,84 @@ namespace SymResponse
                 SymEngine::matrix_mul({D, S, D}),
                 SymEngine::matrix_mul({SymEngine::minus_one, D})
             });
-        }
-    }
-
-    SymEngine::RCP<const SymEngine::Basic> LagrangianDAO::get_response_functions(
-        const Tinned::PerturbationTuple& exten_perturbations,
-        const Tinned::PerturbationTuple& inten_perturbations,
-        const unsigned int min_wfn_extern
-    )
-    {
-        // Verify all perturbations and we put `a` into extensive perturbations
-        auto all_exten_perturbations = exten_perturbations;
-        all_exten_perturbations.insert(a_);
-        verify_perturbations(all_exten_perturbations, inten_perturbations);
-        // Construct the response functions according to elimination rules
-        if (sym_elimination_) {
-            //FIXME: to implement for both cases: with/without intensive perturbations
-            if (!inten_perturbations.empty()) throw SymEngine::SymEngineException(
-                "LagrangianDAO::get_response_functions has not implemented for intensive perturbations!"
-            );
-        }
-        else {
-            if (S_.is_null()) throw SymEngine::SymEngineException(
-                "LagrangianDAO::get_response_functions has not implemented for orthonormal basis!"
-            );
-            SymEngine::vec_basic constraints;
-            auto S_a = S_->diff(a_);
-            // Pulay term
-            if (!Tinned::is_zero_quantity(S_a)) constraints.push_back(
-                SymEngine::trace(SymEngine::matrix_mul({S_a, W_}))
-            );
-            // Make artificial multipliers for elimination
-            auto lambda = Tinned::make_lagrangian_multiplier(
-                std::string("tdscf-multiplier")
-            );
-            auto zeta = Tinned::make_lagrangian_multiplier(
+            // Make an "artificial" Lagrangian multiplier for elimination
+            idempotency_multiplier_ = Tinned::make_lagrangian_multiplier(
                 std::string("idempotency-multiplier")
             );
-            // TDSCF equation and idempotency constraint
-            constraints.push_back(
-                SymEngine::trace(SymEngine::matrix_mul({lambda, Y_}))
+            La_terms.push_back(
+                SymEngine::trace(SymEngine::matrix_mul({idempotency_multiplier_, Z_}))
             );
-            constraints.push_back(
-                SymEngine::trace(SymEngine::matrix_mul({zeta, Z_}))
-            );
-            // Time-averaged quasi-energy derivative Lagrangian
-            auto La = SymEngine::add({
+            // Construct the time-averaged quasi-energy derivative Lagrangian
+            La_ = SymEngine::add({
                 // The first term in Equation (98), J. Chem. Phys. 129, 214108 (2008)
                 Tinned::remove_if(
                     Tinned::differentiate(E_, Tinned::PerturbationTuple({a_})),
                     SymEngine::set_basic({D_->diff(a_)})
                 ),
-                SymEngine::mul(SymEngine::minus_one, SymEngine::add(constraints))
+                SymEngine::mul(SymEngine::minus_one, SymEngine::add(La_terms))
             });
-            // Differentiate time-averaged quasi-energy derivative Lagrangian
-            // and eliminate peturbed density matrices and multipliers
-            auto result = diff_and_eliminate(
-                La,
-                exten_perturbations,
-                inten_perturbations,
-                D_,
-                SymEngine::set_basic({lambda, zeta}),
-                min_wfn_extern
-            );
-            // Replace artificial multipliers with real differentiated ones
-            result = Tinned::replace_all<Tinned::LagMultiplier>(
-                result,
-                Tinned::TinnedBasicMap<Tinned::LagMultiplier>({
-                    {lambda, lambda_}, {zeta, zeta_}
-                })
-            );
-            // Remove unperturbed time-differentiated density and overlap
-            // matrices, and replace their perturbed ones with corresponding
-            // perturbed density and overlap matrices multiplied by sums of
-            // perturbation frequencies
-            return Tinned::clean_temporum(result);
         }
+    }
+
+    bool LagrangianDAO::verify_perturbation_frequencies(
+        const Tinned::PerturbationTuple& exten_perturbations,
+        const Tinned::PerturbationTuple& inten_perturbations,
+        const SymEngine::RCP<const SymEngine::Number>& threshold
+    ) const noexcept
+    {
+        // Here we need to inlcude the frequency of the perturbation `a_`,
+        // which can either be extensive or intensive
+        SymEngine::RCP<const SymEngine::Number> sum_freq = a_->get_frequency();
+        for (const auto& p: exten_perturbations)
+            sum_freq = SymEngine::addnum(sum_freq, p->get_frequency());
+        for (const auto& p: inten_perturbations)
+            sum_freq = SymEngine::addnum(sum_freq, p->get_frequency());
+        return Tinned::is_zero_number(sum_freq, threshold);
+    }
+
+    SymEngine::RCP<const SymEngine::Basic> LagrangianDAO::get_lagrangian() const noexcept
+    {
+        return La_;
+    }
+
+    SymEngine::RCP<const SymEngine::Basic> LagrangianDAO::eliminate_wavefunction_parameter(
+        const SymEngine::RCP<const SymEngine::Basic>& L,
+        const Tinned::PerturbationTuple& exten_perturbations,
+        const unsigned int min_wfn_order
+    )
+    {
+        return Tinned::eliminate(L, D_, exten_perturbations, min_wfn_order);
+    }
+
+    SymEngine::RCP<const SymEngine::Basic> LagrangianDAO::eliminate_lagrangian_multipliers(
+        const SymEngine::RCP<const SymEngine::Basic>& L,
+        const Tinned::PerturbationTuple& exten_perturbations,
+        const unsigned int min_multiplier_order
+    )
+    {
+        auto result = Tinned::eliminate(
+            L, tdscf_multiplier_, exten_perturbations, min_multiplier_order
+        );
+        result = Tinned::eliminate(
+            result, idempotency_multiplier_, exten_perturbations, min_multiplier_order
+        );
+#ifndef NDEBUG
+        std::cout << "Externsive perturbations\n";
+        for (const auto& p: exten_perturbations)
+            std::cout << Tinned::stringify(p) << "\n";
+        std::cout << "Minimum order of perturbed Lagrangian multipliers with respect to "
+                  << "extensive perturbations to be eliminated "
+                  << min_multiplier_order << "\n";
+        std::cout << "Response function = "
+                  << Tinned::latexify(Tinned::clean_temporum(result), 20) << "\n\n";
+#endif
+        // Replace "artificial" multipliers with real differentiated ones
+        return Tinned::replace_all<Tinned::LagMultiplier>(
+            result,
+            Tinned::TinnedBasicMap<Tinned::LagMultiplier>({
+                {tdscf_multiplier_, lambda_}, {idempotency_multiplier_, zeta_}
+            })
+        );
     }
 
     //TODO: double residue problem happens for Hessian of excited states

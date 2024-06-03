@@ -14,8 +14,12 @@
 
 #pragma once
 
+#include <limits>
+
 #include <symengine/basic.h>
 #include <symengine/dict.h>
+#include <symengine/number.h>
+#include <symengine/real_double.h>
 #include <symengine/symengine_rcp.h>
 
 #include <Tinned.hpp>
@@ -47,12 +51,40 @@ namespace SymResponse
             SymEngine::RCP<const SymEngine::Basic> W_;
             // Lagrangian multiplier $\lambda$
             SymEngine::RCP<const SymEngine::Basic> lambda_;
+            // An "artificial" Lagrangian multiplier for elimination
+            SymEngine::RCP<const Tinned::LagMultiplier> tdscf_multiplier_;
             // TDSCF equation
             SymEngine::RCP<const SymEngine::Basic> Y_;
             // Lagrangian multiplier $\zeta$
             SymEngine::RCP<const SymEngine::Basic> zeta_;
+            // An "artificial" Lagrangian multiplier for elimination
+            SymEngine::RCP<const Tinned::LagMultiplier> idempotency_multiplier_;
             // Idempotency constraint
             SymEngine::RCP<const SymEngine::Basic> Z_;
+            // Time-averaged quasi-energy derivative Lagrangian
+            SymEngine::RCP<const SymEngine::Basic> La_;
+
+            // Override functions for template method pattern
+            virtual bool verify_perturbation_frequencies(
+                const Tinned::PerturbationTuple& exten_perturbations,
+                const Tinned::PerturbationTuple& inten_perturbations,
+                const SymEngine::RCP<const SymEngine::Number>&
+                    threshold = SymEngine::real_double(std::numeric_limits<double>::epsilon())
+            ) const noexcept override;
+
+            virtual SymEngine::RCP<const SymEngine::Basic> get_lagrangian() const noexcept override;
+
+            virtual SymEngine::RCP<const SymEngine::Basic> eliminate_wavefunction_parameter(
+                const SymEngine::RCP<const SymEngine::Basic>& L,
+                const Tinned::PerturbationTuple& exten_perturbations,
+                const unsigned int min_wfn_order
+            ) override;
+
+            virtual SymEngine::RCP<const SymEngine::Basic> eliminate_lagrangian_multipliers(
+                const SymEngine::RCP<const SymEngine::Basic>& L,
+                const Tinned::PerturbationTuple& exten_perturbations,
+                const unsigned int min_multiplier_order
+            ) override;
 
         public:
             explicit LagrangianDAO(
@@ -71,13 +103,6 @@ namespace SymResponse
                     hnuc = SymEngine::RCP<const Tinned::NonElecFunction>(),
                 const bool sym_elimination = false
             );
-
-            virtual SymEngine::RCP<const SymEngine::Basic> get_response_functions(
-                // Extensive perturbations without `a`
-                const Tinned::PerturbationTuple& exten_perturbations,
-                const Tinned::PerturbationTuple& inten_perturbations = {},
-                const unsigned int min_wfn_extern = 0
-            ) override;
 
             //virtual SymEngine::RCP<const SymEngine::Basic> get_residues(
             //    // Extensive perturbations without `a`

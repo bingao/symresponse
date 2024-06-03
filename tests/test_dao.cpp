@@ -739,22 +739,23 @@ TEST_CASE("Test L^{abcd} with intensive perturbations", "[LagrangianDAO]")
     );
 
     // Extensive perturbations a, b and c, intensive perturbations d
-    auto L_abc_d_1_2 = lagrangian.get_response_functions(
+    auto La_bc_d_3 = lagrangian.get_response_functions(
         Tinned::PerturbationTuple({b, c}), Tinned::PerturbationTuple({d}), 3
     );
-    auto L_abc_d_2_1 = lagrangian.get_response_functions(
+    auto La_bc_d_2 = lagrangian.get_response_functions(
         Tinned::PerturbationTuple({b, c}), Tinned::PerturbationTuple({d}), 2
     );
 
-    REQUIRE(SymEngine::neq(*L_abc_d_1_2, *L_abcd_1_2));
-    REQUIRE(SymEngine::neq(*L_abc_d_1_2, *L_abcd_2_1));
-    REQUIRE(SymEngine::eq(*L_abc_d_1_2, *L_abcd_0_3));
+    REQUIRE(SymEngine::neq(*La_bc_d_3, *L_abcd_1_2));
+    REQUIRE(SymEngine::neq(*La_bc_d_3, *L_abcd_2_1));
+    REQUIRE(SymEngine::eq(*La_bc_d_3, *L_abcd_0_3));
 
-    REQUIRE(SymEngine::neq(*L_abc_d_2_1, *L_abcd_2_1));
-    REQUIRE(SymEngine::neq(*L_abc_d_2_1, *L_abcd_1_2));
-    REQUIRE(SymEngine::neq(*L_abc_d_2_1, *L_abcd_0_3));
+    REQUIRE(SymEngine::neq(*La_bc_d_2, *L_abcd_2_1));
+    REQUIRE(SymEngine::neq(*La_bc_d_2, *L_abcd_1_2));
+    REQUIRE(SymEngine::neq(*La_bc_d_2, *L_abcd_0_3));
 
-std::cout << "L_abc_d_2_1\n" << Tinned::latexify(L_abc_d_2_1, 25) << "\n\n";
+std::cout << "L_abcd_2_1\n" << Tinned::latexify(L_abcd_2_1, 20) << "\n\n";
+std::cout << "La_bc_d_2\n" << Tinned::latexify(La_bc_d_2, 20) << "\n\n";
 }
 
 //FIXME: speical case, L^{fggg}_{2,1}
