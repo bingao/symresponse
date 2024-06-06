@@ -52,13 +52,13 @@ namespace SymResponse
             // Lagrangian multiplier $\lambda$
             SymEngine::RCP<const SymEngine::Basic> lambda_;
             // An "artificial" Lagrangian multiplier for elimination
-            SymEngine::RCP<const Tinned::LagMultiplier> tdscf_multiplier_;
+            SymEngine::RCP<const Tinned::PerturbedParameter> tdscf_multiplier_;
             // TDSCF equation
             SymEngine::RCP<const SymEngine::Basic> Y_;
             // Lagrangian multiplier $\zeta$
             SymEngine::RCP<const SymEngine::Basic> zeta_;
             // An "artificial" Lagrangian multiplier for elimination
-            SymEngine::RCP<const Tinned::LagMultiplier> idempotency_multiplier_;
+            SymEngine::RCP<const Tinned::PerturbedParameter> idempotency_multiplier_;
             // Idempotency constraint
             SymEngine::RCP<const SymEngine::Basic> Z_;
             // Time-averaged quasi-energy derivative Lagrangian

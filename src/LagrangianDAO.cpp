@@ -119,7 +119,7 @@ namespace SymResponse
                 SymEngine::matrix_mul({minus_one_half, S, D, St})
             });
             // Make an "artificial" Lagrangian multiplier for elimination
-            tdscf_multiplier_ = Tinned::make_lagrangian_multiplier(
+            tdscf_multiplier_ = Tinned::make_perturbed_parameter(
                 std::string("tdscf-multiplier")
             );
             La_terms.push_back(
@@ -149,7 +149,7 @@ namespace SymResponse
                 SymEngine::matrix_mul({SymEngine::minus_one, D})
             });
             // Make an "artificial" Lagrangian multiplier for elimination
-            idempotency_multiplier_ = Tinned::make_lagrangian_multiplier(
+            idempotency_multiplier_ = Tinned::make_perturbed_parameter(
                 std::string("idempotency-multiplier")
             );
             La_terms.push_back(
@@ -220,9 +220,9 @@ namespace SymResponse
                   << Tinned::latexify(Tinned::clean_temporum(result), 20) << "\n\n";
 #endif
         // Replace "artificial" multipliers with real differentiated ones
-        return Tinned::replace_all<Tinned::LagMultiplier>(
+        return Tinned::replace_all<Tinned::PerturbedParameter>(
             result,
-            Tinned::TinnedBasicMap<Tinned::LagMultiplier>({
+            Tinned::TinnedBasicMap<Tinned::PerturbedParameter>({
                 {tdscf_multiplier_, lambda_}, {idempotency_multiplier_, zeta_}
             })
         );

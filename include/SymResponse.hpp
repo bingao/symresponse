@@ -15,3 +15,4 @@
 
 #include "SymResponse/Lagrangian.hpp"
 #include "SymResponse/LagrangianDAO.hpp"
+#include "SymResponse/LagrangianCC.hpp"
