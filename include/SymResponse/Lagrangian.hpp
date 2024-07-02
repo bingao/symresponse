@@ -35,24 +35,24 @@ namespace SymResponse
     class Lagrangian
     {
         protected:
-            // Verify sum of perturbations' frequencies
-            virtual bool verify_perturbation_frequencies(
+            // Validate sum of perturbations' frequencies
+            virtual bool validate_perturbation_frequencies(
                 const Tinned::PerturbationTuple& exten_perturbations,
                 const Tinned::PerturbationTuple& inten_perturbations,
                 const SymEngine::RCP<const SymEngine::Number>&
                     threshold = SymEngine::real_double(std::numeric_limits<double>::epsilon())
             ) const noexcept;
 
-            // Verify that extensive and intensive perturbations should be disjoint
-            virtual bool verify_perturbation_disjointedness(
+            // Validate that extensive and intensive perturbations should be disjoint
+            virtual bool validate_perturbation_disjointedness(
                 const Tinned::PerturbationTuple& exten_perturbations,
                 const Tinned::PerturbationTuple& inten_perturbations
             ) const noexcept;
 
-            // Verify that: (i) at least one extensive perturbation, (ii) sum
+            // Validate that: (i) at least one extensive perturbation, (ii) sum
             // of all perturbations' frequencies should be zero, and (iii)
             // extensive and intensive perturbations should be disjoint
-            inline void verify_perturbations(
+            inline void validate_perturbations(
                 const Tinned::PerturbationTuple& exten_perturbations,
                 const Tinned::PerturbationTuple& inten_perturbations,
                 const SymEngine::RCP<const SymEngine::Number>&
@@ -62,12 +62,12 @@ namespace SymResponse
                 if (exten_perturbations.empty()) throw SymEngine::SymEngineException(
                     "Lagrangian requires at least one extensive perturbation!"
                 );
-                if (!verify_perturbation_frequencies(
+                if (!validate_perturbation_frequencies(
                     exten_perturbations, inten_perturbations, threshold
                 )) throw SymEngine::SymEngineException(
                     "Lagrangian gets perturbations with non-zero sum frequencies!"
                 );
-                if (!verify_perturbation_disjointedness(
+                if (!validate_perturbation_disjointedness(
                     exten_perturbations, inten_perturbations
                 )) throw SymEngine::SymEngineException(
                     "Lagrangian gets a same extensive and intensive perturbation!"
@@ -118,11 +118,11 @@ namespace SymResponse
                 // than the number of extensive perturbations, it means no
                 // elimination of wave function parameters so that more
                 // Lagrangian multipliers can be eliminated.
-                const unsigned int min_wfn_extern = 0
+                const unsigned int min_wfn_exten = 0
             )
             {
-                // Verify perturbations
-                verify_perturbations(exten_perturbations, inten_perturbations);
+                // Validate perturbations
+                validate_perturbations(exten_perturbations, inten_perturbations);
                 // Differentiate the quasi-energy (derivative) Lagrangian
                 auto perturbations = exten_perturbations;
                 if (!inten_perturbations.empty()) perturbations.insert(
@@ -137,26 +137,26 @@ namespace SymResponse
                 // Chem. Phys. 129, 214103 (2008)
                 auto min_wfn_order
                     = static_cast<unsigned int>(std::floor(0.5*exten_perturbations.size()))+1;
-                if (min_wfn_extern>0) {
-                    if (min_wfn_extern<min_wfn_order) {
+                if (min_wfn_exten>0) {
+                    if (min_wfn_exten<min_wfn_order) {
                         throw SymEngine::SymEngineException(
                             "Lagrangian::get_response_functions() gets an invalid minimum order "
-                            + std::to_string(min_wfn_extern)
+                            + std::to_string(min_wfn_exten)
                         );
                     }
                     else {
-                        min_wfn_order = min_wfn_extern;
+                        min_wfn_order = min_wfn_exten;
                     }
                 }
                 // Eliminate wave function parameter
-                if (min_wfn_extern<=exten_perturbations.size())
+                if (min_wfn_exten<=exten_perturbations.size())
                     result = eliminate_wavefunction_parameter(
                         result, exten_perturbations, min_wfn_order
                     );
                 // Minimum order for the elimination of Lagrangian multipliers,
                 // see Table V, J.  Chem. Phys. 129, 214103 (2008)
                 unsigned int min_multiplier_order
-                    = min_wfn_extern<=exten_perturbations.size()
+                    = min_wfn_exten<=exten_perturbations.size()
                     ? exten_perturbations.size()-min_wfn_order+1 : 0;
                 // Eliminate Lagrangian multipliers
                 result = eliminate_lagrangian_multipliers(
@@ -177,7 +177,7 @@ namespace SymResponse
             //virtual SymEngine::RCP<const SymEngine::Basic> get_residues(
             //    const Tinned::PerturbationTuple& exten_perturbations,
             //    const Tinned::PerturbationTuple& inten_perturbations = {},
-            //    const unsigned int min_wfn_extern = 0
+            //    const unsigned int min_wfn_exten = 0
             //) = 0;
 
             virtual ~Lagrangian() noexcept = default;

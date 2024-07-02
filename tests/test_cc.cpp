@@ -31,9 +31,9 @@ TEST_CASE("Test ...", "[LagrangianCC]")
         std::make_pair(a, 99), std::make_pair(b, 99), std::make_pair(c, 99)
     });
     auto H = Tinned::make_1el_operator(std::string("H"), dependencies);
-    auto amplitudes = Tinned::make_perturbed_parameter(std::string("amplitudes"));
-    auto excit_operators = Tinned::make_1el_operator(std::string("excit-operators"));
-    auto multipliers = Tinned::make_perturbed_parameter(std::string("multipliers"));
+    auto amplitudes = Tinned::make_perturbed_parameter(std::string("t"));
+    auto excit_operators = Tinned::make_1el_operator(std::string("\\tau"));
+    auto multipliers = Tinned::make_perturbed_parameter(std::string("\\lambda"));
 
     // Create quasi-energy Lagrangian
     auto lagrangian = LagrangianCC(H, amplitudes, excit_operators, multipliers);
@@ -42,7 +42,7 @@ TEST_CASE("Test ...", "[LagrangianCC]")
     auto L_abc_4 = lagrangian.get_response_functions(
         Tinned::PerturbationTuple({a, b, c}), {}, 4
     );
-std::cout << "\n\nL_abc_4 = " << Tinned::stringify(L_abc_4) << "\n";
+std::cout << "\n\nL^{abc}_4 = " << Tinned::latexify(L_abc_4) << "\n";
 
     auto all_amplitudes = Tinned::find_all(L_abc_4, amplitudes);
 for (const auto& t: all_amplitudes) std::cout << "t = " << Tinned::stringify(t) << "\n";
@@ -52,7 +52,7 @@ std::cout << "\n";
     auto L_abc_3 = lagrangian.get_response_functions(
         Tinned::PerturbationTuple({a, b, c}), {}, 3
     );
-std::cout << "\n\nL_abc_3 = " << Tinned::stringify(L_abc_3) << "\n";
+std::cout << "\n\nL^{abc}_3 = " << Tinned::latexify(L_abc_3) << "\n";
 
     all_amplitudes = Tinned::find_all(L_abc_3, amplitudes);
 for (const auto& t: all_amplitudes) std::cout << "t = " << Tinned::stringify(t) << "\n";

@@ -4,7 +4,7 @@
 
 namespace SymResponse
 {
-    bool Lagrangian::verify_perturbation_frequencies(
+    bool Lagrangian::validate_perturbation_frequencies(
         const Tinned::PerturbationTuple& exten_perturbations,
         const Tinned::PerturbationTuple& inten_perturbations,
         const SymEngine::RCP<const SymEngine::Number>& threshold
@@ -18,7 +18,7 @@ namespace SymResponse
         return Tinned::is_zero_number(sum_freq, threshold);
     }
 
-    bool Lagrangian::verify_perturbation_disjointedness(
+    bool Lagrangian::validate_perturbation_disjointedness(
         const Tinned::PerturbationTuple& exten_perturbations,
         const Tinned::PerturbationTuple& inten_perturbations
     ) const noexcept

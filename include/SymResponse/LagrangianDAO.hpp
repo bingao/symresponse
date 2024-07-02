@@ -20,6 +20,9 @@
 #include <symengine/dict.h>
 #include <symengine/number.h>
 #include <symengine/real_double.h>
+#include <symengine/constants.h>
+#include <symengine/matrices/matrix_add.h>
+#include <symengine/matrices/matrix_mul.h>
 #include <symengine/symengine_rcp.h>
 
 #include <Tinned.hpp>
@@ -65,7 +68,7 @@ namespace SymResponse
             SymEngine::RCP<const SymEngine::Basic> La_;
 
             // Override functions for template method pattern
-            virtual bool verify_perturbation_frequencies(
+            virtual bool validate_perturbation_frequencies(
                 const Tinned::PerturbationTuple& exten_perturbations,
                 const Tinned::PerturbationTuple& inten_perturbations,
                 const SymEngine::RCP<const SymEngine::Number>&
@@ -108,15 +111,8 @@ namespace SymResponse
             //    // Extensive perturbations without `a`
             //    const Tinned::PerturbationTuple& exten_perturbations,
             //    const Tinned::PerturbationTuple& inten_perturbations = {},
-            //    const unsigned int min_wfn_extern = 0
+            //    const unsigned int min_wfn_exten = 0
             //) override;
-
-//src/solvers/linear_davidson_solver_class.F90
-//
-//            // Generalized response linear equations
-//            virtual SymEngine::RCP<const SymEngine::Basic> get_linear_equation(
-//                LHS, RHS
-//            ) override;
 
             // Set elimination rules performed either in an asymmetric
             // (`false`) or (almost) symmetric (`true`) form
@@ -192,10 +188,41 @@ namespace SymResponse
                 return Z_;
             }
 
-//get_()
-//get_pulay_term()
-//get_()
-//get_()
+//            // Generalized response linear equations
+//            virtual SymEngine::RCP<const SymEngine::Basic> get_linear_equation(
+//                LHS, RHS
+//            ) override;
+
+            //FIXME: if S_.is_null()
+            // Get particular solution of a perturbed density matrix
+            inline SymEngine::RCP<const SymEngine::Basic> get_particular_density(
+                const SymEngine::RCP<const Tinned::OneElecDensity>& Dw
+            ) const
+            {
+                auto K = Tinned::remove_if(
+                    Tinned::differentiate(
+                        SymEngine::matrix_mul({D, S, D}), Dw->get_derivatives()
+                    ),
+                    SymEngine::set_basic({Dw})
+                );
+                return SymEngine::matrix_add({
+                    SymEngine::matrix_mul({SymEngine::minus_one, K}),
+                    SymEngine::matrix_mul({K, S_, D_}),
+                    SymEngine::matrix_mul({D_, S_, K}),
+                });
+            }
+
+            // Get right-hand side (RHS) of the linear response equation
+            inline SymEngine::RCP<const SymEngine::Basic> get_linear_rhs(
+                const SymEngine::RCP<const Tinned::OneElecDensity>& Dw,
+                const SymEngine::RCP<const SymEngine::Basic>& DP
+            )
+            {
+                return Tinned::replace(
+                    Tinned::differentiate(Y_, Dw->get_derivatives()),
+                    SymEngine::map_basic_basic({{Dw, DP}})
+                );
+            }
 
             virtual ~LagrangianDAO() noexcept = default;
     };

@@ -5,9 +5,6 @@
 #include <symengine/add.h>
 #include <symengine/mul.h>
 #include <symengine/number.h>
-#include <symengine/constants.h>
-#include <symengine/matrices/matrix_add.h>
-#include <symengine/matrices/matrix_mul.h>
 #include <symengine/matrices/trace.h>
 #include <symengine/symengine_exception.h>
 
@@ -27,6 +24,11 @@ namespace SymResponse
         const bool sym_elimination
     ) : sym_elimination_(sym_elimination), a_(a), D_(D), S_(S)
     {
+        //FIXME: to implement for both cases: with/without intensive perturbations
+        if (sym_elimination_) throw SymEngine::SymEngineException(
+            "LagrangianDAO has not implemented for almost symmetric form of elimination!"
+        );
+
         SymEngine::vec_basic E_terms;
         SymEngine::vec_basic F_terms;
         if (!H.empty()) {
@@ -61,6 +63,10 @@ namespace SymResponse
         // `Tinned::differentiate` can remove zero quantities after differentiation
         auto F_a = Tinned::differentiate(F_, Tinned::PerturbationTuple({a}));
 
+        // Terms of differentiated quasi-energy derivative Lagrangian with
+        // respect to the perturbation `a`
+        SymEngine::vec_basic La_terms;
+
         auto one_half = SymEngine::div(SymEngine::one, SymEngine::two);
         auto minus_one_half = SymEngine::div(SymEngine::minus_one, SymEngine::two);
         // Null overlap operator means it is an identity operator
@@ -68,27 +74,30 @@ namespace SymResponse
             throw SymEngine::SymEngineException(
                 "LagrangianDAO has not implemented for orthonormal basis!"
             );
-            //// = D^{a}D-DD^{a}
-            //lambda_ =
-            //// Y = FD-DF-i\frac{\partial D}{\partial t}
-            //Y_ = SymEngine::matrix_add({
-            //    SymEngine::matrix_mul({F_, D}),
-            //    SymEngine::matrix_mul({SymEngine::minus_one, D, F_}),
-            //    SymEngine::matrix_mul({SymEngine::minus_one, Dt})
-            //});
-            //// = F^{a}D+DF^{a}-F^{a}
-            //zeta_ =
-            //// Z = D*D-D
-            //Z_ = SymEngine::matrix_add({
-            //    SymEngine::matrix_mul({D, D}),
-            //    SymEngine::matrix_mul({SymEngine::minus_one, D})
-            //});
+            // = D^{a}D-DD^{a}
+            lambda_ = SymEngine::matrix_add({
+                SymEngine::matrix_mul({D_a, D}),
+                SymEngine::matrix_mul({SymEngine::minus_one, D, D_a})
+            });
+            // Y = FD-DF-i\frac{\partial D}{\partial t}
+            Y_ = SymEngine::matrix_add({
+                SymEngine::matrix_mul({F_, D}),
+                SymEngine::matrix_mul({SymEngine::minus_one, D, F_}),
+                SymEngine::matrix_mul({SymEngine::minus_one, Dt})
+            });
+            // = F^{a}D+DF^{a}-F^{a}
+            zeta_ = SymEngine::matrix_add({
+                SymEngine::matrix_mul({F_a, D}),
+                SymEngine::matrix_mul({D, F_a}),
+                SymEngine::matrix_mul({SymEngine::minus_one, F_a})
+            });
+            // Z = D*D-D
+            Z_ = SymEngine::matrix_add({
+                SymEngine::matrix_mul({D, D}),
+                SymEngine::matrix_mul({SymEngine::minus_one, D})
+            });
         }
         else {
-            //FIXME: to implement for both cases: with/without intensive perturbations
-            if (sym_elimination_) throw SymEngine::SymEngineException(
-                "LagrangianDAO has not implemented for almost symmetric form of elimination!"
-            );
             // |i\frac{\partial `S`}{\partial t}>
             auto St = Tinned::make_dt_operator(S);
             // Equation (95), J. Chem. Phys. 129, 214108 (2008)
@@ -97,9 +106,6 @@ namespace SymResponse
                 SymEngine::matrix_mul({one_half, Dt, S, D}),
                 SymEngine::matrix_mul({minus_one_half, D, S, Dt})
             });
-            // Terms of differentiated quasi-energy derivative Lagrangian with
-            // respect to the perturbation `a`
-            SymEngine::vec_basic La_terms;
             // Pulay term
             auto S_a = S->diff(a);
             if (!Tinned::is_zero_quantity(S_a)) La_terms.push_back(
@@ -118,13 +124,6 @@ namespace SymResponse
                 SymEngine::matrix_mul({minus_one_half, St, D, S}),
                 SymEngine::matrix_mul({minus_one_half, S, D, St})
             });
-            // Make an "artificial" Lagrangian multiplier for elimination
-            tdscf_multiplier_ = Tinned::make_perturbed_parameter(
-                std::string("tdscf-multiplier")
-            );
-            La_terms.push_back(
-                SymEngine::trace(SymEngine::matrix_mul({tdscf_multiplier_, Y_}))
-            );
             // Equation (224), J. Chem. Phys. 129, 214108 (2008)
             zeta_ = Tinned::is_zero_quantity(S_a)
                   ? SymEngine::matrix_add({
@@ -148,26 +147,33 @@ namespace SymResponse
                 SymEngine::matrix_mul({D, S, D}),
                 SymEngine::matrix_mul({SymEngine::minus_one, D})
             });
-            // Make an "artificial" Lagrangian multiplier for elimination
-            idempotency_multiplier_ = Tinned::make_perturbed_parameter(
-                std::string("idempotency-multiplier")
-            );
-            La_terms.push_back(
-                SymEngine::trace(SymEngine::matrix_mul({idempotency_multiplier_, Z_}))
-            );
-            // Construct the time-averaged quasi-energy derivative Lagrangian
-            La_ = SymEngine::add({
-                // The first term in Equation (98), J. Chem. Phys. 129, 214108 (2008)
-                Tinned::remove_if(
-                    Tinned::differentiate(E_, Tinned::PerturbationTuple({a_})),
-                    SymEngine::set_basic({D_->diff(a_)})
-                ),
-                SymEngine::mul(SymEngine::minus_one, SymEngine::add(La_terms))
-            });
         }
+        // Make an "artificial" Lagrangian multiplier for elimination
+        tdscf_multiplier_ = Tinned::make_perturbed_parameter(
+            std::string("tdscf-multiplier")
+        );
+        La_terms.push_back(
+            SymEngine::trace(SymEngine::matrix_mul({tdscf_multiplier_, Y_}))
+        );
+        // Make an "artificial" Lagrangian multiplier for elimination
+        idempotency_multiplier_ = Tinned::make_perturbed_parameter(
+            std::string("idempotency-multiplier")
+        );
+        La_terms.push_back(
+            SymEngine::trace(SymEngine::matrix_mul({idempotency_multiplier_, Z_}))
+        );
+        // Construct the time-averaged quasi-energy derivative Lagrangian
+        La_ = SymEngine::add({
+            // The first term in Equation (98), J. Chem. Phys. 129, 214108 (2008)
+            Tinned::remove_if(
+                Tinned::differentiate(E_, Tinned::PerturbationTuple({a_})),
+                SymEngine::set_basic({D_->diff(a_)})
+            ),
+            SymEngine::mul(SymEngine::minus_one, SymEngine::add(La_terms))
+        });
     }
 
-    bool LagrangianDAO::verify_perturbation_frequencies(
+    bool LagrangianDAO::validate_perturbation_frequencies(
         const Tinned::PerturbationTuple& exten_perturbations,
         const Tinned::PerturbationTuple& inten_perturbations,
         const SymEngine::RCP<const SymEngine::Number>& threshold
