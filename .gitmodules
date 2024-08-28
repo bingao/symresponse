@@ -1,6 +1,0 @@
-[submodule "submodules/SymEngine"]
-	path = submodules/SymEngine
-	url = git@github.com:bingao/symengine.git
-[submodule "submodules/Tinned"]
-	path = submodules/Tinned
-	url = git@github.com:bingao/tinned.git
