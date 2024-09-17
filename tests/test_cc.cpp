@@ -40,7 +40,7 @@ TEST_CASE("Test ...", "[LagrangianCC]")
 
     // Response function, n+1 rule, no intensive perturbations
     auto L_abc_4 = lagrangian.get_response_functions(
-        Tinned::PerturbationTuple({a, b, c}), {}, 4
+        Tinned::PertTuple({a, b, c}), {}, 4
     );
 std::cout << "\n\nL^{abc}_4 = " << Tinned::latexify(L_abc_4) << "\n";
 
@@ -50,7 +50,7 @@ std::cout << "\n";
 
     // Response function, ?? rule, no intensive perturbations
     auto L_abc_3 = lagrangian.get_response_functions(
-        Tinned::PerturbationTuple({a, b, c}), {}, 3
+        Tinned::PertTuple({a, b, c}), {}, 3
     );
 std::cout << "\n\nL^{abc}_3 = " << Tinned::latexify(L_abc_3) << "\n";
 

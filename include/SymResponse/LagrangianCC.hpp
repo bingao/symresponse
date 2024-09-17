@@ -39,13 +39,13 @@ namespace SymResponse
 
             virtual SymEngine::RCP<const SymEngine::Basic> eliminate_wavefunction_parameter(
                 const SymEngine::RCP<const SymEngine::Basic>& L,
-                const Tinned::PerturbationTuple& exten_perturbations,
+                const Tinned::PertTuple& exten_perturbations,
                 const unsigned int min_wfn_order
             ) override;
 
             virtual SymEngine::RCP<const SymEngine::Basic> eliminate_lagrangian_multipliers(
                 const SymEngine::RCP<const SymEngine::Basic>& L,
-                const Tinned::PerturbationTuple& exten_perturbations,
+                const Tinned::PertTuple& exten_perturbations,
                 const unsigned int min_multiplier_order
             ) override;
 

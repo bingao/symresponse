@@ -61,7 +61,7 @@ namespace SymResponse
         auto Dt = Tinned::make_dt_operator(D);
         auto D_a = D->diff(a);
         // `Tinned::differentiate` can remove zero quantities after differentiation
-        auto F_a = Tinned::differentiate(F_, Tinned::PerturbationTuple({a}));
+        auto F_a = Tinned::differentiate(F_, Tinned::PertTuple({a}));
 
         // Terms of differentiated quasi-energy derivative Lagrangian with
         // respect to the perturbation `a`
@@ -166,7 +166,7 @@ namespace SymResponse
         La_ = SymEngine::add({
             // The first term in Equation (98), J. Chem. Phys. 129, 214108 (2008)
             Tinned::remove_if(
-                Tinned::differentiate(E_, Tinned::PerturbationTuple({a_})),
+                Tinned::differentiate(E_, Tinned::PertTuple({a_})),
                 SymEngine::set_basic({D_->diff(a_)})
             ),
             SymEngine::mul(SymEngine::minus_one, SymEngine::add(La_terms))
@@ -174,19 +174,29 @@ namespace SymResponse
     }
 
     bool LagrangianDAO::validate_perturbation_frequencies(
-        const Tinned::PerturbationTuple& exten_perturbations,
-        const Tinned::PerturbationTuple& inten_perturbations,
+        const Tinned::PertTuple& exten_perturbations,
+        const Tinned::PertTuple& inten_perturbations,
         const SymEngine::RCP<const SymEngine::Number>& threshold
     ) const noexcept
     {
         // Here we need to inlcude the frequency of the perturbation `a_`,
         // which can either be extensive or intensive
-        SymEngine::RCP<const SymEngine::Number> sum_freq = a_->get_frequency();
+        SymEngine::RCP<const SymEngine::Basic> sum_freq = a_->get_frequency();
         for (const auto& p: exten_perturbations)
-            sum_freq = SymEngine::addnum(sum_freq, p->get_frequency());
+            sum_freq = SymEngine::add(sum_freq, p->get_frequency());
         for (const auto& p: inten_perturbations)
-            sum_freq = SymEngine::addnum(sum_freq, p->get_frequency());
-        return Tinned::is_zero_number(sum_freq, threshold);
+            sum_freq = SymEngine::add(sum_freq, p->get_frequency());
+        if (SymEngine::is_a_Number(*sum_freq)) {
+            return Tinned::is_zero_number(
+                SymEngine::rcp_dynamic_cast<const SymEngine::Number>(sum_freq),
+                threshold
+            );
+        }
+        else {
+            // For nonnumerical frequencies, we simply return `true` and users
+            // are responsible for the validation
+            return true;
+        }
     }
 
     SymEngine::RCP<const SymEngine::Basic> LagrangianDAO::get_lagrangian() const noexcept
@@ -196,7 +206,7 @@ namespace SymResponse
 
     SymEngine::RCP<const SymEngine::Basic> LagrangianDAO::eliminate_wavefunction_parameter(
         const SymEngine::RCP<const SymEngine::Basic>& L,
-        const Tinned::PerturbationTuple& exten_perturbations,
+        const Tinned::PertTuple& exten_perturbations,
         const unsigned int min_wfn_order
     )
     {
@@ -205,7 +215,7 @@ namespace SymResponse
 
     SymEngine::RCP<const SymEngine::Basic> LagrangianDAO::eliminate_lagrangian_multipliers(
         const SymEngine::RCP<const SymEngine::Basic>& L,
-        const Tinned::PerturbationTuple& exten_perturbations,
+        const Tinned::PertTuple& exten_perturbations,
         const unsigned int min_multiplier_order
     )
     {

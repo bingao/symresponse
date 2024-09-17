@@ -1,3 +1,4 @@
+#include <symengine/add.h>
 #include <symengine/constants.h>
 
 #include "SymResponse/Lagrangian.hpp"
@@ -5,22 +6,32 @@
 namespace SymResponse
 {
     bool Lagrangian::validate_perturbation_frequencies(
-        const Tinned::PerturbationTuple& exten_perturbations,
-        const Tinned::PerturbationTuple& inten_perturbations,
+        const Tinned::PertTuple& exten_perturbations,
+        const Tinned::PertTuple& inten_perturbations,
         const SymEngine::RCP<const SymEngine::Number>& threshold
     ) const noexcept
     {
-        SymEngine::RCP<const SymEngine::Number> sum_freq = SymEngine::zero;
+        SymEngine::RCP<const SymEngine::Basic> sum_freq = SymEngine::zero;
         for (const auto& p: exten_perturbations)
-            sum_freq = SymEngine::addnum(sum_freq, p->get_frequency());
+            sum_freq = SymEngine::add(sum_freq, p->get_frequency());
         for (const auto& p: inten_perturbations)
-            sum_freq = SymEngine::addnum(sum_freq, p->get_frequency());
-        return Tinned::is_zero_number(sum_freq, threshold);
+            sum_freq = SymEngine::add(sum_freq, p->get_frequency());
+        if (SymEngine::is_a_Number(*sum_freq)) {
+            return Tinned::is_zero_number(
+                SymEngine::rcp_dynamic_cast<const SymEngine::Number>(sum_freq),
+                threshold
+            );
+        }
+        else {
+            // For nonnumerical frequencies, we simply return `true` and users
+            // are responsible for the validation
+            return true;
+        }
     }
 
     bool Lagrangian::validate_perturbation_disjointedness(
-        const Tinned::PerturbationTuple& exten_perturbations,
-        const Tinned::PerturbationTuple& inten_perturbations
+        const Tinned::PertTuple& exten_perturbations,
+        const Tinned::PertTuple& inten_perturbations
     ) const noexcept
     {
         for (const auto& p: inten_perturbations)

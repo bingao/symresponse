@@ -67,7 +67,7 @@ TEST_CASE("Test L^{abc} with S^{a} = 0", "[LagrangianDAO]")
     auto h_a = h->diff(a);
     auto V_a = V->diff(a);
     auto F = SymEngine::matrix_add(SymEngine::vec_basic({h, V, T, G, Fxc}));
-    auto F_a = Tinned::differentiate(F, Tinned::PerturbationTuple({a}));
+    auto F_a = Tinned::differentiate(F, Tinned::PertTuple({a}));
     REQUIRE(SymEngine::eq(
         *F_a,
         *SymEngine::matrix_add({h_a, V_a, G->diff(a), Fxc->diff(a)})
@@ -84,12 +84,12 @@ TEST_CASE("Test L^{abc} with S^{a} = 0", "[LagrangianDAO]")
 
     // Response function in Equation (237), J. Chem. Phys. 129, 214108 (2008)
     auto L_abc_0_2 = lagrangian.get_response_functions(
-        Tinned::PerturbationTuple({b, c}), {}, 3
+        Tinned::PertTuple({b, c}), {}, 3
     );
 
     // Compute only the first term of Equation (237), J. Chem. Phys. 129, 214108 (2008)
     auto D_a = D->diff(a);
-    auto E_a = Tinned::differentiate(E, Tinned::PerturbationTuple({a}));
+    auto E_a = Tinned::differentiate(E, Tinned::PertTuple({a}));
     // The first term in Equation (98), J. Chem. Phys. 129, 214108 (2008)
     auto E_0a = Tinned::remove_if(E_a, SymEngine::set_basic({D_a}));
     REQUIRE(SymEngine::eq(
@@ -103,29 +103,29 @@ TEST_CASE("Test L^{abc} with S^{a} = 0", "[LagrangianDAO]")
                 )
             ),
             Tinned::remove_if(
-                Tinned::differentiate(Exc, Tinned::PerturbationTuple({a})),
+                Tinned::differentiate(Exc, Tinned::PertTuple({a})),
                 SymEngine::set_basic({D_a})
             ),
             hnuc->diff(a)
         })
     ));
-    auto E_0a_bc = Tinned::differentiate(E_0a, Tinned::PerturbationTuple({b, c}));
+    auto E_0a_bc = Tinned::differentiate(E_0a, Tinned::PertTuple({b, c}));
 
     REQUIRE(SymEngine::eq(*L_abc_0_2, *E_0a_bc));
 
     // Response function in Equation (235), J. Chem. Phys. 129, 214108 (2008)
     auto L_abc_1_1 = lagrangian.get_response_functions(
-        Tinned::PerturbationTuple({b, c}), {}, 2
+        Tinned::PertTuple({b, c}), {}, 2
     );
 
     // Compute the first and last two terms of Equation (235), J. Chem. Phys. 129, 214108 (2008)
     auto D_bc = (D->diff(b))->diff(c);
     auto Y_bc_1 = Tinned::remove_if(
-        Tinned::differentiate(Y, Tinned::PerturbationTuple({b, c})),
+        Tinned::differentiate(Y, Tinned::PertTuple({b, c})),
         SymEngine::set_basic({D_bc})
     );
     auto Z_bc_1 = Tinned::remove_if(
-        Tinned::differentiate(Z, Tinned::PerturbationTuple({b, c})),
+        Tinned::differentiate(Z, Tinned::PertTuple({b, c})),
         SymEngine::set_basic({D_bc})
     );
 
@@ -186,7 +186,7 @@ TEST_CASE("Test L^{abc} with different perturbation dependencies", "[LagrangianD
 
     // Response function in Equation (237), J. Chem. Phys. 129, 214108 (2008)
     auto L_abc_0_2 = lagrangian.get_response_functions(
-        Tinned::PerturbationTuple({b, c}), {}, 3
+        Tinned::PertTuple({b, c}), {}, 3
     );
 
     // We check simply (un)perturbed quantities in response functions
@@ -254,7 +254,7 @@ TEST_CASE("Test L^{abc} with different perturbation dependencies", "[LagrangianD
 
     // Response function in Equation (235), J. Chem. Phys. 129, 214108 (2008)
     auto L_abc_1_1 = lagrangian.get_response_functions(
-        Tinned::PerturbationTuple({b, c}), {}, 2
+        Tinned::PertTuple({b, c}), {}, 2
     );
 
     REQUIRE(SymEngine::unified_eq(
@@ -328,22 +328,22 @@ TEST_CASE("Test L^{abc} with complex frequencies", "[LagrangianDAO]")
 
     // Response function in Equation (237), J. Chem. Phys. 129, 214108 (2008)
     auto L_abc_0_2 = lagrangian.get_response_functions(
-        Tinned::PerturbationTuple({b, c}), {}, 3
+        Tinned::PertTuple({b, c}), {}, 3
     );
 
     // Compute each term of Equation (237), J. Chem. Phys. 129, 214108 (2008)
     auto D_a = D->diff(a);
-    auto E_a = Tinned::differentiate(E, Tinned::PerturbationTuple({a}));
+    auto E_a = Tinned::differentiate(E, Tinned::PertTuple({a}));
     // The first term in Equation (98), J. Chem. Phys. 129, 214108 (2008)
     auto E_0a = Tinned::remove_if(E_a, SymEngine::set_basic({D_a}));
-    auto E_0a_bc = Tinned::differentiate(E_0a, Tinned::PerturbationTuple({b, c}));
+    auto E_0a_bc = Tinned::differentiate(E_0a, Tinned::PertTuple({b, c}));
     auto S_a = S->diff(a);
     auto S_ab = S_a->diff(b);
     auto S_ac = S_a->diff(c);
     auto S_abc = S_ab->diff(c);
-    auto W_b = Tinned::differentiate(W, Tinned::PerturbationTuple({b}));
-    auto W_c = Tinned::differentiate(W, Tinned::PerturbationTuple({c}));
-    auto W_bc = Tinned::differentiate(W_b, Tinned::PerturbationTuple({c}));
+    auto W_b = Tinned::differentiate(W, Tinned::PertTuple({b}));
+    auto W_c = Tinned::differentiate(W, Tinned::PertTuple({c}));
+    auto W_bc = Tinned::differentiate(W_b, Tinned::PertTuple({c}));
 
     // `ref` is computed by following Equation (237), J. Chem. Phys. 129, 214108 (2008)
     auto ref = SymEngine::add({
@@ -358,18 +358,18 @@ TEST_CASE("Test L^{abc} with complex frequencies", "[LagrangianDAO]")
 
     // Response function in Equation (235), J. Chem. Phys. 129, 214108 (2008)
     auto L_abc_1_1 = lagrangian.get_response_functions(
-        Tinned::PerturbationTuple({b, c}), {}, 2
+        Tinned::PertTuple({b, c}), {}, 2
     );
 
     // Compute each term of Equation (235), J. Chem. Phys. 129, 214108 (2008)
     auto D_bc = (D->diff(b))->diff(c);
     auto W_bc_1 = Tinned::remove_if(W_bc, SymEngine::set_basic({D_bc}));
     auto Y_bc_1 = Tinned::remove_if(
-        Tinned::differentiate(Y, Tinned::PerturbationTuple({b, c})),
+        Tinned::differentiate(Y, Tinned::PertTuple({b, c})),
         SymEngine::set_basic({D_bc})
     );
     auto Z_bc_1 = Tinned::remove_if(
-        Tinned::differentiate(Z, Tinned::PerturbationTuple({b, c})),
+        Tinned::differentiate(Z, Tinned::PertTuple({b, c})),
         SymEngine::set_basic({D_bc})
     );
 
@@ -420,7 +420,7 @@ TEST_CASE("Test L^{abc} with zero frequency perturbations", "[LagrangianDAO]")
     auto F = SymEngine::matrix_add(SymEngine::vec_basic({h, V, G, Fxc}));
 
     auto S_a = S->diff(a);
-    auto F_a = Tinned::differentiate(F, Tinned::PerturbationTuple({a}));
+    auto F_a = Tinned::differentiate(F, Tinned::PertTuple({a}));
 
     // Generalized energy, generalized energy-weighted density matrix,
     // Lagrangian multipliers and TDSCF equation and idempotency constraint,
@@ -445,21 +445,21 @@ TEST_CASE("Test L^{abc} with zero frequency perturbations", "[LagrangianDAO]")
 
     // Response function in Equation (237), J. Chem. Phys. 129, 214108 (2008)
     auto L_abc_0_2 = lagrangian.get_response_functions(
-        Tinned::PerturbationTuple({b, c}), {}, 3
+        Tinned::PertTuple({b, c}), {}, 3
     );
 
     // Compute each term of Equation (237), J. Chem. Phys. 129, 214108 (2008)
     auto D_a = D->diff(a);
-    auto E_a = Tinned::differentiate(E, Tinned::PerturbationTuple({a}));
+    auto E_a = Tinned::differentiate(E, Tinned::PertTuple({a}));
     // The first term in Equation (98), J. Chem. Phys. 129, 214108 (2008)
     auto E_0a = Tinned::remove_if(E_a, SymEngine::set_basic({D_a}));
-    auto E_0a_bc = Tinned::differentiate(E_0a, Tinned::PerturbationTuple({b, c}));
+    auto E_0a_bc = Tinned::differentiate(E_0a, Tinned::PertTuple({b, c}));
     auto S_ab = S_a->diff(b);
     auto S_ac = S_a->diff(c);
     auto S_abc = S_ab->diff(c);
-    auto W_b = Tinned::differentiate(W, Tinned::PerturbationTuple({b}));
-    auto W_c = Tinned::differentiate(W, Tinned::PerturbationTuple({c}));
-    auto W_bc = Tinned::differentiate(W_b, Tinned::PerturbationTuple({c}));
+    auto W_b = Tinned::differentiate(W, Tinned::PertTuple({b}));
+    auto W_c = Tinned::differentiate(W, Tinned::PertTuple({c}));
+    auto W_bc = Tinned::differentiate(W_b, Tinned::PertTuple({c}));
 
     // `ref` is computed by following Equation (237), J. Chem. Phys. 129, 214108 (2008)
     auto ref = SymEngine::add({
@@ -474,18 +474,18 @@ TEST_CASE("Test L^{abc} with zero frequency perturbations", "[LagrangianDAO]")
 
     // Response function in Equation (235), J. Chem. Phys. 129, 214108 (2008)
     auto L_abc_1_1 = lagrangian.get_response_functions(
-        Tinned::PerturbationTuple({b, c}), {}, 2
+        Tinned::PertTuple({b, c}), {}, 2
     );
 
     // Compute each term of Equation (235), J. Chem. Phys. 129, 214108 (2008)
     auto D_bc = (D->diff(b))->diff(c);
     auto W_bc_1 = Tinned::remove_if(W_bc, SymEngine::set_basic({D_bc}));
     auto Y_bc_1 = Tinned::remove_if(
-        Tinned::differentiate(Y, Tinned::PerturbationTuple({b, c})),
+        Tinned::differentiate(Y, Tinned::PertTuple({b, c})),
         SymEngine::set_basic({D_bc})
     );
     auto Z_bc_1 = Tinned::remove_if(
-        Tinned::differentiate(Z, Tinned::PerturbationTuple({b, c})),
+        Tinned::differentiate(Z, Tinned::PertTuple({b, c})),
         SymEngine::set_basic({D_bc})
     );
 
@@ -541,13 +541,13 @@ TEST_CASE("Test L^{abcd} with complex/zero/imaginary/real frequencies", "[Lagran
 
     // Response function in Equation (241), J. Chem. Phys. 129, 214108 (2008)
     auto L_abcd_0_3 = lagrangian.get_response_functions(
-        Tinned::PerturbationTuple({b, c, d}), {}, 4
+        Tinned::PertTuple({b, c, d}), {}, 4
     );
 
     auto D_a = D->diff(a);
-    auto E_a = Tinned::differentiate(E, Tinned::PerturbationTuple({a}));
+    auto E_a = Tinned::differentiate(E, Tinned::PertTuple({a}));
     auto E_0a = Tinned::remove_if(E_a, SymEngine::set_basic({D_a}));
-    auto E_0a_bcd = Tinned::differentiate(E_0a, Tinned::PerturbationTuple({b, c, d}));
+    auto E_0a_bcd = Tinned::differentiate(E_0a, Tinned::PertTuple({b, c, d}));
     auto S_a = S->diff(a);
     auto S_ab = S_a->diff(b);
     auto S_ac = S_a->diff(c);
@@ -556,13 +556,13 @@ TEST_CASE("Test L^{abcd} with complex/zero/imaginary/real frequencies", "[Lagran
     auto S_abd = S_ab->diff(d);
     auto S_acd = S_ac->diff(d);
     auto S_abcd = S_abc->diff(d);
-    auto W_b = Tinned::differentiate(W, Tinned::PerturbationTuple({b}));
-    auto W_c = Tinned::differentiate(W, Tinned::PerturbationTuple({c}));
-    auto W_d = Tinned::differentiate(W, Tinned::PerturbationTuple({d}));
-    auto W_bc = Tinned::differentiate(W_b, Tinned::PerturbationTuple({c}));
-    auto W_bd = Tinned::differentiate(W_b, Tinned::PerturbationTuple({d}));
-    auto W_cd = Tinned::differentiate(W_c, Tinned::PerturbationTuple({d}));
-    auto W_bcd = Tinned::differentiate(W_bc, Tinned::PerturbationTuple({d}));
+    auto W_b = Tinned::differentiate(W, Tinned::PertTuple({b}));
+    auto W_c = Tinned::differentiate(W, Tinned::PertTuple({c}));
+    auto W_d = Tinned::differentiate(W, Tinned::PertTuple({d}));
+    auto W_bc = Tinned::differentiate(W_b, Tinned::PertTuple({c}));
+    auto W_bd = Tinned::differentiate(W_b, Tinned::PertTuple({d}));
+    auto W_cd = Tinned::differentiate(W_c, Tinned::PertTuple({d}));
+    auto W_bcd = Tinned::differentiate(W_bc, Tinned::PertTuple({d}));
 
     // `ref` is computed by following Equation (241), J. Chem. Phys. 129, 214108 (2008)
     auto ref = SymEngine::add({
@@ -581,7 +581,7 @@ TEST_CASE("Test L^{abcd} with complex/zero/imaginary/real frequencies", "[Lagran
 
     // Response function in Equation (239), J. Chem. Phys. 129, 214108 (2008)
     auto L_abcd_2_1 = lagrangian.get_response_functions(
-        Tinned::PerturbationTuple({b, c, d}), {}, 2
+        Tinned::PertTuple({b, c, d}), {}, 2
     );
 
     auto D_bc = (D->diff(b))->diff(c);
@@ -592,29 +592,29 @@ TEST_CASE("Test L^{abcd} with complex/zero/imaginary/real frequencies", "[Lagran
     auto W_bd_1 = Tinned::remove_if(W_bd, SymEngine::set_basic({D_bd}));
     auto W_cd_1 = Tinned::remove_if(W_cd, SymEngine::set_basic({D_cd}));
     auto W_bcd_1 = Tinned::remove_if(W_bcd, SymEngine::set_basic({D_bc, D_bd, D_cd, D_bcd}));
-    auto Y_bc = Tinned::differentiate(Y, Tinned::PerturbationTuple({b, c}));
+    auto Y_bc = Tinned::differentiate(Y, Tinned::PertTuple({b, c}));
     auto Y_bc_1 = Tinned::remove_if(Y_bc, SymEngine::set_basic({D_bc}));
     auto Y_bd_1 = Tinned::remove_if(
-        Tinned::differentiate(Y, Tinned::PerturbationTuple({b, d})),
+        Tinned::differentiate(Y, Tinned::PertTuple({b, d})),
         SymEngine::set_basic({D_bd})
     );
     auto Y_cd_1 = Tinned::remove_if(
-        Tinned::differentiate(Y, Tinned::PerturbationTuple({c, d})),
+        Tinned::differentiate(Y, Tinned::PertTuple({c, d})),
         SymEngine::set_basic({D_cd})
     );
-    auto Y_bcd = Tinned::differentiate(Y_bc, Tinned::PerturbationTuple({d}));
+    auto Y_bcd = Tinned::differentiate(Y_bc, Tinned::PertTuple({d}));
     auto Y_bcd_1 = Tinned::remove_if(Y_bcd, SymEngine::set_basic({D_bc, D_bd, D_cd, D_bcd}));
-    auto Z_bc = Tinned::differentiate(Z, Tinned::PerturbationTuple({b, c}));
+    auto Z_bc = Tinned::differentiate(Z, Tinned::PertTuple({b, c}));
     auto Z_bc_1 = Tinned::remove_if(Z_bc, SymEngine::set_basic({D_bc}));
     auto Z_bd_1 = Tinned::remove_if(
-        Tinned::differentiate(Z, Tinned::PerturbationTuple({b, d})),
+        Tinned::differentiate(Z, Tinned::PertTuple({b, d})),
         SymEngine::set_basic({D_bd})
     );
     auto Z_cd_1 = Tinned::remove_if(
-        Tinned::differentiate(Z, Tinned::PerturbationTuple({c, d})),
+        Tinned::differentiate(Z, Tinned::PertTuple({c, d})),
         SymEngine::set_basic({D_cd})
     );
-    auto Z_bcd = Tinned::differentiate(Z_bc, Tinned::PerturbationTuple({d}));
+    auto Z_bcd = Tinned::differentiate(Z_bc, Tinned::PertTuple({d}));
     auto Z_bcd_1 = Tinned::remove_if(Z_bcd, SymEngine::set_basic({D_bc, D_bd, D_cd, D_bcd}));
 
     // `ref` is computed by following Equation (239), J. Chem. Phys. 129, 214108 (2008)
@@ -630,33 +630,33 @@ TEST_CASE("Test L^{abcd} with complex/zero/imaginary/real frequencies", "[Lagran
         SymEngine::trace(SymEngine::matrix_mul({SymEngine::minus_one, S_a, W_bcd_1})),
         SymEngine::trace(SymEngine::matrix_mul({
             SymEngine::minus_one,
-            Tinned::differentiate(lambda, Tinned::PerturbationTuple({d})),
+            Tinned::differentiate(lambda, Tinned::PertTuple({d})),
             Y_bc_1
         })),
         SymEngine::trace(SymEngine::matrix_mul({
             SymEngine::minus_one,
-            Tinned::differentiate(lambda, Tinned::PerturbationTuple({c})),
+            Tinned::differentiate(lambda, Tinned::PertTuple({c})),
             Y_bd_1
         })),
         SymEngine::trace(SymEngine::matrix_mul({
             SymEngine::minus_one,
-            Tinned::differentiate(lambda, Tinned::PerturbationTuple({b})),
+            Tinned::differentiate(lambda, Tinned::PertTuple({b})),
             Y_cd_1
         })),
         SymEngine::trace(SymEngine::matrix_mul({SymEngine::minus_one, lambda, Y_bcd_1})),
         SymEngine::trace(SymEngine::matrix_mul({
             SymEngine::minus_one,
-            Tinned::differentiate(zeta, Tinned::PerturbationTuple({d})),
+            Tinned::differentiate(zeta, Tinned::PertTuple({d})),
             Z_bc_1
         })),
         SymEngine::trace(SymEngine::matrix_mul({
             SymEngine::minus_one,
-            Tinned::differentiate(zeta, Tinned::PerturbationTuple({c})),
+            Tinned::differentiate(zeta, Tinned::PertTuple({c})),
             Z_bd_1
         })),
         SymEngine::trace(SymEngine::matrix_mul({
             SymEngine::minus_one,
-            Tinned::differentiate(zeta, Tinned::PerturbationTuple({b})),
+            Tinned::differentiate(zeta, Tinned::PertTuple({b})),
             Z_cd_1
         })),
         SymEngine::trace(SymEngine::matrix_mul({SymEngine::minus_one, zeta, Z_bcd_1}))
@@ -666,7 +666,7 @@ TEST_CASE("Test L^{abcd} with complex/zero/imaginary/real frequencies", "[Lagran
 
     // Response function in Equation (240), J. Chem. Phys. 129, 214108 (2008)
     auto L_abcd_1_2 = lagrangian.get_response_functions(
-        Tinned::PerturbationTuple({b, c, d}), {}, 3
+        Tinned::PertTuple({b, c, d}), {}, 3
     );
 
     auto W_bcd_2 = Tinned::remove_if(W_bcd, SymEngine::set_basic({D_bcd}));
@@ -728,21 +728,21 @@ TEST_CASE("Test L^{abcd} with intensive perturbations", "[LagrangianDAO]")
 
     // Response function in Equations (239), (240) and (241), J. Chem. Phys. 129, 214108 (2008)
     auto L_abcd_2_1 = lagrangian.get_response_functions(
-        Tinned::PerturbationTuple({b, c, d}), {}, 2
+        Tinned::PertTuple({b, c, d}), {}, 2
     );
     auto L_abcd_1_2 = lagrangian.get_response_functions(
-        Tinned::PerturbationTuple({b, c, d}), {}, 3
+        Tinned::PertTuple({b, c, d}), {}, 3
     );
     auto L_abcd_0_3 = lagrangian.get_response_functions(
-        Tinned::PerturbationTuple({b, c, d}), {}, 4
+        Tinned::PertTuple({b, c, d}), {}, 4
     );
 
     // Extensive perturbations a, b and c, intensive perturbations d
     auto La_bc_d_3 = lagrangian.get_response_functions(
-        Tinned::PerturbationTuple({b, c}), Tinned::PerturbationTuple({d}), 3
+        Tinned::PertTuple({b, c}), Tinned::PertTuple({d}), 3
     );
     auto La_bc_d_2 = lagrangian.get_response_functions(
-        Tinned::PerturbationTuple({b, c}), Tinned::PerturbationTuple({d}), 2
+        Tinned::PertTuple({b, c}), Tinned::PertTuple({d}), 2
     );
 
     REQUIRE(SymEngine::neq(*La_bc_d_3, *L_abcd_1_2));

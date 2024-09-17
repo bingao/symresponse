@@ -69,8 +69,8 @@ namespace SymResponse
 
             // Override functions for template method pattern
             virtual bool validate_perturbation_frequencies(
-                const Tinned::PerturbationTuple& exten_perturbations,
-                const Tinned::PerturbationTuple& inten_perturbations,
+                const Tinned::PertTuple& exten_perturbations,
+                const Tinned::PertTuple& inten_perturbations,
                 const SymEngine::RCP<const SymEngine::Number>&
                     threshold = SymEngine::real_double(std::numeric_limits<double>::epsilon())
             ) const noexcept override;
@@ -79,13 +79,13 @@ namespace SymResponse
 
             virtual SymEngine::RCP<const SymEngine::Basic> eliminate_wavefunction_parameter(
                 const SymEngine::RCP<const SymEngine::Basic>& L,
-                const Tinned::PerturbationTuple& exten_perturbations,
+                const Tinned::PertTuple& exten_perturbations,
                 const unsigned int min_wfn_order
             ) override;
 
             virtual SymEngine::RCP<const SymEngine::Basic> eliminate_lagrangian_multipliers(
                 const SymEngine::RCP<const SymEngine::Basic>& L,
-                const Tinned::PerturbationTuple& exten_perturbations,
+                const Tinned::PertTuple& exten_perturbations,
                 const unsigned int min_multiplier_order
             ) override;
 
@@ -109,8 +109,8 @@ namespace SymResponse
 
             //virtual SymEngine::RCP<const SymEngine::Basic> get_residues(
             //    // Extensive perturbations without `a`
-            //    const Tinned::PerturbationTuple& exten_perturbations,
-            //    const Tinned::PerturbationTuple& inten_perturbations = {},
+            //    const Tinned::PertTuple& exten_perturbations,
+            //    const Tinned::PertTuple& inten_perturbations = {},
             //    const unsigned int min_wfn_exten = 0
             //) override;
 
@@ -201,7 +201,7 @@ namespace SymResponse
             {
                 auto K = Tinned::remove_if(
                     Tinned::differentiate(
-                        SymEngine::matrix_mul({D, S, D}), Dw->get_derivatives()
+                        SymEngine::matrix_mul({D_, S_, D_}), Dw->get_derivatives()
                     ),
                     SymEngine::set_basic({Dw})
                 );
