@@ -15,22 +15,32 @@ option(BUILD_TESTING "Build tests." ON)
 # FetchContent_MakeAvailable was added in CMake 3.14; simpler usage
 include(FetchContent)
 
+# Find SymEngine, SymEngine_DIR can be set by users in advance
+set(CMAKE_PREFIX_PATH ${SymEngine_DIR} ${CMAKE_PREFIX_PATH})
+find_package(SymEngine REQUIRED CONFIG
+             PATH_SUFFIXES lib/cmake/symengine cmake/symengine CMake/)
+message("SymEngine_DIR: " ${SymEngine_DIR})
+message("SymEngine version: " ${SymEngine_VERSION})
 
-FetchContent_Declare(
-    SymEngine
-    GIT_REPOSITORY https://github.com/bingao/symengine.git
-)
+# Find Tinned, Tinned_DIR can be set by users in advance
+set(CMAKE_PREFIX_PATH ${Tinned_DIR} ${CMAKE_PREFIX_PATH})
+find_package(Tinned REQUIRED CONFIG PATH_SUFFIXES lib/cmake/tinned)
+message("Tinned_DIR: " ${Tinned_DIR})
 
-FetchContent_Declare(
-   Tinned
-   GIT_REPOSITORY https://github.com/bingao/tinned.git
-   GIT_TAG main
-
-)
-
-FetchContent_MakeAvailable(Symengine)
-FetchContent_MakeAvailable(Tinned)
-
+#Disable temporarily before Tinned can be built together with SymEngine
+#FetchContent_Declare(
+#    SymEngine
+#    GIT_REPOSITORY https://github.com/bingao/symengine.git
+#)
+#
+#FetchContent_Declare(
+#   Tinned
+#   GIT_REPOSITORY https://github.com/bingao/tinned.git
+#   GIT_TAG main
+#)
+#
+#FetchContent_MakeAvailable(Symengine)
+#FetchContent_MakeAvailable(Tinned)
 
 # Use the same build mode and C++ flags of SymEngine
 set(CMAKE_BUILD_TYPE ${SYMENGINE_BUILD_TYPE})
