@@ -71,9 +71,6 @@ namespace SymResponse
         auto minus_one_half = SymEngine::div(SymEngine::minus_one, SymEngine::two);
         // Null overlap operator means it is an identity operator
         if (S.is_null()) {
-            throw SymEngine::SymEngineException(
-                "LagrangianDAO has not implemented for orthonormal basis!"
-            );
             // = D^{a}D-DD^{a}
             lambda_ = SymEngine::matrix_add({
                 SymEngine::matrix_mul({D_a, D}),

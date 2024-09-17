@@ -193,23 +193,37 @@ namespace SymResponse
 //                LHS, RHS
 //            ) override;
 
-            //FIXME: if S_.is_null()
             // Get particular solution of a perturbed density matrix
             inline SymEngine::RCP<const SymEngine::Basic> get_particular_density(
                 const SymEngine::RCP<const Tinned::OneElecDensity>& Dw
             ) const
             {
-                auto K = Tinned::remove_if(
-                    Tinned::differentiate(
-                        SymEngine::matrix_mul({D_, S_, D_}), Dw->get_derivatives()
-                    ),
-                    SymEngine::set_basic({Dw})
-                );
-                return SymEngine::matrix_add({
-                    SymEngine::matrix_mul({SymEngine::minus_one, K}),
-                    SymEngine::matrix_mul({K, S_, D_}),
-                    SymEngine::matrix_mul({D_, S_, K}),
-                });
+                if (S_.is_null()) {
+                    auto K = Tinned::remove_if(
+                        Tinned::differentiate(
+                            SymEngine::matrix_mul({D_, D_}), Dw->get_derivatives()
+                        ),
+                        SymEngine::set_basic({Dw})
+                    );
+                    return SymEngine::matrix_add({
+                        SymEngine::matrix_mul({SymEngine::minus_one, K}),
+                        SymEngine::matrix_mul({K, D_}),
+                        SymEngine::matrix_mul({D_, K}),
+                    });
+                }
+                else {
+                    auto K = Tinned::remove_if(
+                        Tinned::differentiate(
+                            SymEngine::matrix_mul({D_, S_, D_}), Dw->get_derivatives()
+                        ),
+                        SymEngine::set_basic({Dw})
+                    );
+                    return SymEngine::matrix_add({
+                        SymEngine::matrix_mul({SymEngine::minus_one, K}),
+                        SymEngine::matrix_mul({K, S_, D_}),
+                        SymEngine::matrix_mul({D_, S_, K}),
+                    });
+                }
             }
 
             // Get right-hand side (RHS) of the linear response equation
