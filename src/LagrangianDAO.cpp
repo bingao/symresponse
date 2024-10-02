@@ -1,7 +1,3 @@
-#ifndef NDEBUG
-#include <iostream>
-#endif
-
 #include <symengine/add.h>
 #include <symengine/mul.h>
 #include <symengine/number.h>
@@ -222,16 +218,6 @@ namespace SymResponse
         result = Tinned::eliminate(
             result, idempotency_multiplier_, exten_perturbations, min_multiplier_order
         );
-#ifndef NDEBUG
-        std::cout << "Externsive perturbations\n";
-        for (const auto& p: exten_perturbations)
-            std::cout << Tinned::stringify(p) << "\n";
-        std::cout << "Minimum order of perturbed Lagrangian multipliers with respect to "
-                  << "extensive perturbations to be eliminated "
-                  << min_multiplier_order << "\n";
-        std::cout << "Response function = "
-                  << Tinned::latexify(Tinned::clean_temporum(result), 20) << "\n\n";
-#endif
         // Replace "artificial" multipliers with real differentiated ones
         return Tinned::replace_all<Tinned::PerturbedParameter>(
             result,

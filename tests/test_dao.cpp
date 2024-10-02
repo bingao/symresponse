@@ -194,36 +194,36 @@ TEST_CASE("Test L^{abc} with different perturbation dependencies", "[LagrangianD
     auto S_b = S->diff(b);
     auto S_ab = S_a->diff(b);
     REQUIRE(SymEngine::unified_eq(
-        find_all(L_abc_0_2, S), SymEngine::set_basic({S, S_a, S_b, S_ab})
+        find_all(L_abc_0_2, S), SymEngine::vec_basic({S, S_a, S_b, S_ab})
     ));
     auto h_a = h->diff(a);
     auto h_c = h->diff(c);
     auto h_ac = h_a->diff(c);
     REQUIRE(SymEngine::unified_eq(
-        find_all(L_abc_0_2, h), SymEngine::set_basic({h, h_a, h_c, h_ac})
+        find_all(L_abc_0_2, h), SymEngine::vec_basic({h, h_c, h_a, h_ac})
     ));
     auto T_a = T->diff(a);
     auto T_b = T->diff(b);
     auto T_ab = T_a->diff(b);
     REQUIRE(SymEngine::unified_eq(
-        find_all(L_abc_0_2, T), SymEngine::set_basic({T_a, T_b, T_ab})
+        find_all(L_abc_0_2, T), SymEngine::vec_basic({T_b, T_a, T_ab})
     ));
     auto D_b = SymEngine::rcp_dynamic_cast<const Tinned::ElectronicState>(D->diff(b));
     auto D_c = SymEngine::rcp_dynamic_cast<const Tinned::ElectronicState>(D->diff(c));
     auto D_bc = SymEngine::rcp_dynamic_cast<const Tinned::ElectronicState>(D_b->diff(c));
-    auto Gb = SymEngine::make_rcp<const Tinned::TwoElecOperator>(
+    auto Gb_D = SymEngine::make_rcp<const Tinned::TwoElecOperator>(
         G->get_name(), D, G->get_dependencies(), SymEngine::multiset_basic({b})
     );
     auto G_Db = SymEngine::make_rcp<const Tinned::TwoElecOperator>(
         G->get_name(), D_b, G->get_dependencies()
     );
-    auto Gc = SymEngine::make_rcp<const Tinned::TwoElecOperator>(
+    auto Gc_D = SymEngine::make_rcp<const Tinned::TwoElecOperator>(
         G->get_name(), D, G->get_dependencies(), SymEngine::multiset_basic({c})
     );
     auto G_Dc = SymEngine::make_rcp<const Tinned::TwoElecOperator>(
         G->get_name(), D_c, G->get_dependencies()
     );
-    auto Gbc = SymEngine::make_rcp<const Tinned::TwoElecOperator>(
+    auto Gbc_D = SymEngine::make_rcp<const Tinned::TwoElecOperator>(
         G->get_name(), D, G->get_dependencies(), SymEngine::multiset_basic({b, c})
     );
     auto Gb_Dc = SymEngine::make_rcp<const Tinned::TwoElecOperator>(
@@ -237,18 +237,18 @@ TEST_CASE("Test L^{abc} with different perturbation dependencies", "[LagrangianD
     );
     REQUIRE(SymEngine::unified_eq(
         find_all(L_abc_0_2, G),
-        SymEngine::set_basic({G, Gb, G_Db, Gc, G_Dc, Gbc, Gb_Dc, Gc_Db, G_Dbc})
+        SymEngine::vec_basic({G, G_Dbc, G_Dc, G_Db, Gc_Db, Gb_D, Gc_D, Gb_Dc, Gbc_D})
     ));
     auto weight_b = weight->diff(b);
     REQUIRE(SymEngine::unified_eq(
-        find_all(L_abc_0_2, weight), SymEngine::set_basic({weight, weight_b})
+        find_all(L_abc_0_2, weight), SymEngine::vec_basic({weight, weight_b})
     ));
     auto Omega_a = Omega->diff(a);
     auto Omega_b = Omega->diff(b);
     auto Omega_ab = Omega_a->diff(b);
     REQUIRE(SymEngine::unified_eq(
         find_all(L_abc_0_2, Omega),
-        SymEngine::set_basic({Omega, Omega_a, Omega_b, Omega_ab})
+        SymEngine::vec_basic({Omega, Omega_a, Omega_b, Omega_ab})
     ));
     REQUIRE(find_all(L_abc_0_2, hnuc).empty());
 
@@ -258,13 +258,13 @@ TEST_CASE("Test L^{abc} with different perturbation dependencies", "[LagrangianD
     );
 
     REQUIRE(SymEngine::unified_eq(
-        find_all(L_abc_1_1, S), SymEngine::set_basic({S, S_a, S_b, S_ab})
+        find_all(L_abc_1_1, S), SymEngine::vec_basic({S, S_a, S_b, S_ab})
     ));
     REQUIRE(SymEngine::unified_eq(
-        find_all(L_abc_1_1, h), SymEngine::set_basic({h, h_a, h_c, h_ac})
+        find_all(L_abc_1_1, h), SymEngine::vec_basic({h, h_c, h_a, h_ac})
     ));
     REQUIRE(SymEngine::unified_eq(
-        find_all(L_abc_1_1, T), SymEngine::set_basic({T_a, T_b, T_ab})
+        find_all(L_abc_1_1, T), SymEngine::vec_basic({T_b, T_a, T_ab})
     ));
     // `G_Da` exists in the Lagrangian multiplier of idempotency constraint
     auto G_Da = SymEngine::make_rcp<const Tinned::TwoElecOperator>(
@@ -274,14 +274,14 @@ TEST_CASE("Test L^{abc} with different perturbation dependencies", "[LagrangianD
     );
     REQUIRE(SymEngine::unified_eq(
         find_all(L_abc_1_1, G),
-        SymEngine::set_basic({G, Gb, G_Db, Gc, G_Dc, G_Da, Gbc, Gb_Dc, Gc_Db})
+        SymEngine::vec_basic({G, G_Dc, G_Db, G_Da, Gc_Db, Gb_D, Gc_D, Gb_Dc, Gbc_D})
     ));
     REQUIRE(SymEngine::unified_eq(
-        find_all(L_abc_1_1, weight), SymEngine::set_basic({weight, weight_b})
+        find_all(L_abc_1_1, weight), SymEngine::vec_basic({weight, weight_b})
     ));
     REQUIRE(SymEngine::unified_eq(
         find_all(L_abc_1_1, Omega),
-        SymEngine::set_basic({Omega, Omega_a, Omega_b, Omega_ab})
+        SymEngine::vec_basic({Omega, Omega_a, Omega_b, Omega_ab})
     ));
     REQUIRE(find_all(L_abc_1_1, hnuc).empty());
 }
@@ -691,13 +691,9 @@ TEST_CASE("Test L^{abcd} with complex/zero/imaginary/real frequencies", "[Lagran
     REQUIRE(SymEngine::eq(*L_abcd_1_2, *Tinned::clean_temporum(ref)));
 }
 
-//FIXME: non-empty intensive perturbations
+//FIXME: will non-empty intensive perturbations give different results?
 TEST_CASE("Test L^{abcd} with intensive perturbations", "[LagrangianDAO]")
 {
-    //auto a = Tinned::make_perturbation(std::string("a"), SymEngine::complex_double(0.6, -0.1));
-    //auto b = Tinned::make_perturbation(std::string("b"), SymEngine::complex_double(-0.1, 0.2));
-    //auto c = Tinned::make_perturbation(std::string("c"), SymEngine::complex_double(-0.2, 0.1));
-    //auto d = Tinned::make_perturbation(std::string("d"), SymEngine::complex_double(-0.3, -0.2));
     auto a = Tinned::make_perturbation(std::string("a"), SymEngine::real_double(0.6));
     auto b = Tinned::make_perturbation(std::string("b"), SymEngine::real_double(-0.1));
     auto c = Tinned::make_perturbation(std::string("c"), SymEngine::real_double(-0.2));

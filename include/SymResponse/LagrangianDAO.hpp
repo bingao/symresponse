@@ -93,8 +93,7 @@ namespace SymResponse
             explicit LagrangianDAO(
                 const SymEngine::RCP<const Tinned::Perturbation>& a,
                 const SymEngine::RCP<const Tinned::OneElecDensity>& D,
-                const SymEngine::RCP<const Tinned::OneElecOperator>&
-                    S = SymEngine::RCP<const Tinned::OneElecOperator>(),
+                const SymEngine::RCP<const Tinned::OneElecOperator>& S,
                 const SymEngine::vec_basic& H = {},
                 const SymEngine::RCP<const Tinned::TwoElecOperator>&
                     G = SymEngine::RCP<const Tinned::TwoElecOperator>(),
@@ -106,6 +105,31 @@ namespace SymResponse
                     hnuc = SymEngine::RCP<const Tinned::NonElecFunction>(),
                 const bool sym_elimination = false
             );
+
+            // For orthonormal basis sets
+            explicit LagrangianDAO(
+                const SymEngine::RCP<const Tinned::Perturbation>& a,
+                const SymEngine::RCP<const Tinned::OneElecDensity>& D,
+                const SymEngine::vec_basic& H = {},
+                const SymEngine::RCP<const Tinned::TwoElecOperator>&
+                    G = SymEngine::RCP<const Tinned::TwoElecOperator>(),
+                const SymEngine::RCP<const Tinned::ExchCorrEnergy>&
+                    Exc = SymEngine::RCP<const Tinned::ExchCorrEnergy>(),
+                const SymEngine::RCP<const Tinned::ExchCorrPotential>&
+                    Fxc = SymEngine::RCP<const Tinned::ExchCorrPotential>(),
+                const SymEngine::RCP<const Tinned::NonElecFunction>&
+                    hnuc = SymEngine::RCP<const Tinned::NonElecFunction>(),
+                const bool sym_elimination = false
+            ): LagrangianDAO(
+                a,
+                D,
+                SymEngine::RCP<const Tinned::OneElecOperator>(),
+                H,
+                G,
+                Exc,
+                Fxc,
+                hnuc,
+                sym_elimination) {}
 
             //virtual SymEngine::RCP<const SymEngine::Basic> get_residues(
             //    // Extensive perturbations without `a`

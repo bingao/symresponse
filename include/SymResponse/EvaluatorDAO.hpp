@@ -31,9 +31,10 @@ namespace SymResponse
     {
         protected:
             OperatorType D_;
-            //FIXME: orthonormal basis
+            //FIXME: works for orthonormal basis sets?
             OperatorType S_;
             OperatorType F_;
+            std::shared_ptr<const LagrangianDAO> L_;
             // Cached perturbed density matrices
             std::map<SymEngine::RCP<const Tinned::OneElecDensity>, OperatorType> D_cached_;
             // Particular solution of a perturbed density matrix
@@ -45,11 +46,12 @@ namespace SymResponse
                 const OperatorType& D,
                 const OperatorType& S,
                 const OperatorType& F
-            ): D_(D), S_(S), F(F_) {}
+                std::shared_ptr<const LagrangianDAO> L
+            ) : D_(D), S_(S), F(F_), L_(L) {}
 
-            void eval_wavefunction_parameter(
+            virtual void eval_wavefunction_parameter(
                 const SymEngine::RCP<const SymEngine::Basic>& expr
-            ) override
+            )
             {
                 auto D_sym = L_->get_density();
                 auto D_all = Tinned::find_all(expr, D_sym);
@@ -75,27 +77,40 @@ namespace SymResponse
 
     // Class template for evaluating response functions
     template<typename FunctionType, typename OperatorType>
-    class FunctionEvaluatorDAO: virtual public Tinned::FunctionEvaluator<FunctionType>
+    class FunctionEvaluatorDAO: virtual public Tinned::FunctionEvaluator<FunctionType, OperatorType>
     {
         protected:
+            OperatorEvaluatorDAO<OperatorType> oper_evaluator_;
             std::shared_ptr<const LagrangianDAO> L_;
 
-            OperatorEvaluatorDAO<OperatorType> oper_evaluator_;
+            std::shared_ptr<OperatorEvaluatorDAO<OperatorType>>
+            get_oper_evaluator() override
+            {
+                return oper_evaluator_;
+            }
 
         public:
-            explicit FunctionEvaluatorDAO() = default;
+            explicit FunctionEvaluatorDAO(
+                const OperatorType& D,
+                const OperatorType& S,
+                const OperatorType& F,
+                std::shared_ptr<const LagrangianDAO> L
+            ) : oper_evaluator_(
+                    std::make_shared<OperatorEvaluatorDAO<OperatorType>>(D, S, F, L)
+                ),
+                L_(L) {}
 
-            // Get response functions by using template method pattern
-            inline SymEngine::RCP<const SymEngine::Basic> get_response_functions(
+            // Compute and evaluate response functions
+            inline FunctionType get_response_functions(
                 const Tinned::PerturbationTuple& exten_perturbations,
                 const Tinned::PerturbationTuple& inten_perturbations = {},
                 const unsigned int min_wfn_exten = 0
             )
             {
-                auto expr = L_->get_response_function(
+                auto expr = L_->get_response_functions(
                     exten_perturbations, inten_perturbations, min_wfn_exten
                 );
-                oper_evaluator.eval_wavefunction_parameter(expr);
+                oper_evaluator_->eval_wavefunction_parameter(expr);
                 return apply(expr);
             }
 
