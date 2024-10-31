@@ -6,8 +6,8 @@
 namespace SymResponse
 {
     bool Lagrangian::validate_perturbation_frequencies(
-        const Tinned::PertTuple& exten_perturbations,
-        const Tinned::PertTuple& inten_perturbations,
+        const Tinned::PertMultichain& exten_perturbations,
+        const Tinned::PertMultichain& inten_perturbations,
         const SymEngine::RCP<const SymEngine::Number>& threshold
     ) const noexcept
     {
@@ -29,9 +29,9 @@ namespace SymResponse
         }
     }
 
-    bool Lagrangian::validate_perturbation_disjointedness(
-        const Tinned::PertTuple& exten_perturbations,
-        const Tinned::PertTuple& inten_perturbations
+    bool Lagrangian::validate_perturbation_disjointness(
+        const Tinned::PertMultichain& exten_perturbations,
+        const Tinned::PertMultichain& inten_perturbations
     ) const noexcept
     {
         for (const auto& p: inten_perturbations)

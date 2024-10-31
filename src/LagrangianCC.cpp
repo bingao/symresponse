@@ -49,7 +49,7 @@ namespace SymResponse
 
     SymEngine::RCP<const SymEngine::Basic> LagrangianCC::eliminate_wavefunction_parameter(
         const SymEngine::RCP<const SymEngine::Basic>& L,
-        const Tinned::PertTuple& exten_perturbations,
+        const Tinned::PertMultichain& exten_perturbations,
         const unsigned int min_wfn_order
     )
     {
@@ -58,7 +58,7 @@ namespace SymResponse
 
     SymEngine::RCP<const SymEngine::Basic> LagrangianCC::eliminate_lagrangian_multipliers(
         const SymEngine::RCP<const SymEngine::Basic>& L,
-        const Tinned::PertTuple& exten_perturbations,
+        const Tinned::PertMultichain& exten_perturbations,
         const unsigned int min_multiplier_order
     )
     {

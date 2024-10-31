@@ -69,8 +69,8 @@ namespace SymResponse
 
             // Override functions for template method pattern
             virtual bool validate_perturbation_frequencies(
-                const Tinned::PertTuple& exten_perturbations,
-                const Tinned::PertTuple& inten_perturbations,
+                const Tinned::PertMultichain& exten_perturbations,
+                const Tinned::PertMultichain& inten_perturbations,
                 const SymEngine::RCP<const SymEngine::Number>&
                     threshold = SymEngine::real_double(std::numeric_limits<double>::epsilon())
             ) const noexcept override;
@@ -79,13 +79,13 @@ namespace SymResponse
 
             virtual SymEngine::RCP<const SymEngine::Basic> eliminate_wavefunction_parameter(
                 const SymEngine::RCP<const SymEngine::Basic>& L,
-                const Tinned::PertTuple& exten_perturbations,
+                const Tinned::PertMultichain& exten_perturbations,
                 const unsigned int min_wfn_order
             ) override;
 
             virtual SymEngine::RCP<const SymEngine::Basic> eliminate_lagrangian_multipliers(
                 const SymEngine::RCP<const SymEngine::Basic>& L,
-                const Tinned::PertTuple& exten_perturbations,
+                const Tinned::PertMultichain& exten_perturbations,
                 const unsigned int min_multiplier_order
             ) override;
 
@@ -133,8 +133,8 @@ namespace SymResponse
 
             //virtual SymEngine::RCP<const SymEngine::Basic> get_residues(
             //    // Extensive perturbations without `a`
-            //    const Tinned::PertTuple& exten_perturbations,
-            //    const Tinned::PertTuple& inten_perturbations = {},
+            //    const Tinned::PertMultichain& exten_perturbations,
+            //    const Tinned::PertMultichain& inten_perturbations = {},
             //    const unsigned int min_wfn_exten = 0
             //) override;
 
@@ -212,20 +212,21 @@ namespace SymResponse
                 return Z_;
             }
 
-//            // Generalized response linear equations
-//            virtual SymEngine::RCP<const SymEngine::Basic> get_linear_equation(
+//            // Response equation
+//            virtual SymEngine::RCP<const SymEngine::Basic> get_response_equation(
 //                LHS, RHS
 //            ) override;
 
             // Get particular solution of a perturbed density matrix
             inline SymEngine::RCP<const SymEngine::Basic> get_particular_density(
-                const SymEngine::RCP<const Tinned::OneElecDensity>& Dw
+                const SymEngine::RCP<const SymEngine::Basic>& Dw
             ) const
             {
+                auto op = SymEngine::rcp_dynamic_cast<const Tinned::OneElecDensity>(Dw);
                 if (S_.is_null()) {
                     auto K = Tinned::remove_if(
                         Tinned::differentiate(
-                            SymEngine::matrix_mul({D_, D_}), Dw->get_derivatives()
+                            SymEngine::matrix_mul({D_, D_}), op->get_derivatives()
                         ),
                         SymEngine::set_basic({Dw})
                     );
@@ -238,7 +239,7 @@ namespace SymResponse
                 else {
                     auto K = Tinned::remove_if(
                         Tinned::differentiate(
-                            SymEngine::matrix_mul({D_, S_, D_}), Dw->get_derivatives()
+                            SymEngine::matrix_mul({D_, S_, D_}), op->get_derivatives()
                         ),
                         SymEngine::set_basic({Dw})
                     );
@@ -250,14 +251,15 @@ namespace SymResponse
                 }
             }
 
-            // Get right-hand side (RHS) of the linear response equation
-            inline SymEngine::RCP<const SymEngine::Basic> get_linear_rhs(
-                const SymEngine::RCP<const Tinned::OneElecDensity>& Dw,
+            // Get right-hand side (RHS) of the (linear) response equation
+            inline SymEngine::RCP<const SymEngine::Basic> get_response_rhs(
+                const SymEngine::RCP<const SymEngine::Basic>& Dw,
                 const SymEngine::RCP<const SymEngine::Basic>& DP
-            )
+            ) const
             {
+                auto op = SymEngine::rcp_dynamic_cast<const Tinned::OneElecDensity>(Dw);
                 return Tinned::replace(
-                    Tinned::differentiate(Y_, Dw->get_derivatives()),
+                    Tinned::differentiate(Y_, op->get_derivatives()),
                     SymEngine::map_basic_basic({{Dw, DP}})
                 );
             }

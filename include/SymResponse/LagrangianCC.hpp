@@ -39,13 +39,13 @@ namespace SymResponse
 
             virtual SymEngine::RCP<const SymEngine::Basic> eliminate_wavefunction_parameter(
                 const SymEngine::RCP<const SymEngine::Basic>& L,
-                const Tinned::PertTuple& exten_perturbations,
+                const Tinned::PertMultichain& exten_perturbations,
                 const unsigned int min_wfn_order
             ) override;
 
             virtual SymEngine::RCP<const SymEngine::Basic> eliminate_lagrangian_multipliers(
                 const SymEngine::RCP<const SymEngine::Basic>& L,
-                const Tinned::PertTuple& exten_perturbations,
+                const Tinned::PertMultichain& exten_perturbations,
                 const unsigned int min_multiplier_order
             ) override;
 
@@ -60,6 +60,23 @@ namespace SymResponse
                 const SymEngine::RCP<const SymEngine::Basic>&
                     ref_state = SymEngine::RCP<const SymEngine::Basic>()
             );
+
+            //// Get right-hand side (RHS) of the (linear) response equation
+            //inline SymEngine::RCP<const SymEngine::Basic> get_response_rhs(
+            //    const SymEngine::RCP<const SymEngine::Basic>& rsp_parameter,
+            //    const bool is_multiplier = false
+            //)
+            //{
+            //    auto op = SymEngine::rcp_dynamic_cast<const Tinned::PerturbedParameter>(
+            //        rsp_parameter
+            //    );
+            //    if (is_multiplier) {
+
+            //    }
+            //    else {
+
+            //    }
+            //}
 
             virtual ~LagrangianCC() noexcept = default;
     };

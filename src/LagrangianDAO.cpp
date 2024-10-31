@@ -57,7 +57,7 @@ namespace SymResponse
         auto Dt = Tinned::make_dt_operator(D);
         auto D_a = D->diff(a);
         // `Tinned::differentiate` can remove zero quantities after differentiation
-        auto F_a = Tinned::differentiate(F_, Tinned::PertTuple({a}));
+        auto F_a = Tinned::differentiate(F_, Tinned::PertMultichain({a}));
 
         // Terms of differentiated quasi-energy derivative Lagrangian with
         // respect to the perturbation `a`
@@ -159,7 +159,7 @@ namespace SymResponse
         La_ = SymEngine::add({
             // The first term in Equation (98), J. Chem. Phys. 129, 214108 (2008)
             Tinned::remove_if(
-                Tinned::differentiate(E_, Tinned::PertTuple({a_})),
+                Tinned::differentiate(E_, Tinned::PertMultichain({a_})),
                 SymEngine::set_basic({D_->diff(a_)})
             ),
             SymEngine::mul(SymEngine::minus_one, SymEngine::add(La_terms))
@@ -167,8 +167,8 @@ namespace SymResponse
     }
 
     bool LagrangianDAO::validate_perturbation_frequencies(
-        const Tinned::PertTuple& exten_perturbations,
-        const Tinned::PertTuple& inten_perturbations,
+        const Tinned::PertMultichain& exten_perturbations,
+        const Tinned::PertMultichain& inten_perturbations,
         const SymEngine::RCP<const SymEngine::Number>& threshold
     ) const noexcept
     {
@@ -199,7 +199,7 @@ namespace SymResponse
 
     SymEngine::RCP<const SymEngine::Basic> LagrangianDAO::eliminate_wavefunction_parameter(
         const SymEngine::RCP<const SymEngine::Basic>& L,
-        const Tinned::PertTuple& exten_perturbations,
+        const Tinned::PertMultichain& exten_perturbations,
         const unsigned int min_wfn_order
     )
     {
@@ -208,7 +208,7 @@ namespace SymResponse
 
     SymEngine::RCP<const SymEngine::Basic> LagrangianDAO::eliminate_lagrangian_multipliers(
         const SymEngine::RCP<const SymEngine::Basic>& L,
-        const Tinned::PertTuple& exten_perturbations,
+        const Tinned::PertMultichain& exten_perturbations,
         const unsigned int min_multiplier_order
     )
     {

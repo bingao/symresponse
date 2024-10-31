@@ -37,24 +37,24 @@ namespace SymResponse
         protected:
             // Validate sum of perturbations' frequencies
             virtual bool validate_perturbation_frequencies(
-                const Tinned::PertTuple& exten_perturbations,
-                const Tinned::PertTuple& inten_perturbations,
+                const Tinned::PertMultichain& exten_perturbations,
+                const Tinned::PertMultichain& inten_perturbations,
                 const SymEngine::RCP<const SymEngine::Number>&
                     threshold = SymEngine::real_double(std::numeric_limits<double>::epsilon())
             ) const noexcept;
 
             // Validate that extensive and intensive perturbations should be disjoint
-            virtual bool validate_perturbation_disjointedness(
-                const Tinned::PertTuple& exten_perturbations,
-                const Tinned::PertTuple& inten_perturbations
+            virtual bool validate_perturbation_disjointness(
+                const Tinned::PertMultichain& exten_perturbations,
+                const Tinned::PertMultichain& inten_perturbations
             ) const noexcept;
 
             // Validate that: (i) at least one extensive perturbation, (ii) sum
             // of all perturbations' frequencies should be zero, and (iii)
             // extensive and intensive perturbations should be disjoint
             inline void validate_perturbations(
-                const Tinned::PertTuple& exten_perturbations,
-                const Tinned::PertTuple& inten_perturbations,
+                const Tinned::PertMultichain& exten_perturbations,
+                const Tinned::PertMultichain& inten_perturbations,
                 const SymEngine::RCP<const SymEngine::Number>&
                     threshold = SymEngine::real_double(std::numeric_limits<double>::epsilon())
             ) const
@@ -67,7 +67,7 @@ namespace SymResponse
                 )) throw SymEngine::SymEngineException(
                     "Lagrangian gets perturbations with non-zero sum frequencies!"
                 );
-                if (!validate_perturbation_disjointedness(
+                if (!validate_perturbation_disjointness(
                     exten_perturbations, inten_perturbations
                 )) throw SymEngine::SymEngineException(
                     "Lagrangian gets a same extensive and intensive perturbation!"
@@ -85,7 +85,7 @@ namespace SymResponse
             // of `exten_perturbations`.
             virtual SymEngine::RCP<const SymEngine::Basic> eliminate_wavefunction_parameter(
                 const SymEngine::RCP<const SymEngine::Basic>& L,
-                const Tinned::PertTuple& exten_perturbations,
+                const Tinned::PertMultichain& exten_perturbations,
                 const unsigned int min_wfn_order
             ) = 0;
 
@@ -97,7 +97,7 @@ namespace SymResponse
             // size of `exten_perturbations`.
             virtual SymEngine::RCP<const SymEngine::Basic> eliminate_lagrangian_multipliers(
                 const SymEngine::RCP<const SymEngine::Basic>& L,
-                const Tinned::PertTuple& exten_perturbations,
+                const Tinned::PertMultichain& exten_perturbations,
                 const unsigned int min_multiplier_order
             ) = 0;
 
@@ -107,9 +107,9 @@ namespace SymResponse
             // Get response functions by using template method pattern
             inline SymEngine::RCP<const SymEngine::Basic> get_response_functions(
                 // Extensive perturbations
-                const Tinned::PertTuple& exten_perturbations,
+                const Tinned::PertMultichain& exten_perturbations,
                 // Intensive perturbations
-                const Tinned::PertTuple& inten_perturbations = {},
+                const Tinned::PertMultichain& inten_perturbations = {},
                 // Minimum order of differentiated wave function parameters with
                 // respect to extensive perturbations to be eliminated.
                 // Default value is 0 that means it will be automatically
@@ -173,10 +173,36 @@ namespace SymResponse
                 return Tinned::clean_temporum(result);
             }
 
+            //inline std::vector<std::pair<unsigned int, SymEngine::RCP<const SymEngine::Basic>>>
+            //get_response_functions(
+            //    const Tinned::PertMultichain& exten_perturbations,
+            //    const Tinned::PertMultichain& inten_perturbations = {},
+            //    const SymEngine::set_basic& excluded ={}
+            //)
+            //{
+            //    unsigned int min_wfn_exten = 0;
+            //    int min_weight = ;
+            //    SymEngine::RCP<const SymEngine::Basic> rsp_functions;
+            //    for (unsigned int order=; order<; ++order) {
+            //        auto result = get_response_functions(
+            //            exten_perturbations, inten_perturbations, order
+            //        );
+            //        if (!Tinned::exist_any(result, excluded)) {
+            //            auto weight = get_weight(result);
+            //            if (weight<min_weight) {
+            //                min_weight = weight;
+            //                min_wfn_exten = order;
+            //                rsp_functions = result;
+            //            }
+            //        }
+            //    }
+            //    return (min_wfn_exten, rsp_functions);
+            //}
+
             //// Get residues. Other parameters see the function `get_response_functions()`.
             //virtual SymEngine::RCP<const SymEngine::Basic> get_residues(
-            //    const Tinned::PertTuple& exten_perturbations,
-            //    const Tinned::PertTuple& inten_perturbations = {},
+            //    const Tinned::PertMultichain& exten_perturbations,
+            //    const Tinned::PertMultichain& inten_perturbations = {},
             //    const unsigned int min_wfn_exten = 0
             //) = 0;
 

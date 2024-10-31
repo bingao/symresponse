@@ -1,5 +1,4 @@
 #define CATCH_CONFIG_MAIN
-#include <iostream>
 
 #include <cstddef>
 #include <map>
@@ -350,36 +349,16 @@ inline void compare_rsp_functions(
     auto terms1 = rsp_functions_to_map(expr1);
     auto terms2 = rsp_functions_to_map(expr2);
     REQUIRE(terms1.size()==terms2.size());
+    //std::cout << "Number of terms " << terms1.size() << "\n";
     for (const auto& term1: terms1) {
-        auto numerator1 = SymEngine::expand(term1.second.first);
         auto term2 = terms2[term1.first];
-        auto numerator2 = SymEngine::expand(term2.first);
-std::cout << "key = " << Tinned::stringify(term1.first) << "\n";
-std::cout << "numerator1 = " << Tinned::stringify(term1.second.first, false) << "\n";
-std::cout << "numerator2 = " << Tinned::stringify(term2.first, false) << "\n";
-std::cout << "denominator1 = " << Tinned::stringify(term1.second.second, false) << "\n";
-std::cout << "denominator2 = " << Tinned::stringify(term2.second, false) << "\n";
-auto diff = add_fractions(
-    term1.second, std::make_pair(SymEngine::mul(SymEngine::minus_one, term2.first), term2.second)
-);
-std::cout << "diff = " << Tinned::stringify(diff.first) << "/" << Tinned::stringify(diff.second) << "\n\n";
-        if (SymEngine::eq(*numerator1, *numerator2)) {
-            auto denominator1 = SymEngine::expand(term1.second.second);
-            auto denominator2 = SymEngine::expand(term2.second);
-            REQUIRE(SymEngine::eq(*denominator1, *denominator2));
-        }
-        else {
-            auto minus_numerator2 = SymEngine::expand(
-                SymEngine::mul(SymEngine::minus_one, term2.first)
-            );
-            // Check if the second numerator has opposite sign
-            REQUIRE(SymEngine::eq(*numerator1, *minus_numerator2));
-            auto denominator1 = SymEngine::expand(term1.second.second);
-            auto minus_denominator2 = SymEngine::expand(
-                SymEngine::mul(SymEngine::minus_one, term2.second)
-            );
-            REQUIRE(SymEngine::eq(*denominator1, *minus_denominator2));
-        }
+        auto diff = add_fractions(
+            term1.second,
+            std::make_pair(
+                SymEngine::mul(SymEngine::minus_one, term2.first), term2.second
+            )
+        );
+        REQUIRE(SymEngine::eq(*SymEngine::zero, *diff.first));
     }
 }
 
@@ -422,15 +401,11 @@ TEST_CASE("Test two-level atom", "[LagrangianDAO, TwoLevelFunction, TwoLevelOper
     );
 
     // Create quasi-energy derivative Lagrangian
-    auto lagrangian = LagrangianDAO(
-        a, D, SymEngine::vec_basic({H0, Va, Vb, Vc, Vd, Ve, Vf})
-    );
+    auto La = LagrangianDAO(a, D, SymEngine::vec_basic({H0, Va, Vb, Vc, Vd, Ve, Vf}));
 
     // Evaluator for response functions
     auto E0 = SymEngine::symbol("E_0");
     auto E1 = SymEngine::symbol("E_1");
-    //auto E0 = SymEngine::rational(-1, 5);
-    //auto E1 = SymEngine::rational(1, 10);
     auto val_H0 = make_unperturbed_hamiltonian(E0, E1);
     auto Va_00 = SymEngine::symbol("V_{\\alpha,00}");
     auto Va_01 = SymEngine::symbol("V_{\\alpha,01}");
@@ -476,10 +451,8 @@ TEST_CASE("Test two-level atom", "[LagrangianDAO, TwoLevelFunction, TwoLevelOper
         std::make_pair(D, val_D)
     );
 
-    auto L_ab_0_1 = lagrangian.get_response_functions(
-        Tinned::PertTuple({b}), {}, 2
-    );
-    auto val_L_ab_0_1 = fun_eval.apply(L_ab_0_1);
+    auto La_b_2 = La.get_response_functions(Tinned::PertMultichain({b}), {}, 2);
+    auto val_La_b_2 = fun_eval.apply(La_b_2);
     auto val_ref = SymEngine::add(
         SymEngine::div(
             SymEngine::mul({SymEngine::minus_one, Vb_01, Va_10}),
@@ -490,31 +463,27 @@ TEST_CASE("Test two-level atom", "[LagrangianDAO, TwoLevelFunction, TwoLevelOper
             SymEngine::sub(omega_b, SymEngine::sub(E1, E0))
         )
     );
-    REQUIRE(SymEngine::eq(*val_L_ab_0_1, *val_ref));
-    //std::cout << "L_{ab,0,1} = " << Tinned::latexify(L_ab_0_1) << "\n";
-    //std::cout << "L_{ab,0,1} = " << Tinned::latexify(val_L_ab_0_1) << "\n\n";
+    REQUIRE(SymEngine::eq(*val_La_b_2, *val_ref));
+    //std::cout << "L^{ab}_{k_{\\rho}=2} = " << Tinned::latexify(La_b_2) << "\n";
+    //std::cout << "L^{ab}_{k_{\\rho}=2} = " << Tinned::latexify(val_La_b_2) << "\n\n";
 
     // Response function in Equation (237), J. Chem. Phys. 129, 214108 (2008)
-    auto L_abc_0_2 = lagrangian.get_response_functions(
-        Tinned::PertTuple({b, c}), {}, 3
-    );
-    auto val_L_abc_0_2 = fun_eval.apply(L_abc_0_2);
-    //std::cout << "L_{abc,0,2} = " << Tinned::latexify(L_abc_0_2) << "\n";
-    //std::cout << "L_{abc,0,2} = " << Tinned::latexify(val_L_abc_0_2) << "\n\n";
+    auto La_bc_3 = La.get_response_functions(Tinned::PertMultichain({b, c}), {}, 3);
+    auto val_La_bc_3 = fun_eval.apply(La_bc_3);
+    //std::cout << "L^{abc}_{k_{\\rho}=3} = " << Tinned::latexify(La_bc_3) << "\n";
+    //std::cout << "L^{abc}_{k_{\\rho}=3} = " << Tinned::latexify(val_La_bc_3) << "\n\n";
 
     // Response function in Equation (235), J. Chem. Phys. 129, 214108 (2008)
-    auto L_abc_1_1 = lagrangian.get_response_functions(
-        Tinned::PertTuple({b, c}), {}, 2
-    );
-    auto val_L_abc_1_1 = fun_eval.apply(L_abc_1_1);
-    //std::cout << "L_{abc,1,1} = " << Tinned::latexify(L_abc_1_1) << "\n";
-    //std::cout << "L_{abc,1,1} = " << Tinned::latexify(val_L_abc_1_1) << "\n\n";
+    auto La_bc_2 = La.get_response_functions(Tinned::PertMultichain({b, c}), {}, 2);
+    auto val_La_bc_2 = fun_eval.apply(La_bc_2);
+    //std::cout << "L^{abc}_{k_{\\rho}=2} = " << Tinned::latexify(La_bc_2) << "\n";
+    //std::cout << "L^{abc}_{k_{\\rho}=2} = " << Tinned::latexify(val_La_bc_2) << "\n\n";
 
-    // Check the equality of `val_L_abc_0_2` and `val_L_abc_1_1`
+    // Check the equality of `val_La_bc_3` and `val_La_bc_2`
     compare_rsp_functions(
-        val_L_abc_0_2,
+        val_La_bc_3,
         SymEngine::subs(
-            val_L_abc_1_1,
+            val_La_bc_2,
             {
                 {
                     omega_a,
@@ -524,19 +493,18 @@ TEST_CASE("Test two-level atom", "[LagrangianDAO, TwoLevelFunction, TwoLevelOper
         )
     );
 
-    auto L_abcd_0_3 = lagrangian.get_response_functions(
-        Tinned::PertTuple({b, c, d}), {}, 4
-    );
-    auto val_L_abcd_0_3 = fun_eval.apply(L_abcd_0_3);
+    auto La_bcd_4 = La.get_response_functions(Tinned::PertMultichain({b, c, d}), {}, 4);
+    //std::cout << "L^{abcd}_{k_{\\rho}=4} = " << Tinned::latexify(La_bcd_4) << "\n";
+    auto val_La_bcd_4 = fun_eval.apply(La_bcd_4);
 
-    auto L_abcd_1_2 = lagrangian.get_response_functions(
-        Tinned::PertTuple({b, c, d}), {}, 3
-    );
-    auto val_L_abcd_1_2 = fun_eval.apply(L_abcd_1_2);
+    auto La_bcd_3 = La.get_response_functions(Tinned::PertMultichain({b, c, d}), {}, 3);
+    //std::cout << "L^{abcd}_{k_{\\rho}=3} = " << Tinned::latexify(La_bcd_3) << "\n";
+    auto val_La_bcd_3 = fun_eval.apply(La_bcd_3);
+
     compare_rsp_functions(
-        val_L_abcd_0_3,
+        val_La_bcd_4,
         SymEngine::subs(
-            val_L_abcd_1_2,
+            val_La_bcd_3,
             {
                 {
                     omega_a,
@@ -548,33 +516,139 @@ TEST_CASE("Test two-level atom", "[LagrangianDAO, TwoLevelFunction, TwoLevelOper
         )
     );
 
-    auto L_abcd_2_1 = lagrangian.get_response_functions(
-        Tinned::PertTuple({b, c, d}), {}, 2
-    );
-    auto val_L_abcd_2_1 = fun_eval.apply(L_abcd_2_1);
+    auto La_bcd_2 = La.get_response_functions(Tinned::PertMultichain({b, c, d}), {}, 2);
+    //std::cout << "L^{abcd}_{k_{\\rho}=2} = " << Tinned::latexify(La_bcd_2) << "\n";
+    auto val_La_bcd_2 = fun_eval.apply(La_bcd_2);
 
-//    auto L_abcde_0_4 = lagrangian.get_response_functions(
-//        Tinned::PertTuple({b, c, d, e}), {}, 5
-//    );
-//    auto val_L_abcde_0_4 = SymEngine::simplify(fun_eval.apply(L_abcde_0_4));
+    compare_rsp_functions(
+        val_La_bcd_4,
+        SymEngine::subs(
+            val_La_bcd_2,
+            {
+                {
+                    omega_a,
+                    SymEngine::mul(
+                        SymEngine::minus_one, SymEngine::add({omega_b, omega_c, omega_d})
+                    )
+                }
+            }
+        )
+    );
+
+    auto La_bcde_5 = La.get_response_functions(
+        Tinned::PertMultichain({b, c, d, e}), {}, 5
+    );
+    auto val_La_bcde_5 = fun_eval.apply(La_bcde_5);
+
+    auto La_bcde_4 = La.get_response_functions(
+        Tinned::PertMultichain({b, c, d, e}), {}, 4
+    );
+    auto val_La_bcde_4 = fun_eval.apply(La_bcde_4);
+
+    compare_rsp_functions(
+        val_La_bcde_5,
+        SymEngine::subs(
+            val_La_bcde_4,
+            {
+                {
+                    omega_a,
+                    SymEngine::mul(
+                        SymEngine::minus_one,
+                        SymEngine::add({omega_b, omega_c, omega_d, omega_e})
+                    )
+                }
+            }
+        )
+    );
+
+    auto La_bcde_3 = La.get_response_functions(
+        Tinned::PertMultichain({b, c, d, e}), {}, 3
+    );
+    auto val_La_bcde_3 = fun_eval.apply(La_bcde_3);
+
+    compare_rsp_functions(
+        val_La_bcde_5,
+        SymEngine::subs(
+            val_La_bcde_3,
+            {
+                {
+                    omega_a,
+                    SymEngine::mul(
+                        SymEngine::minus_one,
+                        SymEngine::add({omega_b, omega_c, omega_d, omega_e})
+                    )
+                }
+            }
+        )
+    );
+
+// Following tests are too expensive to run
 //
-//    auto L_abcdef_0_5 = lagrangian.get_response_functions(
-//        Tinned::PertTuple({b, c, d, e, f}), {}, 6
+//    auto La_bcdef_6 = La.get_response_functions(
+//        Tinned::PertMultichain({b, c, d, e, f}), {}, 6
 //    );
-//    auto val_L_abcdef_0_5 = SymEngine::simplify(fun_eval.apply(L_abcdef_0_5));
+//    auto val_La_bcdef_6 = fun_eval.apply(La_bcdef_6);
 //
-//    auto L_abcdef_1_4 = lagrangian.get_response_functions(
-//        Tinned::PertTuple({b, c, d, e, f}), {}, 5
+//    auto La_bcdef_5 = La.get_response_functions(
+//        Tinned::PertMultichain({b, c, d, e, f}), {}, 5
 //    );
-//    auto val_L_abcdef_1_4 = SymEngine::simplify(fun_eval.apply(L_abcdef_1_4));
+//    auto val_La_bcdef_5 = fun_eval.apply(La_bcdef_5);
 //
-//    auto L_abcdef_2_3 = lagrangian.get_response_functions(
-//        Tinned::PertTuple({b, c, d, e, f}), {}, 4
+//    compare_rsp_functions(
+//        val_La_bcdef_6,
+//        SymEngine::subs(
+//            val_La_bcdef_5,
+//            {
+//                {
+//                    omega_a,
+//                    SymEngine::mul(
+//                        SymEngine::minus_one,
+//                        SymEngine::add({omega_b, omega_c, omega_d, omega_e, omega_f})
+//                    )
+//                }
+//            }
+//        )
 //    );
-//    auto val_L_abcdef_2_3 = SymEngine::simplify(fun_eval.apply(L_abcdef_2_3));
 //
-//    auto L_abcdef_3_2 = lagrangian.get_response_functions(
-//        Tinned::PertTuple({b, c, d, e, f}), {}, 3
+//    auto La_bcdef_4 = La.get_response_functions(
+//        Tinned::PertMultichain({b, c, d, e, f}), {}, 4
 //    );
-//    auto val_L_abcdef_3_2 = SymEngine::simplify(fun_eval.apply(L_abcdef_3_2));
+//    auto val_La_bcdef_4 = fun_eval.apply(La_bcdef_4);
+//
+//    compare_rsp_functions(
+//        val_La_bcdef_6,
+//        SymEngine::subs(
+//            val_La_bcdef_4,
+//            {
+//                {
+//                    omega_a,
+//                    SymEngine::mul(
+//                        SymEngine::minus_one,
+//                        SymEngine::add({omega_b, omega_c, omega_d, omega_e, omega_f})
+//                    )
+//                }
+//            }
+//        )
+//    );
+//
+//    auto La_bcdef_3 = La.get_response_functions(
+//        Tinned::PertMultichain({b, c, d, e, f}), {}, 3
+//    );
+//    auto val_La_bcdef_3 = fun_eval.apply(La_bcdef_3);
+//
+//    compare_rsp_functions(
+//        val_La_bcdef_6,
+//        SymEngine::subs(
+//            val_La_bcdef_3,
+//            {
+//                {
+//                    omega_a,
+//                    SymEngine::mul(
+//                        SymEngine::minus_one,
+//                        SymEngine::add({omega_b, omega_c, omega_d, omega_e, omega_f})
+//                    )
+//                }
+//            }
+//        )
+//    );
 }
