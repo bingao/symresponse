@@ -12,6 +12,7 @@
 #include <symengine/complex_double.h>
 #include <symengine/constants.h>
 #include <symengine/dict.h>
+#include <symengine/symbol.h>
 #include <symengine/matrices/matrix_add.h>
 #include <symengine/matrices/matrix_mul.h>
 #include <symengine/matrices/trace.h>
@@ -52,17 +53,17 @@ TEST_CASE("Test L^{abc} with S^{a} = 0", "[LagrangianDAO]")
     auto hnuc = Tinned::make_nonel_function(std::string("hnuc"), dependencies);
 
     // Create quasi-energy derivative Lagrangian
-    auto lagrangian = LagrangianDAO(
+    auto La = LagrangianDAO(
         a, D, S, SymEngine::vec_basic({h, V, T}), G, Exc, Fxc, hnuc
     );
 
     // Get generalized energy, Lagrangian multipliers, TDSCF equation and
     // idempotency constraint, used for verifying response functions
-    auto E = lagrangian.get_generalized_energy();
-    auto lambda = lagrangian.get_tdscf_multiplier();
-    auto zeta = lagrangian.get_idempotency_multiplier();
-    auto Y = lagrangian.get_tdscf_equation();
-    auto Z = lagrangian.get_idempotency_constraint();
+    auto E = La.get_generalized_energy();
+    auto lambda = La.get_tdscf_multiplier();
+    auto zeta = La.get_idempotency_multiplier();
+    auto Y = La.get_tdscf_equation();
+    auto Z = La.get_idempotency_constraint();
 
     auto h_a = h->diff(a);
     auto V_a = V->diff(a);
@@ -83,7 +84,7 @@ TEST_CASE("Test L^{abc} with S^{a} = 0", "[LagrangianDAO]")
     ));
 
     // Response function in Equation (237), J. Chem. Phys. 129, 214108 (2008)
-    auto L_abc_0_2 = lagrangian.get_response_functions(
+    auto L_abc_0_2 = La.get_response_functions(
         Tinned::PertMultichain({b, c}), {}, 3
     );
 
@@ -114,7 +115,7 @@ TEST_CASE("Test L^{abc} with S^{a} = 0", "[LagrangianDAO]")
     REQUIRE(SymEngine::eq(*L_abc_0_2, *E_0a_bc));
 
     // Response function in Equation (235), J. Chem. Phys. 129, 214108 (2008)
-    auto L_abc_1_1 = lagrangian.get_response_functions(
+    auto L_abc_1_1 = La.get_response_functions(
         Tinned::PertMultichain({b, c}), {}, 2
     );
 
@@ -180,12 +181,12 @@ TEST_CASE("Test L^{abc} with different perturbation dependencies", "[LagrangianD
     );
 
     // Create quasi-energy derivative Lagrangian
-    auto lagrangian = LagrangianDAO(
+    auto La = LagrangianDAO(
         a, D, S, SymEngine::vec_basic({h, V, T}), G, Exc, Fxc, hnuc
     );
 
     // Response function in Equation (237), J. Chem. Phys. 129, 214108 (2008)
-    auto L_abc_0_2 = lagrangian.get_response_functions(
+    auto L_abc_0_2 = La.get_response_functions(
         Tinned::PertMultichain({b, c}), {}, 3
     );
 
@@ -253,7 +254,7 @@ TEST_CASE("Test L^{abc} with different perturbation dependencies", "[LagrangianD
     REQUIRE(find_all(L_abc_0_2, hnuc).empty());
 
     // Response function in Equation (235), J. Chem. Phys. 129, 214108 (2008)
-    auto L_abc_1_1 = lagrangian.get_response_functions(
+    auto L_abc_1_1 = La.get_response_functions(
         Tinned::PertMultichain({b, c}), {}, 2
     );
 
@@ -312,22 +313,22 @@ TEST_CASE("Test L^{abc} with complex frequencies", "[LagrangianDAO]")
     auto hnuc = Tinned::make_nonel_function(std::string("hnuc"), dependencies);
 
     // Create quasi-energy derivative Lagrangian
-    auto lagrangian = LagrangianDAO(
+    auto La = LagrangianDAO(
         a, D, S, SymEngine::vec_basic({h, V, T}), G, Exc, Fxc, hnuc
     );
 
     // Get generalized energy, generalized energy-weighted density matrix,
     // Lagrangian multipliers, TDSCF equation and idempotency constraint, used
     // for verifying response functions
-    auto E = lagrangian.get_generalized_energy();
-    auto W = lagrangian.get_ew_density();
-    auto lambda = lagrangian.get_tdscf_multiplier();
-    auto zeta = lagrangian.get_idempotency_multiplier();
-    auto Y = lagrangian.get_tdscf_equation();
-    auto Z = lagrangian.get_idempotency_constraint();
+    auto E = La.get_generalized_energy();
+    auto W = La.get_ew_density();
+    auto lambda = La.get_tdscf_multiplier();
+    auto zeta = La.get_idempotency_multiplier();
+    auto Y = La.get_tdscf_equation();
+    auto Z = La.get_idempotency_constraint();
 
     // Response function in Equation (237), J. Chem. Phys. 129, 214108 (2008)
-    auto L_abc_0_2 = lagrangian.get_response_functions(
+    auto L_abc_0_2 = La.get_response_functions(
         Tinned::PertMultichain({b, c}), {}, 3
     );
 
@@ -357,7 +358,7 @@ TEST_CASE("Test L^{abc} with complex frequencies", "[LagrangianDAO]")
     REQUIRE(SymEngine::eq(*L_abc_0_2, *Tinned::clean_temporum(ref)));
 
     // Response function in Equation (235), J. Chem. Phys. 129, 214108 (2008)
-    auto L_abc_1_1 = lagrangian.get_response_functions(
+    auto L_abc_1_1 = La.get_response_functions(
         Tinned::PertMultichain({b, c}), {}, 2
     );
 
@@ -412,7 +413,7 @@ TEST_CASE("Test L^{abc} with zero frequency perturbations", "[LagrangianDAO]")
     auto hnuc = Tinned::make_nonel_function(std::string("hnuc"), dependencies);
 
     // Create quasi-energy derivative Lagrangian
-    auto lagrangian = LagrangianDAO(
+    auto La = LagrangianDAO(
         a, D, S, SymEngine::vec_basic({h, V, T}), G, Exc, Fxc, hnuc
     );
 
@@ -426,10 +427,10 @@ TEST_CASE("Test L^{abc} with zero frequency perturbations", "[LagrangianDAO]")
     // Lagrangian multipliers and TDSCF equation and idempotency constraint,
     // without `T` matrix and time-differentiated quantities
     auto E = Tinned::remove_if(
-        lagrangian.get_generalized_energy(), SymEngine::set_basic({T})
+        La.get_generalized_energy(), SymEngine::set_basic({T})
     );
     auto W = SymEngine::matrix_mul({D, F, D});
-    auto lambda = lagrangian.get_tdscf_multiplier();
+    auto lambda = La.get_tdscf_multiplier();
     auto zeta = SymEngine::matrix_add({
         SymEngine::matrix_mul({F_a, D, S}),
         SymEngine::matrix_mul({SymEngine::minus_one, F, D, S_a}),
@@ -441,10 +442,10 @@ TEST_CASE("Test L^{abc} with zero frequency perturbations", "[LagrangianDAO]")
         SymEngine::matrix_mul({F, D, S}),
         SymEngine::matrix_mul({SymEngine::minus_one, S, D, F})
     });
-    auto Z = lagrangian.get_idempotency_constraint();
+    auto Z = La.get_idempotency_constraint();
 
     // Response function in Equation (237), J. Chem. Phys. 129, 214108 (2008)
-    auto L_abc_0_2 = lagrangian.get_response_functions(
+    auto L_abc_0_2 = La.get_response_functions(
         Tinned::PertMultichain({b, c}), {}, 3
     );
 
@@ -473,7 +474,7 @@ TEST_CASE("Test L^{abc} with zero frequency perturbations", "[LagrangianDAO]")
     REQUIRE(SymEngine::eq(*L_abc_0_2, *ref));
 
     // Response function in Equation (235), J. Chem. Phys. 129, 214108 (2008)
-    auto L_abc_1_1 = lagrangian.get_response_functions(
+    auto L_abc_1_1 = La.get_response_functions(
         Tinned::PertMultichain({b, c}), {}, 2
     );
 
@@ -528,19 +529,19 @@ TEST_CASE("Test L^{abcd} with complex/zero/imaginary/real frequencies", "[Lagran
     auto Fxc = Tinned::make_xc_potential(std::string("Fxc"), D, Omega, weight);
     auto hnuc = Tinned::make_nonel_function(std::string("hnuc"), dependencies);
 
-    auto lagrangian = LagrangianDAO(
+    auto La = LagrangianDAO(
         a, D, S, SymEngine::vec_basic({h, V, T}), G, Exc, Fxc, hnuc
     );
 
-    auto E = lagrangian.get_generalized_energy();
-    auto W = lagrangian.get_ew_density();
-    auto lambda = lagrangian.get_tdscf_multiplier();
-    auto zeta = lagrangian.get_idempotency_multiplier();
-    auto Y = lagrangian.get_tdscf_equation();
-    auto Z = lagrangian.get_idempotency_constraint();
+    auto E = La.get_generalized_energy();
+    auto W = La.get_ew_density();
+    auto lambda = La.get_tdscf_multiplier();
+    auto zeta = La.get_idempotency_multiplier();
+    auto Y = La.get_tdscf_equation();
+    auto Z = La.get_idempotency_constraint();
 
     // Response function in Equation (241), J. Chem. Phys. 129, 214108 (2008)
-    auto L_abcd_0_3 = lagrangian.get_response_functions(
+    auto L_abcd_0_3 = La.get_response_functions(
         Tinned::PertMultichain({b, c, d}), {}, 4
     );
 
@@ -580,7 +581,7 @@ TEST_CASE("Test L^{abcd} with complex/zero/imaginary/real frequencies", "[Lagran
     REQUIRE(SymEngine::eq(*L_abcd_0_3, *Tinned::clean_temporum(ref)));
 
     // Response function in Equation (239), J. Chem. Phys. 129, 214108 (2008)
-    auto L_abcd_2_1 = lagrangian.get_response_functions(
+    auto L_abcd_2_1 = La.get_response_functions(
         Tinned::PertMultichain({b, c, d}), {}, 2
     );
 
@@ -665,7 +666,7 @@ TEST_CASE("Test L^{abcd} with complex/zero/imaginary/real frequencies", "[Lagran
     REQUIRE(SymEngine::eq(*L_abcd_2_1, *Tinned::clean_temporum(ref)));
 
     // Response function in Equation (240), J. Chem. Phys. 129, 214108 (2008)
-    auto L_abcd_1_2 = lagrangian.get_response_functions(
+    auto L_abcd_1_2 = La.get_response_functions(
         Tinned::PertMultichain({b, c, d}), {}, 3
     );
 
@@ -717,27 +718,27 @@ TEST_CASE("Test L^{abcd} with intensive perturbations", "[LagrangianDAO]")
     auto Fxc = Tinned::make_xc_potential(std::string("Fxc"), D, Omega, weight);
     auto hnuc = Tinned::make_nonel_function(std::string("hnuc"), dependencies);
 
-    auto lagrangian = LagrangianDAO(
+    auto La = LagrangianDAO(
         //a, D, S, SymEngine::vec_basic({h, V, T}), G, Exc, Fxc, hnuc
         a, D, S, SymEngine::vec_basic({h}), G
     );
 
     // Response function in Equations (239), (240) and (241), J. Chem. Phys. 129, 214108 (2008)
-    auto L_abcd_2_1 = lagrangian.get_response_functions(
+    auto L_abcd_2_1 = La.get_response_functions(
         Tinned::PertMultichain({b, c, d}), {}, 2
     );
-    auto L_abcd_1_2 = lagrangian.get_response_functions(
+    auto L_abcd_1_2 = La.get_response_functions(
         Tinned::PertMultichain({b, c, d}), {}, 3
     );
-    auto L_abcd_0_3 = lagrangian.get_response_functions(
+    auto L_abcd_0_3 = La.get_response_functions(
         Tinned::PertMultichain({b, c, d}), {}, 4
     );
 
     // Extensive perturbations a, b and c, intensive perturbations d
-    auto La_bc_d_3 = lagrangian.get_response_functions(
+    auto La_bc_d_3 = La.get_response_functions(
         Tinned::PertMultichain({b, c}), Tinned::PertMultichain({d}), 3
     );
-    auto La_bc_d_2 = lagrangian.get_response_functions(
+    auto La_bc_d_2 = La.get_response_functions(
         Tinned::PertMultichain({b, c}), Tinned::PertMultichain({d}), 2
     );
 
@@ -756,3 +757,57 @@ std::cout << "La_bc_d_2\n" << Tinned::latexify(La_bc_d_2, 20) << "\n\n";
 //FIXME: speical case, L^{fggg}_{2,1}
 
 //std::cout << Tinned::latexify(result, 16) << "\n\n";
+
+inline unsigned int
+get_weight(
+    const SymEngine::vec_basic& wfn_parameters,
+    const SymEngine::vec_basic& multipliers
+)
+{
+    return wfn_parameters.size()+multipliers.size();
+}
+
+TEST_CASE("Test the search for optimal elimination rules", "[LagrangianDAO]")
+{
+    auto omega_a = SymEngine::symbol("\\omega_\\alpha");
+    auto omega_b = SymEngine::symbol("\\omega_\\beta");
+    auto omega_c = SymEngine::symbol("\\omega_\\gamma");
+    auto omega_d = SymEngine::symbol("\\omega_\\delta");
+    auto a = Tinned::make_perturbation(std::string("a"), omega_a);
+    auto b = Tinned::make_perturbation(std::string("b"), omega_b);
+    auto c = Tinned::make_perturbation(std::string("c"), omega_c);
+    auto d = Tinned::make_perturbation(std::string("d"), omega_d);
+
+    auto dependencies = Tinned::PertDependency({
+        std::make_pair(a, 99),
+        std::make_pair(b, 99),
+        std::make_pair(c, 99),
+        std::make_pair(d, 99)
+    });
+
+    auto D = Tinned::make_1el_density(std::string("D"));
+    auto S = Tinned::make_1el_operator(std::string("S"), dependencies);
+    auto h = Tinned::make_1el_operator(std::string("h"), dependencies);
+    auto V = Tinned::make_1el_operator(std::string("V"), dependencies);
+    auto T = Tinned::make_t_matrix(dependencies);
+    auto G = Tinned::make_2el_operator(std::string("G"), D, dependencies);
+    auto weight = Tinned::make_nonel_function(std::string("weight"), dependencies);
+    auto Omega = Tinned::make_1el_operator(std::string("Omega"), dependencies);
+    auto Exc = Tinned::make_xc_energy(std::string("Exc"), D, Omega, weight);
+    auto Fxc = Tinned::make_xc_potential(std::string("Fxc"), D, Omega, weight);
+    auto hnuc = Tinned::make_nonel_function(std::string("hnuc"), dependencies);
+
+    auto La = LagrangianDAO(
+        a, D, S, SymEngine::vec_basic({h, V, T}), G, Exc, Fxc, hnuc
+    );
+
+    auto results = La.get_response_functions(
+        Tinned::PertMultichain({b, c, d}), {}, {}, get_weight
+    );
+std::cout << "\n\nweight = " << results.first << "\n";
+for (const auto& r: results.second) {
+    std::cout << "elimination = " << r.first << "\n"
+              << "response function = " << Tinned::latexify(r.second) << "\n";
+}
+std::cout << "\n\n";
+}

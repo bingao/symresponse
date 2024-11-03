@@ -89,6 +89,9 @@ namespace SymResponse
                 const unsigned int min_multiplier_order
             ) override;
 
+            virtual SymEngine::vec_basic get_wavefunction_parameter() const noexcept override;
+            virtual SymEngine::vec_basic get_lagrangian_multipliers() const noexcept override;
+
         public:
             explicit LagrangianDAO(
                 const SymEngine::RCP<const Tinned::Perturbation>& a,

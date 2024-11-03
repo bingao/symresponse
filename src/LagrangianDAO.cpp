@@ -227,5 +227,15 @@ namespace SymResponse
         );
     }
 
+    SymEngine::vec_basic LagrangianDAO::get_wavefunction_parameter() const noexcept
+    {
+        return SymEngine::vec_basic({D_});
+    }
+
+    SymEngine::vec_basic LagrangianDAO::get_lagrangian_multipliers() const noexcept
+    {
+        return SymEngine::vec_basic({});
+    }
+
     //TODO: double residue problem happens for Hessian of excited states
 }

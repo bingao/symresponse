@@ -6,56 +6,67 @@
 
 #include <catch2/catch.hpp>
 
-#include <symengine/add.h>
-#include <symengine/mul.h>
-#include <symengine/real_double.h>
-#include <symengine/complex_double.h>
-#include <symengine/constants.h>
 #include <symengine/dict.h>
-#include <symengine/matrices/matrix_add.h>
-#include <symengine/matrices/matrix_mul.h>
+#include <symengine/symbol.h>
 
 #include <Tinned.hpp>
 
 #include "SymResponse.hpp"
 
-//using namespace Tinned;
 using namespace SymResponse;
 
-TEST_CASE("Test ...", "[LagrangianCC]")
+TEST_CASE("Test the second and third order response functions", "[LagrangianCC]")
 {
-    auto a = Tinned::make_perturbation(std::string("a"));
-    auto b = Tinned::make_perturbation(std::string("b"));
-    auto c = Tinned::make_perturbation(std::string("c"));
-    auto dependencies = Tinned::PertDependency({
-        std::make_pair(a, 99), std::make_pair(b, 99), std::make_pair(c, 99)
-    });
-    auto H = Tinned::make_1el_operator(std::string("H"), dependencies);
-    auto amplitudes = Tinned::make_perturbed_parameter(std::string("t"));
-    auto excit_operators = Tinned::make_1el_operator(std::string("\\tau"));
-    auto multipliers = Tinned::make_perturbed_parameter(std::string("\\lambda"));
+    // Set perturbations
+    auto omega_a = SymEngine::symbol("omega_A");
+    auto omega_b = SymEngine::symbol("omega_B");
+    auto omega_c = SymEngine::symbol("omega_C");
+    auto a = Tinned::make_perturbation(std::string("a"), omega_a);
+    auto b = Tinned::make_perturbation(std::string("b"), omega_b);
+    auto c = Tinned::make_perturbation(std::string("c"), omega_c);
+
+    // Unperturbed Hamiltonian, perturbation operators, amplitudes, excitation
+    // operators and multipliers
+    auto H0 = Tinned::make_1el_operator(std::string("H_0"));
+    auto Va = Tinned::make_1el_operator(
+        std::string("V_A"), Tinned::PertDependency({std::make_pair(a, 1)})
+    );
+    auto Vb = Tinned::make_1el_operator(
+        std::string("V_B"), Tinned::PertDependency({std::make_pair(b, 1)})
+    );
+    auto Vc = Tinned::make_1el_operator(
+        std::string("V_C"), Tinned::PertDependency({std::make_pair(c, 1)})
+    );
+    auto t = Tinned::make_perturbed_parameter(std::string("t"));
+    auto tau = Tinned::make_1el_operator(std::string("\\tau"));
+    auto multiplier = Tinned::make_perturbed_parameter(std::string("\\lambda"));
 
     // Create quasi-energy Lagrangian
-    auto lagrangian = LagrangianCC(H, amplitudes, excit_operators, multipliers);
+    auto L = LagrangianCC(H0, SymEngine::vec_basic({Va, Vb, Vc}), t, tau, multiplier);
 
-    // Response function, n+1 rule, no intensive perturbations
-    auto L_abc_4 = lagrangian.get_response_functions(
-        Tinned::PertMultichain({a, b, c}), {}, 4
-    );
-std::cout << "\n\nL^{abc}_4 = " << Tinned::latexify(L_abc_4) << "\n";
+    // Response function <<A;B>>, no intensive perturbations
+    auto L_ab = L.get_response_functions(Tinned::PertMultichain({a, b}), {}, 0);
+    std::cout << "\\langle\\langle A;B\\rangle\\rangle_{\\omega_{B}} = "
+              << Tinned::latexify(L_ab) << "\n\n";
 
-    auto all_amplitudes = Tinned::find_all(L_abc_4, amplitudes);
-for (const auto& t: all_amplitudes) std::cout << "t = " << Tinned::stringify(t) << "\n";
-std::cout << "\n";
+    auto t_a = t->diff(a);
+    auto t_b = t->diff(b);
 
-    // Response function, ?? rule, no intensive perturbations
-    auto L_abc_3 = lagrangian.get_response_functions(
-        Tinned::PertMultichain({a, b, c}), {}, 3
-    );
-std::cout << "\n\nL^{abc}_3 = " << Tinned::latexify(L_abc_3) << "\n";
+    auto rhs_t_a = L.get_response_rhs(t_a);
+    std::cout << "-\\boldsymbol{\\xi}^{a}_{\\omega} = "
+              << Tinned::latexify(rhs_t_a) << "\n\n";
 
-    all_amplitudes = Tinned::find_all(L_abc_3, amplitudes);
-for (const auto& t: all_amplitudes) std::cout << "t = " << Tinned::stringify(t) << "\n";
-std::cout << "\n";
+    // Response function <<A;B,C>>, no intensive perturbations
+    auto L_abc = L.get_response_functions(Tinned::PertMultichain({a, b, c}), {}, 0);
+    std::cout << "\\langle\\langle A;B,C\\rangle\\rangle_{\\omega_{B},\\omega_{C}} = "
+              << Tinned::latexify(L_abc) << "\n\n";
+
+    auto t_c = t->diff(c);
+    auto multiplier_a = multiplier->diff(a);
+    auto multiplier_b = multiplier->diff(b);
+    auto multiplier_c = multiplier->diff(c);
+
+    auto rhs_multiplier_a = L.get_response_rhs(multiplier_a, true);
+    std::cout << "-\\boldsymbol{\\zeta}^{a}_{\\omega} = "
+              << Tinned::latexify(rhs_multiplier_a) << "\n\n";
 }
-

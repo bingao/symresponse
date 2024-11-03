@@ -365,12 +365,12 @@ inline void compare_rsp_functions(
 TEST_CASE("Test two-level atom", "[LagrangianDAO, TwoLevelFunction, TwoLevelOperator]")
 {
     // Set perturbations
-    auto omega_a = SymEngine::symbol("omega_a");
-    auto omega_b = SymEngine::symbol("omega_b");
-    auto omega_c = SymEngine::symbol("omega_c");
-    auto omega_d = SymEngine::symbol("omega_d");
-    auto omega_e = SymEngine::symbol("omega_e");
-    auto omega_f = SymEngine::symbol("omega_f");
+    auto omega_a = SymEngine::symbol("\\omega_\\alpha");
+    auto omega_b = SymEngine::symbol("\\omega_\\beta");
+    auto omega_c = SymEngine::symbol("\\omega_\\gamma");
+    auto omega_d = SymEngine::symbol("\\omega_\\delta");
+    auto omega_e = SymEngine::symbol("\\omega_\\varepsilon");
+    auto omega_f = SymEngine::symbol("\\omega_\\zeta");
     auto a = Tinned::make_perturbation(std::string("a"), omega_a);
     auto b = Tinned::make_perturbation(std::string("b"), omega_b);
     auto c = Tinned::make_perturbation(std::string("c"), omega_c);
@@ -379,7 +379,7 @@ TEST_CASE("Test two-level atom", "[LagrangianDAO, TwoLevelFunction, TwoLevelOper
     auto f = Tinned::make_perturbation(std::string("f"), omega_f);
 
     // Different operators
-    auto D = Tinned::make_1el_density(std::string("\\rho"));
+    auto rho = Tinned::make_1el_density(std::string("\\rho"));
     auto H0 = Tinned::make_1el_operator(std::string("H_0"));
     auto Va = Tinned::make_1el_operator(
         std::string("V_\\alpha"), Tinned::PertDependency({std::make_pair(a, 1)})
@@ -401,7 +401,7 @@ TEST_CASE("Test two-level atom", "[LagrangianDAO, TwoLevelFunction, TwoLevelOper
     );
 
     // Create quasi-energy derivative Lagrangian
-    auto La = LagrangianDAO(a, D, SymEngine::vec_basic({H0, Va, Vb, Vc, Vd, Ve, Vf}));
+    auto La = LagrangianDAO(a, rho, SymEngine::vec_basic({H0, Va, Vb, Vc, Vd, Ve, Vf}));
 
     // Evaluator for response functions
     auto E0 = SymEngine::symbol("E_0");
@@ -438,7 +438,7 @@ TEST_CASE("Test two-level atom", "[LagrangianDAO, TwoLevelFunction, TwoLevelOper
     auto Vf_11 = SymEngine::symbol("V_{\\zeta,11}");
     auto val_Bf = make_field_operator(Vf_00, Vf_01, Vf_10, Vf_11);
     // We use the ground state [[1, 0], [0, 0]]
-    auto val_D = pure_state_density(SymEngine::one, SymEngine::zero);
+    auto val_rho0 = pure_state_density(SymEngine::one, SymEngine::zero);
 
     // Create the evaluator for response functions
     auto fun_eval = Tinned::TwoLevelFunction(
@@ -448,7 +448,7 @@ TEST_CASE("Test two-level atom", "[LagrangianDAO, TwoLevelFunction, TwoLevelOper
                  SymEngine::RCPBasicKeyLess>({
             {Va, val_Ba}, {Vb, val_Bb}, {Vc, val_Bc}, {Vd, val_Bd}, {Ve, val_Be}, {Vf, val_Bf}
         }),
-        std::make_pair(D, val_D)
+        std::make_pair(rho, val_rho0)
     );
 
     auto La_b_2 = La.get_response_functions(Tinned::PertMultichain({b}), {}, 2);

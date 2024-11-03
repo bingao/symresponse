@@ -17,7 +17,10 @@
 #pragma once
 
 #include <cmath>
+#include <functional>
 #include <limits>
+#include <utility>
+#include <vector>
 
 #include <symengine/basic.h>
 #include <symengine/dict.h>
@@ -101,6 +104,16 @@ namespace SymResponse
                 const unsigned int min_multiplier_order
             ) = 0;
 
+            // Evaluation at zero perturbation strength
+            virtual SymEngine::RCP<const SymEngine::Basic> at_zero_strength(
+                const SymEngine::RCP<const SymEngine::Basic>& L
+            );
+
+            // Get unperturbed wave function parameters and Lagrangian
+            // multipliers, used to find optimal elimination rules
+            virtual SymEngine::vec_basic get_wavefunction_parameter() const noexcept = 0;
+            virtual SymEngine::vec_basic get_lagrangian_multipliers() const noexcept = 0;
+
         public:
             explicit Lagrangian() = default;
 
@@ -164,40 +177,116 @@ namespace SymResponse
                 );
                 // Usually `result` cannot be null after elimination
                 if (result.is_null()) return SymEngine::zero;
-                // Remove unperturbed time-differentiated quantities (and
-                // unperturbed T matrix for the AO density matrix-based
-                // response theory) as well as their perturbed ones but with
-                // zero sum of perturbation frequencies. Replace those with
-                // non-zero sum of frequencies by corresponding derivatives in
-                // the frequency domain multiplied by the sum of frequencies.
-                return Tinned::clean_temporum(result);
+                // Evaluation at zero perturbation strength
+                return at_zero_strength(result);
             }
 
-            //inline std::vector<std::pair<unsigned int, SymEngine::RCP<const SymEngine::Basic>>>
-            //get_response_functions(
-            //    const Tinned::PertMultichain& exten_perturbations,
-            //    const Tinned::PertMultichain& inten_perturbations = {},
-            //    const SymEngine::set_basic& excluded ={}
-            //)
-            //{
-            //    unsigned int min_wfn_exten = 0;
-            //    int min_weight = ;
-            //    SymEngine::RCP<const SymEngine::Basic> rsp_functions;
-            //    for (unsigned int order=; order<; ++order) {
-            //        auto result = get_response_functions(
-            //            exten_perturbations, inten_perturbations, order
-            //        );
-            //        if (!Tinned::exist_any(result, excluded)) {
-            //            auto weight = get_weight(result);
-            //            if (weight<min_weight) {
-            //                min_weight = weight;
-            //                min_wfn_exten = order;
-            //                rsp_functions = result;
-            //            }
-            //        }
-            //    }
-            //    return (min_wfn_exten, rsp_functions);
-            //}
+            // Find optimal elimination rules according to the given weight
+            // function on (un)perturbed wave function parameters and
+            // Lagrangian multipliers.
+            //
+            // `excluded` contains symbols that should be excluded from
+            // response functions, for example, when a perturbed operator
+            // cannot be evaluated.
+            //
+            // Return a pair of a minimal weight and a vector of (1) minimum
+            // order of differentiated wave function parameters with respect to
+            // extensive perturbations to be eliminated and (2) the
+            // corresponding response functions.
+            //
+            // If an empty vector is returned, no response functions can be
+            // computed with the given conditions.
+            inline std::pair<unsigned int,
+                             std::vector<std::pair<unsigned int,
+                                         SymEngine::RCP<const SymEngine::Basic>>>>
+            get_response_functions(
+                const Tinned::PertMultichain& exten_perturbations,
+                const Tinned::PertMultichain& inten_perturbations = {},
+                const SymEngine::set_basic& excluded = {},
+                const std::function<unsigned int(
+                    const SymEngine::vec_basic&,
+                    const SymEngine::vec_basic&
+                )>& get_weight = [](
+                    const SymEngine::vec_basic& wfn_parameters,
+                    const SymEngine::vec_basic& multipliers
+                ) -> unsigned int {
+                    return wfn_parameters.size()+multipliers.size();
+                }
+            )
+            {
+                unsigned int min_weight = std::numeric_limits<unsigned int>::max();
+                std::vector<std::pair<unsigned int,
+                                      SymEngine::RCP<const SymEngine::Basic>>> results;
+                // Loop over the order of differentiated wave function
+                // parameters with respect to extensive perturbations to be
+                // eliminated
+                auto min_wfn_order
+                    = static_cast<unsigned int>(std::floor(0.5*exten_perturbations.size()))+1;
+                auto max_wfn_order = exten_perturbations.size()+1;
+                for (unsigned int order=min_wfn_order; order<=max_wfn_order; ++order) {
+                    auto rsp_function = get_response_functions(
+                        exten_perturbations, inten_perturbations, order
+                    );
+                    if (!Tinned::exist_any(rsp_function, excluded)) {
+                        // Find all (un)perturbed wave function parameters and
+                        // Lagrangian multipliers for this response function
+                        auto all_wfn_parameters = SymEngine::vec_basic({});
+                        auto all_multipliers = SymEngine::vec_basic({});
+                        for (const auto& wfn_parameter: get_wavefunction_parameter()) {
+                            auto wfn_parameters = Tinned::find_all(
+                                rsp_function, wfn_parameter
+                            );
+                            all_wfn_parameters.insert(
+                                all_wfn_parameters.end(),
+                                wfn_parameters.begin(),
+                                wfn_parameters.end()
+                            );
+                        }
+                        for (const auto& multiplier: get_lagrangian_multipliers()) {
+                            auto multipliers = Tinned::find_all(
+                                rsp_function, multiplier
+                            );
+                            all_multipliers.insert(
+                                all_multipliers.end(),
+                                multipliers.begin(),
+                                multipliers.end()
+                            );
+                        }
+                        auto weight = get_weight(all_wfn_parameters, all_multipliers);
+                        if (weight==min_weight) {
+                            results.push_back(std::make_pair(order, rsp_function));
+                        }
+                        else if (weight<min_weight) {
+                            min_weight = weight;
+                            results.clear();
+                            results.push_back(std::make_pair(order, rsp_function));
+                        }
+                    }
+                }
+                return std::make_pair(min_weight, results);
+            }
+
+           // inline std::pair<unsigned int,
+           //                  std::vector<std::pair<Tinned::PertMultichain,
+           //                                        Tinned::PertMultichain>,
+           //                              std::vector<std::pair<unsigned int,
+           //                                          SymEngine::RCP<const SymEngine::Basic>>>>>
+           // get_response_functions(
+           //     const Tinned::PertMultichain& perturbations,
+           //     const SymEngine::set_basic& excluded = {},
+           //     const std::function<unsigned int(
+           //         const SymEngine::vec_basic&,
+           //         const SymEngine::vec_basic&
+           //     )>& get_weight = [](
+           //         const SymEngine::vec_basic& wfn_parameters,
+           //         const SymEngine::vec_basic& multipliers
+           //     ) -> unsigned int {
+           //         return wfn_parameters.size()+multipliers.size();
+           //     }
+           // )
+           // {
+
+           // }
 
             //// Get residues. Other parameters see the function `get_response_functions()`.
             //virtual SymEngine::RCP<const SymEngine::Basic> get_residues(

@@ -38,4 +38,17 @@ namespace SymResponse
             if (exten_perturbations.find(p)!=exten_perturbations.end()) return false;
         return true;
     }
+
+    SymEngine::RCP<const SymEngine::Basic> Lagrangian::at_zero_strength(
+        const SymEngine::RCP<const SymEngine::Basic>& L
+    )
+    {
+        // Remove unperturbed time-differentiated quantities (and unperturbed T
+        // matrix for the AO density matrix-based response theory) as well as
+        // their perturbed ones but with zero sum of perturbation frequencies.
+        // Replace those with non-zero sum of frequencies by corresponding
+        // derivatives in the frequency domain multiplied by the sum of
+        // frequencies.
+        return Tinned::clean_temporum(L);
+    }
 }
