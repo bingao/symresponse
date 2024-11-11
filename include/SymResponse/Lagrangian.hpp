@@ -19,6 +19,7 @@
 #include <cmath>
 #include <functional>
 #include <limits>
+#include <map>
 #include <utility>
 #include <vector>
 
@@ -33,6 +34,37 @@
 
 namespace SymResponse
 {
+    // A map with key being a minimal elimination order of
+    // differentiated wave function parameters with respect to
+    // extensive perturbations, and value as the corresponding response
+    // functions
+    typedef std::map<unsigned int, SymEngine::RCP<const SymEngine::Basic>>
+        ElimOrderMap;
+
+    // Compare two pairs of perturbation multichains
+    inline bool cmp_pert_multichain_pair(
+        const std::pair<Tinned::PertMultichain, Tinned::PertMultichain>& lhs,
+        const std::pair<Tinned::PertMultichain, Tinned::PertMultichain>& rhs
+    )
+    {
+        auto result = Tinned::compare_pert_multichain(lhs.first, rhs.first);
+        switch (result) {
+            case -1:
+                return true;
+            case 1:
+                return false;
+            default:
+                result = Tinned::compare_pert_multichain(lhs.second, rhs.second);
+                return result<=0 ? true : false;
+        }
+    }
+
+    // A map with key being extensive perturbations, and value as a
+    // pair of intensive perturbations, and an `ElimOrderMap` object
+    typedef std::map<std::pair<Tinned::PertMultichain, Tinned::PertMultichain>,
+                     ElimOrderMap, decltype(cmp_pert_multichain_pair)*>
+        ElimExtsvMap;
+
     // Abstract quasi-energy Lagrangian class, can also be used for
     // quasi-energy without Lagrangian multipliers
     class Lagrangian
@@ -189,34 +221,36 @@ namespace SymResponse
             // response functions, for example, when a perturbed operator
             // cannot be evaluated.
             //
-            // Return a pair of a minimal weight and a vector of (1) minimum
-            // order of differentiated wave function parameters with respect to
-            // extensive perturbations to be eliminated and (2) the
-            // corresponding response functions.
+            // Return a pair of a minimal weight and a map with key being a
+            // minimum order of differentiated wave function parameters with
+            // respect to extensive perturbations to be eliminated, and value
+            // the corresponding response functions.
             //
-            // If an empty vector is returned, no response functions can be
-            // computed with the given conditions.
-            inline std::pair<unsigned int,
-                             std::vector<std::pair<unsigned int,
-                                         SymEngine::RCP<const SymEngine::Basic>>>>
+            // If an empty `ElimOrderMap` is returned, no response functions
+            // can be computed with the given conditions.
+            inline std::pair<unsigned int, ElimOrderMap>
             get_response_functions(
                 const Tinned::PertMultichain& exten_perturbations,
                 const Tinned::PertMultichain& inten_perturbations = {},
                 const SymEngine::set_basic& excluded = {},
                 const std::function<unsigned int(
-                    const SymEngine::vec_basic&,
-                    const SymEngine::vec_basic&
+                    const std::vector<Tinned::FindAllResult>&,
+                    const std::vector<Tinned::FindAllResult>&
                 )>& get_weight = [](
-                    const SymEngine::vec_basic& wfn_parameters,
-                    const SymEngine::vec_basic& multipliers
+                    const std::vector<Tinned::FindAllResult>& wfn_parameters,
+                    const std::vector<Tinned::FindAllResult>& multipliers
                 ) -> unsigned int {
-                    return wfn_parameters.size()+multipliers.size();
+                    unsigned int num_parameters = 0;
+                    for (const auto& p: wfn_parameters)
+                        for (const auto& t: p) num_parameters += t.second.size();
+                    for (const auto& p: multipliers)
+                        for (const auto& t: p) num_parameters += t.second.size();
+                    return num_parameters;
                 }
             )
             {
                 unsigned int min_weight = std::numeric_limits<unsigned int>::max();
-                std::vector<std::pair<unsigned int,
-                                      SymEngine::RCP<const SymEngine::Basic>>> results;
+                ElimOrderMap results;
                 // Loop over the order of differentiated wave function
                 // parameters with respect to extensive perturbations to be
                 // eliminated
@@ -230,63 +264,141 @@ namespace SymResponse
                     if (!Tinned::exist_any(rsp_function, excluded)) {
                         // Find all (un)perturbed wave function parameters and
                         // Lagrangian multipliers for this response function
-                        auto all_wfn_parameters = SymEngine::vec_basic({});
-                        auto all_multipliers = SymEngine::vec_basic({});
+                        auto wfn_parameters = std::vector<Tinned::FindAllResult>({});
+                        auto multipliers = std::vector<Tinned::FindAllResult>({});
                         for (const auto& wfn_parameter: get_wavefunction_parameter()) {
-                            auto wfn_parameters = Tinned::find_all(
+                            wfn_parameters.push_back(Tinned::find_all(
                                 rsp_function, wfn_parameter
-                            );
-                            all_wfn_parameters.insert(
-                                all_wfn_parameters.end(),
-                                wfn_parameters.begin(),
-                                wfn_parameters.end()
-                            );
+                            ));
                         }
                         for (const auto& multiplier: get_lagrangian_multipliers()) {
-                            auto multipliers = Tinned::find_all(
+                            multipliers.push_back(Tinned::find_all(
                                 rsp_function, multiplier
-                            );
-                            all_multipliers.insert(
-                                all_multipliers.end(),
-                                multipliers.begin(),
-                                multipliers.end()
-                            );
+                            ));
                         }
-                        auto weight = get_weight(all_wfn_parameters, all_multipliers);
+                        auto weight = get_weight(wfn_parameters, multipliers);
                         if (weight==min_weight) {
-                            results.push_back(std::make_pair(order, rsp_function));
+                            results.insert({order, rsp_function});
                         }
                         else if (weight<min_weight) {
                             min_weight = weight;
                             results.clear();
-                            results.push_back(std::make_pair(order, rsp_function));
+                            results.insert({order, rsp_function});
                         }
                     }
                 }
                 return std::make_pair(min_weight, results);
             }
 
-           // inline std::pair<unsigned int,
-           //                  std::vector<std::pair<Tinned::PertMultichain,
-           //                                        Tinned::PertMultichain>,
-           //                              std::vector<std::pair<unsigned int,
-           //                                          SymEngine::RCP<const SymEngine::Basic>>>>>
-           // get_response_functions(
-           //     const Tinned::PertMultichain& perturbations,
-           //     const SymEngine::set_basic& excluded = {},
-           //     const std::function<unsigned int(
-           //         const SymEngine::vec_basic&,
-           //         const SymEngine::vec_basic&
-           //     )>& get_weight = [](
-           //         const SymEngine::vec_basic& wfn_parameters,
-           //         const SymEngine::vec_basic& multipliers
-           //     ) -> unsigned int {
-           //         return wfn_parameters.size()+multipliers.size();
-           //     }
-           // )
-           // {
-
-           // }
+            // Find all possible extensive and intensive perturbations, and
+            // corresponding optimal elimination rules.
+            //
+            // `perturbations` contains perturbations that can either be
+            // extensive or intensive.
+            //
+            // Return a pair of a minimal weight and a map with key being
+            // extensive perturbations, and value as a pair of (1) intensive
+            // perturbations, and (2) a map with key being a minimum order of
+            // differentiated wave function parameters with respect to
+            // extensive perturbations to be eliminated, and value the
+            // corresponding response functions.
+            //
+            // If an empty `ElimExtsvMap` is returned, no response functions
+            // can be computed with the given conditions.
+            inline std::pair<unsigned int, ElimExtsvMap>
+            get_response_functions(
+                const Tinned::PertMultichain& perturbations,
+                const Tinned::PertMultichain& exten_perturbations,
+                const Tinned::PertMultichain& inten_perturbations = {},
+                const SymEngine::set_basic& excluded = {},
+                const std::function<unsigned int(
+                    const std::vector<Tinned::FindAllResult>&,
+                    const std::vector<Tinned::FindAllResult>&
+                )>& get_weight = [](
+                    const std::vector<Tinned::FindAllResult>& wfn_parameters,
+                    const std::vector<Tinned::FindAllResult>& multipliers
+                ) -> unsigned int {
+                    unsigned int num_parameters = 0;
+                    for (const auto& p: wfn_parameters)
+                        for (const auto& t: p) num_parameters += t.second.size();
+                    for (const auto& p: multipliers)
+                        for (const auto& t: p) num_parameters += t.second.size();
+                    return num_parameters;
+                }
+            )
+            {
+                if (perturbations.empty()) {
+                    auto results = get_response_functions(
+                        exten_perturbations, inten_perturbations, excluded, get_weight
+                    );
+                    return std::make_pair(
+                        results.first,
+                        ElimExtsvMap({
+                            {
+                                std::make_pair(exten_perturbations, inten_perturbations),
+                                results.second
+                            }
+                        })
+                    );
+                }
+                unsigned int min_weight = std::numeric_limits<unsigned int>::max();
+                ElimExtsvMap results;
+                // Find unique perturbations and their numbers of occurrences (multiplicities)
+                auto pert_multiplicities = Tinned::make_pert_multiplicity(perturbations);
+                auto num_perturbations = pert_multiplicities.size();
+                unsigned int num_subchains = 1<<num_perturbations;
+                // Make sure there is at least one extensive perturbation, so
+                // the first subchain 0...0 is discarded for empty extensive
+                // perturbations
+                unsigned int chain = exten_perturbations.empty() ? 1 : 0;
+                // We generate all subsets of the unique perturbations by
+                // following the direct approach in Chapter 1, "Next Subset of
+                // an n-Set (NEXSUB/LEXSUB)", Combinatorial Algorithms For
+                // Computers and Calculators (2nd Edition), Albert Nijenhuis
+                // and Herbert S. Wilf. New extensive perturbations are from
+                // the subset while new intensive perturbations are from the
+                // complement of the subset.
+                for (; chain<num_subchains; ++chain) {
+                    auto extsv_perturbations = exten_perturbations;
+                    auto intsv_perturbations = inten_perturbations;
+                    for (unsigned int ipert=0; ipert<num_perturbations; ++ipert) {
+                        if (chain & (1<<ipert)) {
+                            for (unsigned int imult=0;
+                                 imult<pert_multiplicities[ipert].second;
+                                 ++imult) extsv_perturbations.insert(
+                                    pert_multiplicities[ipert].first
+                                );
+                        }
+                        else {
+                            for (unsigned int imult=0;
+                                 imult<pert_multiplicities[ipert].second;
+                                 ++imult) intsv_perturbations.insert(
+                                    pert_multiplicities[ipert].first
+                                );
+                        }
+                    }
+                    // Find optimal elimination rules and response functions
+                    // for the current extensive and intensive perturbations
+                    auto elim_results = get_response_functions(
+                        extsv_perturbations, intsv_perturbations, excluded, get_weight
+                    );
+                    if (elim_results.first==min_weight) {
+                        results.insert({
+                            std::make_pair(extsv_perturbations, intsv_perturbations),
+                            elim_results.second
+                        });
+                    }
+                    else if (elim_results.first<min_weight) {
+                        min_weight = elim_results.first;
+                        results.clear();
+                        results.insert({
+                            std::make_pair(extsv_perturbations, intsv_perturbations),
+                            elim_results.second
+                        });
+                    }
+                }
+                return std::make_pair(min_weight, results);
+            }
 
             //// Get residues. Other parameters see the function `get_response_functions()`.
             //virtual SymEngine::RCP<const SymEngine::Basic> get_residues(

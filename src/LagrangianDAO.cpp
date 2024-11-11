@@ -221,7 +221,7 @@ namespace SymResponse
         // Replace "artificial" multipliers with real differentiated ones
         return Tinned::replace_all<Tinned::PerturbedParameter>(
             result,
-            Tinned::TinnedBasicMap<Tinned::PerturbedParameter>({
+            Tinned::ReplaceDictMap<Tinned::PerturbedParameter>({
                 {tdscf_multiplier_, lambda_}, {idempotency_multiplier_, zeta_}
             })
         );
