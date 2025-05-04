@@ -1,0 +1,15 @@
+[package]
+name = "symresponse"
+version = "0.1.0"
+edition = "2024"
+
+[dependencies]
+num-rational = { version = "0.4", features = ["serde"] }
+serde = { version = "1.0", features = ["derive", "rc"] }
+serde_json = "1.0"
+tinned = { git = "https://github.com/bingao/tinned", branch = "tinned-rust" }
+typetag = "0.2"
+
+[lib]
+name = "symresponse"
+path = "src/lib.rs"
