@@ -3,8 +3,6 @@ use std::sync::Arc;
 
 use num_rational::Rational64;
 
-use typetag;
-
 use tinned::{
     Add, Expr, LagMultiplier, MatrixAdd, MatrixMul, Number, NumberTolerance, Perturbation,
     TemporumOperator, TinnedError, Trace, TwoElecEnergy, TwoElecOperator, WfnParameter,
@@ -465,7 +463,6 @@ impl LagrangianInternal for LagrangianDao {
     }
 }
 
-#[typetag::serde]
 impl Lagrangian for LagrangianDao {
     #[inline]
     fn get_lagrangian(&self) -> &Arc<dyn Expr> {

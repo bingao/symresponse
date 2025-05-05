@@ -2,7 +2,6 @@ use std::collections::{BTreeMap, HashSet};
 use std::sync::Arc;
 
 use rayon::prelude::*;
-use typetag;
 
 use tinned::{
     Expr, NumberTolerance, Perturbation, TinnedError, differentiate_expr, generic_error,
@@ -20,7 +19,6 @@ pub struct ResponseFunction {
 }
 
 // Base Lagrangian trait
-#[typetag::serde]
 pub trait Lagrangian: std::fmt::Debug + Send + Sync + LagrangianInternal {
     // Return response function according to given extensive and intensive
     // perturbations, and minimum order of differentiated wave function
