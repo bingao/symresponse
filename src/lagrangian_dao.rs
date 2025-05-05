@@ -471,4 +471,14 @@ impl Lagrangian for LagrangianDao {
     fn get_lagrangian(&self) -> &Arc<dyn Expr> {
         &self.lagrangian_dao
     }
+
+    #[inline]
+    fn get_wfn_parameter(&self) -> Vec<Arc<dyn Expr>> {
+        vec![self.density_matrix.clone()]
+    }
+
+    #[inline]
+    fn get_lag_multiplier(&self) -> Vec<Arc<dyn Expr>> {
+        Vec::new()
+    }
 }

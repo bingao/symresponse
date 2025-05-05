@@ -1,6 +1,7 @@
-use std::collections::{BTreeMap, BTreeSet};
+use std::collections::{BTreeMap, HashSet};
 use std::sync::Arc;
 
+use rayon::prelude::*;
 use typetag;
 
 use tinned::{
@@ -136,6 +137,168 @@ pub trait Lagrangian: std::fmt::Debug + Send + Sync + LagrangianInternal {
         self.at_zero_strength(&result)
     }
 
+    // Returns response function with its weight.
+    //
+    // The weight is computed by a user-defined weighting function, which takes
+    // (un)perturbed wave function parameters and Lagrangian multipliers as
+    // input.
+    //
+    // `excluded_operators` contains operators that should be excluded from the
+    // response function. For example, a perturbed operator can or should be
+    // removed if users are not able to evaluate it afterwards.
+    fn response_function_with_weight<F>(
+        &self,
+        exten_perturbations: &[Arc<Perturbation>],
+        inten_perturbations: &[Arc<Perturbation>],
+        min_wfn_exten: u32,
+        num_tol: Option<NumberTolerance>,
+        excluded_operators: &HashSet<Arc<dyn Expr>>,
+        weight_fn: &F,
+    ) -> Result<Option<(i64, ResponseFunction)>, TinnedError>
+    where
+        F: Sync
+            + Send
+            + Fn(
+                &BTreeMap<u32, HashSet<Arc<dyn Expr>>>,
+                &BTreeMap<u32, HashSet<Arc<dyn Expr>>>,
+            ) -> i64,
+    {
+        let expr = self.response_function(
+            exten_perturbations,
+            inten_perturbations,
+            min_wfn_exten,
+            num_tol,
+        )?;
+
+        if expr.exist_any(excluded_operators) {
+            return Ok(None);
+        }
+
+        let mut wfn_map = BTreeMap::<u32, HashSet<Arc<dyn Expr>>>::new();
+        let mut lag_map = BTreeMap::<u32, HashSet<Arc<dyn Expr>>>::new();
+
+        for s in self.get_wfn_parameter() {
+            for (order, found) in expr.find_all(&s) {
+                wfn_map.entry(order).or_default().extend(found);
+            }
+        }
+
+        for s in self.get_lag_multiplier() {
+            for (order, found) in expr.find_all(&s) {
+                lag_map.entry(order).or_default().extend(found);
+            }
+        }
+
+        let weight = weight_fn(&wfn_map, &lag_map);
+        let rf = ResponseFunction {
+            expression: expr,
+            min_wfn_exten,
+            exten_perturbations: exten_perturbations.to_vec(),
+            inten_perturbations: inten_perturbations.to_vec(),
+        };
+
+        Ok(Some((weight, rf)))
+    }
+
+    // Return optimal response function(s) by performing different elimination
+    // rules. Optimal response function(s) has a minimal weight as determined
+    // by a user-defined weighting function. The weighting function takes
+    // (un)perturbed wave function parameters and Lagrangian multipliers as
+    // input.
+    //
+    // Otherwise, all possible extensive and intensive perturbations, and
+    // `min_wfn_exten` will be considered.
+    //
+    // `exten_perturbations` and `inten_perturbations` contain, respectively,
+    // extensive and intensive perturbations. The former must contain at least
+    // one extensive perturbation.
+    //
+    // `excluded_operators` contains operators that should be excluded from
+    // response functions. For example, a perturbed operator can or should be
+    // removed if users are not able to evaluate it afterwards.
+    //
+    // Optimal response function(s) will be searched by varying the order of
+    // differentiated wave function parameters to be eliminated with respect to
+    // extensive perturbations
+    fn find_optimal_elimination_order<F>(
+        &self,
+        exten_perturbations: &[Arc<Perturbation>],
+        inten_perturbations: &[Arc<Perturbation>],
+        num_tol: Option<NumberTolerance>,
+        excluded_operators: &HashSet<Arc<dyn Expr>>,
+        weight_fn: &F,
+        parallel: bool,
+    ) -> Result<Option<(i64, Vec<ResponseFunction>)>, TinnedError>
+    where
+        F: Sync
+            + Send
+            + Fn(
+                &BTreeMap<u32, HashSet<Arc<dyn Expr>>>,
+                &BTreeMap<u32, HashSet<Arc<dyn Expr>>>,
+            ) -> i64,
+    {
+        let min_wfn_order: u32 = 1 + (exten_perturbations.len() / 2) as u32;
+        let max_wfn_order: u32 = 1 + exten_perturbations.len() as u32;
+        let range_orders = min_wfn_order..=max_wfn_order;
+
+        // Iterates orders of differentiated wave function parameters with
+        // respect to extensive perturbations to be eliminated
+        let results: Vec<(i64, ResponseFunction)> = if parallel {
+            range_orders
+                .into_par_iter()
+                .map(|order| {
+                    self.response_function_with_weight(
+                        exten_perturbations,
+                        inten_perturbations,
+                        order,
+                        num_tol.clone(),
+                        excluded_operators,
+                        weight_fn,
+                    )
+                })
+                .collect::<Result<Vec<_>, TinnedError>>()?
+                .into_iter()
+                .flatten() // drop None entries (due to excluded operators)
+                .collect()
+        } else {
+            range_orders
+                .into_iter()
+                .map(|order| {
+                    self.response_function_with_weight(
+                        exten_perturbations,
+                        inten_perturbations,
+                        order,
+                        num_tol.clone(),
+                        excluded_operators,
+                        weight_fn,
+                    )
+                })
+                .collect::<Result<Vec<_>, TinnedError>>()?
+                .into_iter()
+                .flatten()
+                .collect()
+        };
+
+        if results.is_empty() {
+            return Ok(None);
+        }
+
+        // Find all response functions with minimal weight
+        let min_weight = results.iter().map(|(w, _)| *w).min().ok_or_else(|| {
+            generic_error(
+                "Unexpected: non-empty results but failed to compute minimum weight",
+                None,
+            )
+        })?;
+
+        let optimal = results
+            .into_iter()
+            .filter_map(|(w, r)| if w == min_weight { Some(r) } else { None })
+            .collect();
+
+        Ok(Some((min_weight, optimal)))
+    }
+
     // Return optimal response function(s) by performing different elimination
     // rules. Optimal response function(s) has a minimal weight as determined
     // by a user-defined weighting function. The weighting function takes
@@ -156,86 +319,117 @@ pub trait Lagrangian: std::fmt::Debug + Send + Sync + LagrangianInternal {
     // `excluded_operators` contains operators that should be excluded from
     // response functions. For example, a perturbed operator can or should be
     // removed if users are not able to evaluate it afterwards.
-    //    fn find_optimal_response_function<F>(
-    //        &self,
-    //        avail_perturbations: &[Arc<Perturbation>],
-    //        exten_perturbations: &[Arc<Perturbation>],
-    //        inten_perturbations: &[Arc<Perturbation>],
-    //        excluded_operators: Vec<Arc<dyn Expr>>,
-    //        weight_fn: F,
-    //    ) -> Result<Option<(f64, Vec<ResponseFunction>)>, TinnedError>
-    //    where
-    //        F: Fn(
-    //            &BTreeMap<u32, BTreeSet<Arc<dyn Expr>>>,
-    //            &BTreeMap<u32, BTreeSet<Arc<dyn Expr>>>,
-    //        ) -> f64,
-    //    {
-    //        // Track best weight and best candidates
-    //        let mut best_weight: Option<f64> = None;
-    //        let mut best_responses: Vec<ResponseFunction> = Vec::new();
-    //
-    //        // You might loop over min_wfn_exten values or perturbation combinations
-    //        for min_wfn_exten in 0..=some_max_value {
-    //            // 1. Try to build the response function (may fail)
-    //            let response_expr = self.response_function(
-    //                exten_perturbations,
-    //                inten_perturbations,
-    //                min_wfn_exten,
-    //                &excluded_operators,
-    //            )?;
-    //
-    //            // (Optional) Skip if response_expr is "zero" or invalid
-    //            if is_zero_expr(&response_expr) {
-    //                continue;
-    //            }
-    //
-    //            // 2. Compute weight
-    //            let weight = weight_fn(&response_expr);
-    //
-    //            // 3. Compare with best so far
-    //            match best_weight {
-    //                None => {
-    //                    best_weight = Some(weight);
-    //                    best_responses.clear();
-    //                    best_responses.push(ResponseFunction {
-    //                        expression: response_expr,
-    //                        min_wfn_exten,
-    //                        exten_perturbations: exten_perturbations.clone(),
-    //                        inten_perturbations: inten_perturbations.clone(),
-    //                    });
-    //                }
-    //                Some(best) if weight < best => {
-    //                    best_weight = Some(weight);
-    //                    best_responses.clear();
-    //                    best_responses.push(ResponseFunction {
-    //                        expression: response_expr,
-    //                        min_wfn_exten,
-    //                        exten_perturbations: exten_perturbations.clone(),
-    //                        inten_perturbations: inten_perturbations.clone(),
-    //                    });
-    //                }
-    //                Some(best) if (weight - best).abs() <= 1e-12 => {
-    //                    // Tie: add additional optimal response
-    //                    best_responses.push(ResponseFunction {
-    //                        expression: response_expr,
-    //                        min_wfn_exten,
-    //                        exten_perturbations: exten_perturbations.clone(),
-    //                        inten_perturbations: inten_perturbations.clone(),
-    //                    });
-    //                }
-    //                _ => {
-    //                    // Weight worse: do nothing
-    //                }
-    //            }
-    //        }
-    //
-    //        // Final result
-    //        match best_weight {
-    //            Some(weight) => Ok(Some((weight, best_responses))),
-    //            None => Ok(None),
-    //        }
-    //    }
+    fn find_optimal_response_function<F>(
+        &self,
+        avail_perturbations: &[Arc<Perturbation>],
+        exten_perturbations: &[Arc<Perturbation>],
+        inten_perturbations: &[Arc<Perturbation>],
+        num_tol: Option<NumberTolerance>,
+        excluded_operators: &HashSet<Arc<dyn Expr>>,
+        weight_fn: &F,
+    ) -> Result<Option<(i64, Vec<ResponseFunction>)>, TinnedError>
+    where
+        F: Sync
+            + Send
+            + Fn(
+                &BTreeMap<u32, HashSet<Arc<dyn Expr>>>,
+                &BTreeMap<u32, HashSet<Arc<dyn Expr>>>,
+            ) -> i64,
+    {
+        if avail_perturbations.is_empty() {
+            return self.find_optimal_elimination_order(
+                exten_perturbations,
+                inten_perturbations,
+                num_tol.clone(),
+                excluded_operators,
+                weight_fn,
+                true,
+            );
+        }
 
-    // Get the time-averaged quasi-energy (derivative) Lagrangian
+        // Convert available perturbations into a map of perturbation and
+        // number of occurrences (multiplicity)
+        let mut avail_map = BTreeMap::new();
+        for p in avail_perturbations {
+            *avail_map.entry(p.clone()).or_insert(0) += 1;
+        }
+
+        let num_perturbations = avail_map.len();
+        let keys: Vec<_> = avail_map.keys().cloned().collect();
+
+        // Make sure there is at least one extensive perturbation, so the first
+        // subchain 0...0 is discarded for empty extensive perturbations
+        let range_perturbations = if exten_perturbations.is_empty() {
+            1..(1 << num_perturbations)
+        } else {
+            0..(1 << num_perturbations)
+        };
+
+        // We generate all subsets of the unique perturbations by following the
+        // direct approach in Chapter 1, "Next Subset of an n-Set
+        // (NEXSUB/LEXSUB)", Combinatorial Algorithms For Computers and
+        // Calculators (2nd Edition), Albert Nijenhuis and Herbert S. Wilf. New
+        // extensive perturbations are from the subset while new intensive
+        // perturbations are from the complement of the subset.
+        let results: Vec<(i64, Vec<ResponseFunction>)> = range_perturbations
+            .into_par_iter()
+            .map(|mask| {
+                let mut new_exten = exten_perturbations.to_vec();
+                let mut new_inten = inten_perturbations.to_vec();
+
+                for (i, pert) in keys.iter().enumerate() {
+                    let count = *avail_map.get(pert).ok_or_else(|| {
+                        generic_error("Unexpected: failed to get the key in avail_map", None)
+                    })?;
+                    let target = if (mask & (1 << i)) != 0 {
+                        &mut new_exten
+                    } else {
+                        &mut new_inten
+                    };
+                    for _ in 0..count {
+                        target.push(pert.clone());
+                    }
+                }
+
+                self.find_optimal_elimination_order(
+                    &new_exten,
+                    &new_inten,
+                    num_tol.clone(),
+                    excluded_operators,
+                    weight_fn,
+                    false,
+                )
+            })
+            .collect::<Result<Vec<_>, TinnedError>>()?
+            .into_iter()
+            .flatten()
+            .collect();
+
+        if results.is_empty() {
+            Ok(None)
+        } else {
+            let min_weight = results.iter().map(|(w, _)| *w).min().ok_or_else(|| {
+                generic_error(
+                    "Unexpected: non-empty results but failed to compute minimum weight",
+                    None,
+                )
+            })?;
+            let optimal: Vec<_> = results
+                .into_iter()
+                .filter(|(w, _)| *w == min_weight)
+                .flat_map(|(_, r)| r)
+                .collect();
+
+            Ok(Some((min_weight, optimal)))
+        }
+    }
+
+    // Returns the time-averaged quasi-energy (derivative) Lagrangian
     fn get_lagrangian(&self) -> &Arc<dyn Expr>;
+
+    // Returns unperturbed wave function parameters
+    fn get_wfn_parameter(&self) -> Vec<Arc<dyn Expr>>;
+
+    // Returns unperturbed Lagrangian multipliers
+    fn get_lag_multiplier(&self) -> Vec<Arc<dyn Expr>>;
 }
