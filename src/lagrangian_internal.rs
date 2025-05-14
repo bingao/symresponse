@@ -78,6 +78,7 @@ pub(crate) mod sealed {
         fn at_zero_strength(
             &self,
             lagrangian: &Arc<dyn Expr>,
+            num_tol: Option<NumberTolerance>,
         ) -> Result<Arc<dyn Expr>, TinnedError> {
             // Remove unperturbed time-differentiated quantities (and unperturbed T
             // matrix for the AO density matrix-based response theory) as well as
@@ -85,7 +86,7 @@ pub(crate) mod sealed {
             // Replace those with non-zero sum of frequencies by corresponding
             // derivatives in the frequency domain multiplied by the sum of
             // frequencies.
-            lagrangian.clean_temporum()
+            lagrangian.clean_temporum(num_tol)
         }
     }
 }

@@ -330,7 +330,7 @@ impl LagrangianDao {
         density_freq: Arc<dyn Expr>,
     ) -> Result<Arc<dyn Expr>, TinnedError> {
         if let Some(density_omega) = downcast_from_arc::<WfnParameter>(&density_freq) {
-            let set: HashSet<Arc<dyn Expr>> = [density_freq].into_iter().collect();
+            let set: HashSet<Arc<dyn Expr>> = [density_freq.clone()].into_iter().collect();
             let diff_idempotency =
                 differentiate_expr(&self.idempotency, density_omega.derivative())?.remove(&set)?;
             let anticomm_idemp_dm = if let Some(overlap) = &self.overlap_matrix {
@@ -364,7 +364,7 @@ impl LagrangianDao {
             let map: HashMap<Arc<dyn Expr>, Arc<dyn Expr>> =
                 std::iter::once((density_freq, density_part)).collect();
 
-            Ok(diff_tdscf.replace(&map))
+            diff_tdscf.replace(&map)
         } else {
             Err(expression_error(
                 "Invalid type density matrix",
@@ -459,7 +459,7 @@ impl LagrangianInternal for LagrangianDao {
             (self.idemp_multiplier.clone(), self.zeta.clone()),
         ]);
 
-        Ok(result.replace(&replacements))
+        result.replace_all(&replacements)
     }
 }
 

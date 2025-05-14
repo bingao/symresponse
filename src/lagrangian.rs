@@ -9,14 +9,7 @@ use tinned::{
 };
 
 use crate::lagrangian_internal::sealed::LagrangianInternal;
-
-// Return result of the function `find_optimal_response_function()`
-pub struct ResponseFunction {
-    expression: Arc<dyn Expr>,
-    min_wfn_exten: u32,
-    exten_perturbations: Vec<Arc<Perturbation>>,
-    inten_perturbations: Vec<Arc<Perturbation>>,
-}
+use crate::response_function::ResponseFunction;
 
 // Base Lagrangian trait
 pub trait Lagrangian: std::fmt::Debug + Send + Sync + LagrangianInternal {
@@ -127,12 +120,12 @@ pub trait Lagrangian: std::fmt::Debug + Send + Sync + LagrangianInternal {
             })?;
 
         // Usually `result` cannot be zero after elimination
-        if is_zero_expr(&result, num_tol) {
+        if is_zero_expr(&result, num_tol.clone()) {
             return Ok(result);
         }
 
         // Evaluation at zero perturbation strength
-        self.at_zero_strength(&result)
+        self.at_zero_strength(&result, num_tol)
     }
 
     // Returns response function with its weight.
@@ -188,12 +181,12 @@ pub trait Lagrangian: std::fmt::Debug + Send + Sync + LagrangianInternal {
         }
 
         let weight = weight_fn(&wfn_map, &lag_map);
-        let rf = ResponseFunction {
-            expression: expr,
+        let rf = ResponseFunction::new(
+            expr,
             min_wfn_exten,
-            exten_perturbations: exten_perturbations.to_vec(),
-            inten_perturbations: inten_perturbations.to_vec(),
-        };
+            exten_perturbations.to_vec(),
+            inten_perturbations.to_vec(),
+        );
 
         Ok(Some((weight, rf)))
     }
