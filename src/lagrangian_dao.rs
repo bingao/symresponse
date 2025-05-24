@@ -364,7 +364,7 @@ impl LagrangianDao {
             let map: HashMap<Arc<dyn Expr>, Arc<dyn Expr>> =
                 std::iter::once((density_freq, density_part)).collect();
 
-            diff_tdscf.replace(&map)
+            diff_tdscf.replace(&map, true)
         } else {
             Err(expression_error(
                 "Invalid type density matrix",
@@ -414,6 +414,23 @@ impl LagrangianInternal for LagrangianDao {
     }
 
     #[inline]
+    fn union_perturbations(
+        &self,
+        exten_perturbations: &[Arc<Perturbation>],
+        inten_perturbations: &[Arc<Perturbation>],
+    ) -> HashSet<Arc<Perturbation>> {
+        let mut pert_union: HashSet<Arc<Perturbation>> =
+            HashSet::with_capacity(exten_perturbations.len() + inten_perturbations.len() + 1);
+        pert_union.extend(exten_perturbations.iter().cloned());
+        pert_union.extend(inten_perturbations.iter().cloned());
+        if let Some(pert) = &self.perturbation_a {
+            pert_union.insert(pert.clone());
+        }
+
+        pert_union
+    }
+
+    #[inline]
     fn eliminate_wfn_parameter(
         &self,
         lagrangian: &Arc<dyn Expr>,
@@ -454,12 +471,12 @@ impl LagrangianInternal for LagrangianDao {
             })?;
 
         // Replace "artificial" multipliers with real differentiated ones
-        let replacements: HashMap<Arc<dyn Expr>, Arc<dyn Expr>> = HashMap::from([
+        let map: HashMap<Arc<dyn Expr>, Arc<dyn Expr>> = HashMap::from([
             (self.tdscf_multiplier.clone(), self.lambda.clone()),
             (self.idemp_multiplier.clone(), self.zeta.clone()),
         ]);
 
-        result.replace_all(&replacements)
+        result.replace(&map, false)
     }
 }
 

@@ -1,11 +1,11 @@
-use std::collections::{BTreeMap, HashSet};
+use std::collections::{BTreeMap, HashMap, HashSet};
 use std::sync::Arc;
 
 use rayon::prelude::*;
 
 use tinned::{
-    Expr, NumberTolerance, Perturbation, TinnedError, differentiate_expr, generic_error,
-    is_zero_expr,
+    Expr, NumberTolerance, Perturbation, ResidueParameter, TinnedError, differentiate_expr,
+    generic_error, is_zero_expr,
 };
 
 use crate::lagrangian_internal::sealed::LagrangianInternal;
@@ -128,6 +128,80 @@ pub trait Lagrangian: std::fmt::Debug + Send + Sync + LagrangianInternal {
         self.at_zero_strength(&result, num_tol)
     }
 
+    // Returns residue according to given extensive and intensive
+    // perturbations, and minimum order of differentiated wave function
+    // parameters to be eliminated, with respect to extensive perturbations.
+    //
+    // `residue_info` contains excited state (the key `Arc<dyn Expr>`) and
+    // perturbations (`Vec<Arc<Perturbation>>`) whose sum of frequencies
+    // approaches the excitation energy (`true`) or its negative value (`false`).
+    fn residue(
+        &self,
+        exten_perturbations: &[Arc<Perturbation>],
+        inten_perturbations: &[Arc<Perturbation>],
+        min_wfn_exten: u32,
+        residue_info: &HashMap<Arc<dyn Expr>, (bool, Vec<Arc<Perturbation>>)>,
+        num_tol: Option<NumberTolerance>,
+    ) -> Result<Arc<dyn Expr>, TinnedError> {
+        // Validates `residue_info` and gets its complement
+        let residue_complement =
+            self.complement_residue_info(exten_perturbations, inten_perturbations, residue_info)?;
+
+        // Computes response function
+        let mut result = self.response_function(
+            exten_perturbations,
+            inten_perturbations,
+            min_wfn_exten,
+            num_tol,
+        )?;
+
+        // Sets up `residue_set` and `residue_map` for retaining and replacing
+        // differentiated parameters and their higher-order ones
+        let mut residue_set: HashSet<Arc<dyn Expr>> = HashSet::with_capacity(
+            (self.get_wfn_parameter().len() + self.get_lag_multiplier().len())
+                * (residue_info.len() + residue_complement.len()),
+        );
+        let mut residue_map: HashMap<Arc<dyn Expr>, Arc<dyn Expr>> =
+            HashMap::with_capacity(residue_set.capacity());
+
+        let mut insert_residues = |param: &Arc<dyn Expr>,
+                               entries: &HashMap<Arc<dyn Expr>, (bool, Vec<Arc<Perturbation>>)>|
+         -> Result<(), TinnedError> {
+            for (excited_state, (positive_frequency, perturbations)) in entries {
+                let diff_param = differentiate_expr(param, perturbations)?;
+                residue_set.insert(diff_param.clone());
+                residue_map.insert(
+                    diff_param.clone(),
+                    ResidueParameter::builder(
+                        perturbations.clone(),
+                        excited_state.clone(),
+                        diff_param,
+                    )
+                    .positive_frequency(*positive_frequency)
+                    .build()?,
+                );
+            }
+            Ok(())
+        };
+
+        for param in self.get_wfn_parameter() {
+            insert_residues(&param, residue_info)?;
+            insert_residues(&param, &residue_complement)?;
+        }
+        for param in self.get_lag_multiplier() {
+            insert_residues(&param, residue_info)?;
+            insert_residues(&param, &residue_complement)?;
+        }
+
+        // Retains differentiated parameters specified by `residue_info`, as
+        // well as their higher-order ones while removes other
+        // (un)differentiated parameters.
+        result = result.retain(&residue_set, false)?;
+
+        // Replaces differentiated parameters by their residue parameters.
+        result.replace(&residue_map, false)
+    }
+
     // Returns response function with its weight.
     //
     // The weight is computed by a user-defined weighting function, which takes
@@ -168,14 +242,14 @@ pub trait Lagrangian: std::fmt::Debug + Send + Sync + LagrangianInternal {
         let mut wfn_map = BTreeMap::<u32, HashSet<Arc<dyn Expr>>>::new();
         let mut lag_map = BTreeMap::<u32, HashSet<Arc<dyn Expr>>>::new();
 
-        for s in self.get_wfn_parameter() {
-            for (order, found) in expr.find_all(&s) {
+        for param in self.get_wfn_parameter() {
+            for (order, found) in expr.find_superchains(&param) {
                 wfn_map.entry(order).or_default().extend(found);
             }
         }
 
-        for s in self.get_lag_multiplier() {
-            for (order, found) in expr.find_all(&s) {
+        for param in self.get_lag_multiplier() {
+            for (order, found) in expr.find_superchains(&param) {
                 lag_map.entry(order).or_default().extend(found);
             }
         }
