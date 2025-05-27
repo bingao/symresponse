@@ -4,12 +4,12 @@ use std::sync::Arc;
 use rayon::prelude::*;
 
 use tinned::{
-    Expr, NumberTolerance, Perturbation, ResidueParameter, TinnedError, differentiate_expr,
-    generic_error, is_zero_expr,
+    differentiate_expr, generic_error, is_zero_expr, Expr, NumberTolerance, Perturbation,
+    TinnedError,
 };
 
 use crate::lagrangian_internal::sealed::LagrangianInternal;
-use crate::response_function::ResponseFunction;
+use crate::types::ResponseDetail;
 
 // Base Lagrangian trait
 pub trait Lagrangian: std::fmt::Debug + Send + Sync + LagrangianInternal {
@@ -132,9 +132,10 @@ pub trait Lagrangian: std::fmt::Debug + Send + Sync + LagrangianInternal {
     // perturbations, and minimum order of differentiated wave function
     // parameters to be eliminated, with respect to extensive perturbations.
     //
-    // `residue_info` contains excited state (the key `Arc<dyn Expr>`) and
-    // perturbations (`Vec<Arc<Perturbation>>`) whose sum of frequencies
-    // approaches the excitation energy (`true`) or its negative value (`false`).
+    // `residue_info` contains excited state as the key `Arc<dyn Expr>`, and
+    // the value informs in which direction perturbations approach the
+    // excitation energy.
+    #[inline]
     fn residue(
         &self,
         exten_perturbations: &[Arc<Perturbation>],
@@ -143,11 +144,14 @@ pub trait Lagrangian: std::fmt::Debug + Send + Sync + LagrangianInternal {
         residue_info: &HashMap<Arc<dyn Expr>, (bool, Vec<Arc<Perturbation>>)>,
         num_tol: Option<NumberTolerance>,
     ) -> Result<Arc<dyn Expr>, TinnedError> {
-        // Validates `residue_info` and gets its complement
-        let residue_complement =
-            self.complement_residue_info(exten_perturbations, inten_perturbations, residue_info)?;
+        if !self.validate_residue_info(exten_perturbations, inten_perturbations, residue_info) {
+            return Err(generic_error(
+                "Invalid residue information for given (extensive and intensive) perturbations.",
+                None,
+            ));
+        }
 
-        // Computes response function
+        // Computes response function.
         let mut result = self.response_function(
             exten_perturbations,
             inten_perturbations,
@@ -156,42 +160,11 @@ pub trait Lagrangian: std::fmt::Debug + Send + Sync + LagrangianInternal {
         )?;
 
         // Sets up `residue_set` and `residue_map` for retaining and replacing
-        // differentiated parameters and their higher-order ones
-        let mut residue_set: HashSet<Arc<dyn Expr>> = HashSet::with_capacity(
-            (self.get_wfn_parameter().len() + self.get_lag_multiplier().len())
-                * (residue_info.len() + residue_complement.len()),
-        );
-        let mut residue_map: HashMap<Arc<dyn Expr>, Arc<dyn Expr>> =
-            HashMap::with_capacity(residue_set.capacity());
-
-        let mut insert_residues = |param: &Arc<dyn Expr>,
-                               entries: &HashMap<Arc<dyn Expr>, (bool, Vec<Arc<Perturbation>>)>|
-         -> Result<(), TinnedError> {
-            for (excited_state, (positive_frequency, perturbations)) in entries {
-                let diff_param = differentiate_expr(param, perturbations)?;
-                residue_set.insert(diff_param.clone());
-                residue_map.insert(
-                    diff_param.clone(),
-                    ResidueParameter::builder(
-                        perturbations.clone(),
-                        excited_state.clone(),
-                        diff_param,
-                    )
-                    .positive_frequency(*positive_frequency)
-                    .build()?,
-                );
-            }
-            Ok(())
-        };
-
-        for param in self.get_wfn_parameter() {
-            insert_residues(&param, residue_info)?;
-            insert_residues(&param, &residue_complement)?;
-        }
-        for param in self.get_lag_multiplier() {
-            insert_residues(&param, residue_info)?;
-            insert_residues(&param, &residue_complement)?;
-        }
+        // differentiated parameters and their higher-order ones.
+        let mut parameters: Vec<Arc<dyn Expr>> = self.get_wfn_parameter();
+        parameters.extend(self.get_lag_multiplier());
+        let (residue_set, residue_map) =
+            self.build_residue_parameters(&parameters, residue_info)?;
 
         // Retains differentiated parameters specified by `residue_info`, as
         // well as their higher-order ones while removes other
@@ -219,7 +192,7 @@ pub trait Lagrangian: std::fmt::Debug + Send + Sync + LagrangianInternal {
         num_tol: Option<NumberTolerance>,
         excluded_operators: &HashSet<Arc<dyn Expr>>,
         weight_fn: &F,
-    ) -> Result<Option<(i64, ResponseFunction)>, TinnedError>
+    ) -> Result<Option<(i64, ResponseDetail)>, TinnedError>
     where
         F: Sync
             + Send
@@ -255,12 +228,12 @@ pub trait Lagrangian: std::fmt::Debug + Send + Sync + LagrangianInternal {
         }
 
         let weight = weight_fn(&wfn_map, &lag_map);
-        let rf = ResponseFunction::new(
-            expr,
+        let rf = ResponseDetail {
+            expression: expr,
             min_wfn_exten,
-            exten_perturbations.to_vec(),
-            inten_perturbations.to_vec(),
-        );
+            exten_perturbations: exten_perturbations.to_vec(),
+            inten_perturbations: inten_perturbations.to_vec(),
+        };
 
         Ok(Some((weight, rf)))
     }
@@ -293,7 +266,7 @@ pub trait Lagrangian: std::fmt::Debug + Send + Sync + LagrangianInternal {
         excluded_operators: &HashSet<Arc<dyn Expr>>,
         weight_fn: &F,
         parallel: bool,
-    ) -> Result<Option<(i64, Vec<ResponseFunction>)>, TinnedError>
+    ) -> Result<Option<(i64, Vec<ResponseDetail>)>, TinnedError>
     where
         F: Sync
             + Send
@@ -308,7 +281,7 @@ pub trait Lagrangian: std::fmt::Debug + Send + Sync + LagrangianInternal {
 
         // Iterates orders of differentiated wave function parameters with
         // respect to extensive perturbations to be eliminated
-        let results: Vec<(i64, ResponseFunction)> = if parallel {
+        let results: Vec<(i64, ResponseDetail)> = if parallel {
             range_orders
                 .into_par_iter()
                 .map(|order| {
@@ -392,7 +365,7 @@ pub trait Lagrangian: std::fmt::Debug + Send + Sync + LagrangianInternal {
         num_tol: Option<NumberTolerance>,
         excluded_operators: &HashSet<Arc<dyn Expr>>,
         weight_fn: &F,
-    ) -> Result<Option<(i64, Vec<ResponseFunction>)>, TinnedError>
+    ) -> Result<Option<(i64, Vec<ResponseDetail>)>, TinnedError>
     where
         F: Sync
             + Send
@@ -436,7 +409,7 @@ pub trait Lagrangian: std::fmt::Debug + Send + Sync + LagrangianInternal {
         // Calculators (2nd Edition), Albert Nijenhuis and Herbert S. Wilf. New
         // extensive perturbations are from the subset while new intensive
         // perturbations are from the complement of the subset.
-        let results: Vec<(i64, Vec<ResponseFunction>)> = range_perturbations
+        let results: Vec<(i64, Vec<ResponseDetail>)> = range_perturbations
             .into_par_iter()
             .map(|mask| {
                 let mut new_exten = exten_perturbations.to_vec();
