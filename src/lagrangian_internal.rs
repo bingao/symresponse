@@ -3,8 +3,8 @@ pub(crate) mod sealed {
     use std::sync::Arc;
 
     use tinned::{
-        differentiate_expr, generic_error, is_zero_expr, sum_pert_frequencies, Add, Expr,
-        NumberTolerance, PertMultichain, Perturbation, ResidueParameter, TinnedError,
+        Add, Expr, NumberTolerance, PertMultichain, Perturbation, ResidueParameter, TinnedError,
+        differentiate_expr, generic_error, is_zero_expr, sum_pert_frequencies,
     };
 
     pub trait LagrangianInternal {

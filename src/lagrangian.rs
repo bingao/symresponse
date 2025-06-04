@@ -4,8 +4,8 @@ use std::sync::Arc;
 use rayon::prelude::*;
 
 use tinned::{
-    differentiate_expr, generic_error, is_zero_expr, Expr, NumberTolerance, Perturbation,
-    TinnedError,
+    Expr, NumberTolerance, Perturbation, TinnedError, differentiate_expr, generic_error,
+    is_zero_expr,
 };
 
 use crate::lagrangian_internal::sealed::LagrangianInternal;

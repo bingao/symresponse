@@ -4,11 +4,11 @@ use std::sync::Arc;
 use num_rational::Rational64;
 
 use tinned::{
-    anticommutator, commutator, differentiate_expr, downcast_from_arc, expression_error,
-    generic_error, is_expr_type, is_zero_expr, s_anticommutator, s_commutator, subtract_exprs,
-    sum_pert_frequencies, Add, Expr, LagMultiplier, MatrixAdd, MatrixMul, Number, NumberTolerance,
-    PertMultichain, Perturbation, ResidueParameter, TemporumOperator, TinnedError, Trace,
-    TwoElecEnergy, TwoElecOperator, WfnParameter, ZeroOperator,
+    Add, Expr, LagMultiplier, MatrixAdd, MatrixMul, Number, NumberTolerance, PertMultichain,
+    Perturbation, ResidueParameter, TemporumOperator, TinnedError, Trace, TwoElecEnergy,
+    TwoElecOperator, WfnParameter, ZeroOperator, anticommutator, commutator, differentiate_expr,
+    downcast_from_arc, expression_error, generic_error, is_expr_type, is_zero_expr,
+    s_anticommutator, s_commutator, subtract_exprs, sum_pert_frequencies,
 };
 
 use crate::lagrangian::Lagrangian;
@@ -241,6 +241,12 @@ impl LagrangianDao {
 
         // The first term in Equation (98), J. Chem. Phys. 129, 214108 (2008)
         let set: HashSet<Arc<dyn Expr>> = [density_a].into_iter().collect();
+        // Note that we differentiate the energy with respect to perturbation
+        // `a`. We expect that users provide us a list of reasonable
+        // `one_elec_operators` for the computation of response
+        // functions and residues. We therefore do not need to remove
+        // undifferentiated `one_elec_operators` in the method
+        // `at_zero_strength()` as that of `LagrangianCc`.
         let generalized_energy_a = generalized_energy
             .differentiate(&perturbation_a)?
             .remove(&set)?;
@@ -364,10 +370,9 @@ impl LagrangianDao {
             differentiate_expr(&self.idempotency, wfn_param.derivative())?.remove(&set)?
         } else if let Some(res_param) = downcast_from_arc::<ResidueParameter>(&density_freq) {
             if let Some(wfn) = downcast_from_arc::<WfnParameter>(res_param.parameter()) {
-                // `ResidueParameter` ensures that
-                // `res_param.perturbations()` is a subchain of
-                // `wfn.derivative()`, so we check if the former is also a
-                // superchain of the latter.
+                // `ResidueParameter` ensures that `res_param.perturbations()`
+                // is a subchain of `wfn.derivative()`, so we check if the
+                // former is also a superchain of the latter.
                 if wfn
                     .derivative()
                     .is_superchain_vec(res_param.perturbations())
@@ -403,7 +408,7 @@ impl LagrangianDao {
             }
         } else {
             return Err(expression_error(
-                "Invalid type density matrix",
+                "Invalid type of density matrix",
                 &density_freq,
                 None,
             ));
@@ -489,7 +494,7 @@ impl LagrangianDao {
             }
         } else {
             return Err(expression_error(
-                "Invalid type density matrix",
+                "Invalid type of density matrix",
                 &density_freq,
                 None,
             ));
