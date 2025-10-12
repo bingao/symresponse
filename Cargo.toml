@@ -1,15 +1,20 @@
-[package]
-name = "symresponse"
-version = "0.1.0"
-edition = "2024"
+[workspace]
+members = ["symresponse_lib", "symresponse_ffi"]
+default-members = ["symresponse_lib"]
+resolver = "3"
 
-[dependencies]
-num-rational = { version = "0.4", features = ["serde"] }
-rayon = "1.10.0"
-serde = { version = "1.0", features = ["derive", "rc"] }
-serde_json = "1.0"
-tinned = { git = "https://github.com/bingao/tinned", branch = "tinned-rust" }
+[workspace.dependencies]
+tinned = { git = "https://github.com/bingao/tinned", branch = "tinned-rust", package = "tinned_lib" }
+tinned_ffi = { git = "https://github.com/bingao/tinned", branch = "tinned-rust", package = "tinned_ffi" }
 
-[lib]
-name = "symresponse"
-path = "src/lib.rs"
+[profile.dev]
+panic = "unwind"
+
+[profile.release]
+panic = "unwind"
+
+[profile.release-ffi]
+inherits = "release"
+panic = "abort"
+lto = true
+codegen-units = 1

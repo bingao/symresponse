@@ -13,6 +13,10 @@ use crate::types::ResponseDetail;
 
 // Base Lagrangian trait
 pub trait Lagrangian: std::fmt::Debug + Send + Sync + LagrangianInternal {
+    // Exposes the trait object as `dyn Any` to enable runtime downcasting of
+    // trait objects to concrete types.
+    fn as_any(&self) -> &dyn std::any::Any;
+
     // Return response function according to given extensive and intensive
     // perturbations, and minimum order of differentiated wave function
     // parameters to be eliminated, with respect to extensive perturbations.
@@ -113,10 +117,7 @@ pub trait Lagrangian: std::fmt::Debug + Send + Sync + LagrangianInternal {
         result = self
             .eliminate_lag_multipliers(&result, exten_perturbations, min_multiplier_order)
             .map_err(|e| {
-                generic_error(
-                    "Elimination of Lagrangian multipliers failed",
-                    Some(Box::new(e)),
-                )
+                generic_error("Elimination of Lagrangian multipliers failed", Some(Box::new(e)))
             })?;
 
         // Usually `result` cannot be zero after elimination
@@ -184,23 +185,22 @@ pub trait Lagrangian: std::fmt::Debug + Send + Sync + LagrangianInternal {
     // `excluded_operators` contains operators that should be excluded from the
     // response function. For example, a perturbed operator can or should be
     // removed if users are not able to evaluate it afterwards.
-    fn response_function_with_weight<F>(
+    fn response_function_with_weight(
         &self,
         exten_perturbations: &[Arc<Perturbation>],
         inten_perturbations: &[Arc<Perturbation>],
         min_wfn_exten: u32,
         num_tol: Option<NumberTolerance>,
         excluded_operators: &HashSet<Arc<dyn Expr>>,
-        weight_fn: &F,
-    ) -> Result<Option<(i64, ResponseDetail)>, TinnedError>
-    where
-        F: Sync
-            + Send
-            + Fn(
-                &BTreeMap<u32, HashSet<Arc<dyn Expr>>>,
-                &BTreeMap<u32, HashSet<Arc<dyn Expr>>>,
-            ) -> i64,
-    {
+        weight_fn: &(
+             dyn Fn(
+            &BTreeMap<u32, HashSet<Arc<dyn Expr>>>,
+            &BTreeMap<u32, HashSet<Arc<dyn Expr>>>,
+        ) -> i64
+                 + Send
+                 + Sync
+         ),
+    ) -> Result<Option<(i64, ResponseDetail)>, TinnedError> {
         let expr = self.response_function(
             exten_perturbations,
             inten_perturbations,
@@ -258,23 +258,22 @@ pub trait Lagrangian: std::fmt::Debug + Send + Sync + LagrangianInternal {
     // Optimal response function(s) will be searched by varying the order of
     // differentiated wave function parameters to be eliminated with respect to
     // extensive perturbations
-    fn find_optimal_elimination_order<F>(
+    fn find_optimal_elimination_order(
         &self,
         exten_perturbations: &[Arc<Perturbation>],
         inten_perturbations: &[Arc<Perturbation>],
         num_tol: Option<NumberTolerance>,
         excluded_operators: &HashSet<Arc<dyn Expr>>,
-        weight_fn: &F,
+        weight_fn: &(
+             dyn Fn(
+            &BTreeMap<u32, HashSet<Arc<dyn Expr>>>,
+            &BTreeMap<u32, HashSet<Arc<dyn Expr>>>,
+        ) -> i64
+                 + Send
+                 + Sync
+         ),
         parallel: bool,
-    ) -> Result<Option<(i64, Vec<ResponseDetail>)>, TinnedError>
-    where
-        F: Sync
-            + Send
-            + Fn(
-                &BTreeMap<u32, HashSet<Arc<dyn Expr>>>,
-                &BTreeMap<u32, HashSet<Arc<dyn Expr>>>,
-            ) -> i64,
-    {
+    ) -> Result<Option<(i64, Vec<ResponseDetail>)>, TinnedError> {
         let min_wfn_order: u32 = 1 + (exten_perturbations.len() / 2) as u32;
         let max_wfn_order: u32 = 1 + exten_perturbations.len() as u32;
         let range_orders = min_wfn_order..=max_wfn_order;
@@ -331,7 +330,13 @@ pub trait Lagrangian: std::fmt::Debug + Send + Sync + LagrangianInternal {
 
         let optimal = results
             .into_iter()
-            .filter_map(|(w, r)| if w == min_weight { Some(r) } else { None })
+            .filter_map(|(w, r)| {
+                if w == min_weight {
+                    Some(r)
+                } else {
+                    None
+                }
+            })
             .collect();
 
         Ok(Some((min_weight, optimal)))
@@ -357,23 +362,22 @@ pub trait Lagrangian: std::fmt::Debug + Send + Sync + LagrangianInternal {
     // `excluded_operators` contains operators that should be excluded from
     // response functions. For example, a perturbed operator can or should be
     // removed if users are not able to evaluate it afterwards.
-    fn find_optimal_response_function<F>(
+    fn find_optimal_response_function(
         &self,
         avail_perturbations: &[Arc<Perturbation>],
         exten_perturbations: &[Arc<Perturbation>],
         inten_perturbations: &[Arc<Perturbation>],
         num_tol: Option<NumberTolerance>,
         excluded_operators: &HashSet<Arc<dyn Expr>>,
-        weight_fn: &F,
-    ) -> Result<Option<(i64, Vec<ResponseDetail>)>, TinnedError>
-    where
-        F: Sync
-            + Send
-            + Fn(
-                &BTreeMap<u32, HashSet<Arc<dyn Expr>>>,
-                &BTreeMap<u32, HashSet<Arc<dyn Expr>>>,
-            ) -> i64,
-    {
+        weight_fn: &(
+             dyn Fn(
+            &BTreeMap<u32, HashSet<Arc<dyn Expr>>>,
+            &BTreeMap<u32, HashSet<Arc<dyn Expr>>>,
+        ) -> i64
+                 + Send
+                 + Sync
+         ),
+    ) -> Result<Option<(i64, Vec<ResponseDetail>)>, TinnedError> {
         if avail_perturbations.is_empty() {
             return self.find_optimal_elimination_order(
                 exten_perturbations,

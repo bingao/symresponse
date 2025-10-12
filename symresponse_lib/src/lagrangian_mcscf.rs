@@ -42,12 +42,8 @@ impl LagrangianMcscf {
         // state-rotation operators and parameters allows for swapping. But
         // that does not give us any benefit for symbolic differentiation and
         // computation. We simply set it as `false` here.
-        let lambda_operator = DotProduct::new(
-            rotation_operators.clone(),
-            true,
-            rotation_parameters.clone(),
-            false,
-        )?;
+        let lambda_operator =
+            DotProduct::new(rotation_operators.clone(), true, rotation_parameters.clone(), false)?;
 
         let len_lag_terms = perturbation_operators.len() + 2;
         let mut lag_terms = Vec::with_capacity(len_lag_terms);
@@ -59,33 +55,20 @@ impl LagrangianMcscf {
                 .build()?;
         lag_terms.push(term.clone());
         // Note that `rhs_terms` should be multiplied by `Number::imaginary_unit()`
-        rhs_terms.push(AdjointMap::new(
-            vec![rotation_operators.clone()],
-            term,
-            Some(true),
-        )?);
+        rhs_terms.push(AdjointMap::new(vec![rotation_operators.clone()], term, Some(true))?);
 
         for oper in perturbation_operators {
             term = ExpAdjointMap::builder(lambda_operator.clone(), oper.clone())
                 .left_action(false)
                 .build()?;
             lag_terms.push(term.clone());
-            rhs_terms.push(AdjointMap::new(
-                vec![rotation_operators.clone()],
-                term,
-                Some(true),
-            )?);
+            rhs_terms.push(AdjointMap::new(vec![rotation_operators.clone()], term, Some(true))?);
         }
 
-        term = ExpAdjointMap::builder_temporum(lambda_operator, false)
-            .left_action(false)
-            .build()?;
+        term =
+            ExpAdjointMap::builder_temporum(lambda_operator, false).left_action(false).build()?;
         lag_terms.push(term.clone());
-        rhs_terms.push(AdjointMap::new(
-            vec![rotation_operators.clone()],
-            term,
-            Some(true),
-        )?);
+        rhs_terms.push(AdjointMap::new(vec![rotation_operators.clone()], term, Some(true))?);
 
         let lagrangian_mcscf = MatrixAdd::new(lag_terms)?;
         let rhs_parameters = MatrixAdd::new(rhs_terms)?;
@@ -143,10 +126,7 @@ impl LagrangianMcscf {
                 // `ResidueParameter` ensures that `res_param.perturbations()`
                 // is a subchain of `rot_param.derivative()`, so we check if
                 // the former is also a superchain of the latter.
-                if rot_param
-                    .derivative()
-                    .is_superchain_vec(res_param.perturbations())
-                {
+                if rot_param.derivative().is_superchain_vec(res_param.perturbations()) {
                     return Err(expression_error(
                         "linear_response_rhs() should not be called for residue rotation parameters",
                         &rsp_parameter,
@@ -159,10 +139,7 @@ impl LagrangianMcscf {
                 let residue_info: HashMap<Arc<dyn Expr>, (bool, Vec<Arc<Perturbation>>)> =
                     std::iter::once((
                         res_param.excited_state().clone(),
-                        (
-                            res_param.positive_frequency(),
-                            res_param.perturbations().to_vec(),
-                        ),
+                        (res_param.positive_frequency(), res_param.perturbations().to_vec()),
                     ))
                     .collect();
 
@@ -171,9 +148,7 @@ impl LagrangianMcscf {
                     &residue_info,
                 )?;
 
-                diff_rhs
-                    .retain(&residue_set, false)?
-                    .replace(&residue_map, false)
+                diff_rhs.retain(&residue_set, false)?.replace(&residue_map, false)
             } else {
                 Err(expression_error(
                     "Invalid parameter type of residue parameter",
@@ -182,11 +157,7 @@ impl LagrangianMcscf {
                 ))
             }
         } else {
-            Err(expression_error(
-                "Invalid type of response parameter",
-                &rsp_parameter,
-                None,
-            ))
+            Err(expression_error("Invalid type of response parameter", &rsp_parameter, None))
         }
     }
 }
@@ -199,11 +170,7 @@ impl LagrangianInternal for LagrangianMcscf {
         exten_perturbations: &[Arc<Perturbation>],
         min_wfn_order: u32,
     ) -> Result<Arc<dyn Expr>, TinnedError> {
-        lagrangian.eliminate(
-            &self.rotation_parameters,
-            exten_perturbations,
-            min_wfn_order,
-        )
+        lagrangian.eliminate(&self.rotation_parameters, exten_perturbations, min_wfn_order)
     }
 
     #[inline]
@@ -224,13 +191,16 @@ impl LagrangianInternal for LagrangianMcscf {
     ) -> Result<Arc<dyn Expr>, TinnedError> {
         // Remove undifferentiated perturbation operators and unperturbed
         // time-differentiated quantities
-        lagrangian
-            .remove(&self.perturbation_operators)?
-            .clean_temporum(num_tol)
+        lagrangian.remove(&self.perturbation_operators)?.clean_temporum(num_tol)
     }
 }
 
 impl Lagrangian for LagrangianMcscf {
+    #[inline]
+    fn as_any(&self) -> &dyn std::any::Any {
+        self
+    }
+
     #[inline]
     fn get_lagrangian(&self) -> &Arc<dyn Expr> {
         &self.lagrangian_mcscf

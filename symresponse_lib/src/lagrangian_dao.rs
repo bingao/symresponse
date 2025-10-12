@@ -56,9 +56,8 @@ impl LagrangianDao {
         )?;
 
         // |i\frac{\partial `D_`}{\partial t}>
-        let density_t = TemporumOperator::builder(density_matrix.clone())
-            .is_forward(true)
-            .build()?;
+        let density_t =
+            TemporumOperator::builder(density_matrix.clone()).is_forward(true).build()?;
         let density_a = density_matrix.differentiate(&perturbation_a)?;
         let fock_a = fock_matrix.differentiate(&perturbation_a)?;
 
@@ -67,9 +66,7 @@ impl LagrangianDao {
 
         let (lambda, tdscf_equation, zeta, idempotency) = if let Some(overlap) = &overlap_matrix {
             // |i\frac{\partial `S`}{\partial t}>
-            let overlap_t = TemporumOperator::builder(overlap.clone())
-                .is_forward(true)
-                .build()?;
+            let overlap_t = TemporumOperator::builder(overlap.clone()).is_forward(true).build()?;
             let minus_one = Number::minus_one();
             let one_half = Number::one_half();
             let negative_one_half = Number::from_rational(Rational64::new(-1, 2));
@@ -79,11 +76,7 @@ impl LagrangianDao {
 
             // Equation (229), J. Chem. Phys. 129, 214108 (2008)
             let tdscf_equation = MatrixAdd::new(vec![
-                MatrixMul::new(vec![
-                    fock_matrix.clone(),
-                    density_matrix.clone(),
-                    overlap.clone(),
-                ])?,
+                MatrixMul::new(vec![fock_matrix.clone(), density_matrix.clone(), overlap.clone()])?,
                 MatrixMul::new(vec![
                     minus_one.clone(),
                     overlap.clone(),
@@ -114,16 +107,8 @@ impl LagrangianDao {
             let overlap_a = overlap.differentiate(&perturbation_a)?;
             let zeta = if is_zero_expr(&overlap_a, num_tol) {
                 MatrixAdd::new(vec![
-                    MatrixMul::new(vec![
-                        fock_a.clone(),
-                        density_matrix.clone(),
-                        overlap.clone(),
-                    ])?,
-                    MatrixMul::new(vec![
-                        overlap.clone(),
-                        density_matrix.clone(),
-                        fock_a.clone(),
-                    ])?,
+                    MatrixMul::new(vec![fock_a.clone(), density_matrix.clone(), overlap.clone()])?,
+                    MatrixMul::new(vec![overlap.clone(), density_matrix.clone(), fock_a.clone()])?,
                     MatrixMul::new(vec![minus_one.clone(), fock_a])?,
                 ])?
             } else {
@@ -148,17 +133,10 @@ impl LagrangianDao {
                     ])?,
                 ])?;
                 // Pulay term
-                lag_terms.push(Trace::new(MatrixMul::new(vec![
-                    overlap_a.clone(),
-                    ewd_matrix,
-                ])?)?);
+                lag_terms.push(Trace::new(MatrixMul::new(vec![overlap_a.clone(), ewd_matrix])?)?);
 
                 MatrixAdd::new(vec![
-                    MatrixMul::new(vec![
-                        fock_a.clone(),
-                        density_matrix.clone(),
-                        overlap.clone(),
-                    ])?,
+                    MatrixMul::new(vec![fock_a.clone(), density_matrix.clone(), overlap.clone()])?,
                     MatrixMul::new(vec![
                         minus_one.clone(),
                         fock_matrix.clone(),
@@ -172,11 +150,7 @@ impl LagrangianDao {
                         overlap_a.clone(),
                     ])?,
                     MatrixMul::new(vec![overlap.clone(), density_t.clone(), overlap_a.clone()])?,
-                    MatrixMul::new(vec![
-                        overlap.clone(),
-                        density_matrix.clone(),
-                        fock_a.clone(),
-                    ])?,
+                    MatrixMul::new(vec![overlap.clone(), density_matrix.clone(), fock_a.clone()])?,
                     MatrixMul::new(vec![
                         minus_one.clone(),
                         overlap_a.clone(),
@@ -189,12 +163,7 @@ impl LagrangianDao {
                         density_matrix.clone(),
                         overlap_t,
                     ])?,
-                    MatrixMul::new(vec![
-                        minus_one.clone(),
-                        overlap_a,
-                        density_t,
-                        overlap.clone(),
-                    ])?,
+                    MatrixMul::new(vec![minus_one.clone(), overlap_a, density_t, overlap.clone()])?,
                     MatrixMul::new(vec![minus_one, fock_a])?,
                 ])?
             };
@@ -216,10 +185,8 @@ impl LagrangianDao {
                 density_t,
             )?;
             // = F^{a}D+DF^{a}-F^{a}
-            let zeta = subtract_exprs(
-                anticommutator(fock_a.clone(), density_matrix.clone())?,
-                fock_a,
-            )?;
+            let zeta =
+                subtract_exprs(anticommutator(fock_a.clone(), density_matrix.clone())?, fock_a)?;
             // = D*D
             let idempotency = MatrixMul::new(vec![density_matrix.clone(), density_matrix.clone()])?;
 
@@ -247,9 +214,8 @@ impl LagrangianDao {
         // functions and residues. We therefore do not need to remove
         // undifferentiated `one_elec_operators` in the method
         // `at_zero_strength()` as that of `LagrangianCc`.
-        let generalized_energy_a = generalized_energy
-            .differentiate(&perturbation_a)?
-            .remove(&set)?;
+        let generalized_energy_a =
+            generalized_energy.differentiate(&perturbation_a)?.remove(&set)?;
 
         // The time-averaged quasi-energy derivative Lagrangian
         let lagrangian_dao = subtract_exprs(generalized_energy_a, Add::new(lag_terms)?)?;
@@ -292,11 +258,7 @@ impl LagrangianDao {
         h_nuc: Option<Arc<dyn Expr>>,
     ) -> Result<(Arc<dyn Expr>, Arc<dyn Expr>), TinnedError> {
         if !is_expr_type::<WfnParameter>(&density_matrix) {
-            return Err(expression_error(
-                "Invalid type of density matrix",
-                &density_matrix,
-                None,
-            ));
+            return Err(expression_error("Invalid type of density matrix", &density_matrix, None));
         }
 
         let mut energy_terms = Vec::with_capacity(one_elec_operators.len() + 3);
@@ -373,10 +335,7 @@ impl LagrangianDao {
                 // `ResidueParameter` ensures that `res_param.perturbations()`
                 // is a subchain of `wfn.derivative()`, so we check if the
                 // former is also a superchain of the latter.
-                if wfn
-                    .derivative()
-                    .is_superchain_vec(res_param.perturbations())
-                {
+                if wfn.derivative().is_superchain_vec(res_param.perturbations()) {
                     return Ok(ZeroOperator::new());
                 }
 
@@ -387,18 +346,13 @@ impl LagrangianDao {
                 let residue_info: HashMap<Arc<dyn Expr>, (bool, Vec<Arc<Perturbation>>)> =
                     std::iter::once((
                         res_param.excited_state().clone(),
-                        (
-                            res_param.positive_frequency(),
-                            res_param.perturbations().to_vec(),
-                        ),
+                        (res_param.positive_frequency(), res_param.perturbations().to_vec()),
                     ))
                     .collect();
                 let (residue_set, residue_map) = self
                     .build_residue_parameters(&vec![self.density_matrix.clone()], &residue_info)?;
 
-                result
-                    .retain(&residue_set, false)?
-                    .replace(&residue_map, false)?
+                result.retain(&residue_set, false)?.replace(&residue_map, false)?
             } else {
                 return Err(expression_error(
                     "Invalid parameter type of residue density matrix",
@@ -407,11 +361,7 @@ impl LagrangianDao {
                 ));
             }
         } else {
-            return Err(expression_error(
-                "Invalid type of density matrix",
-                &density_freq,
-                None,
-            ));
+            return Err(expression_error("Invalid type of density matrix", &density_freq, None));
         };
 
         let anticomm_idemp_dm = if let Some(overlap) = &self.overlap_matrix {
@@ -473,18 +423,13 @@ impl LagrangianDao {
                 let residue_info: HashMap<Arc<dyn Expr>, (bool, Vec<Arc<Perturbation>>)> =
                     std::iter::once((
                         res_param.excited_state().clone(),
-                        (
-                            res_param.positive_frequency(),
-                            res_param.perturbations().to_vec(),
-                        ),
+                        (res_param.positive_frequency(), res_param.perturbations().to_vec()),
                     ))
                     .collect();
                 let (residue_set, residue_map) = self
                     .build_residue_parameters(&vec![self.density_matrix.clone()], &residue_info)?;
 
-                result
-                    .retain(&residue_set, false)?
-                    .replace(&residue_map, false)?
+                result.retain(&residue_set, false)?.replace(&residue_map, false)?
             } else {
                 return Err(expression_error(
                     "Invalid parameter type of residue density matrix",
@@ -493,11 +438,7 @@ impl LagrangianDao {
                 ));
             }
         } else {
-            return Err(expression_error(
-                "Invalid type of density matrix",
-                &density_freq,
-                None,
-            ));
+            return Err(expression_error("Invalid type of density matrix", &density_freq, None));
         };
 
         let map: HashMap<Arc<dyn Expr>, Arc<dyn Expr>> =
@@ -516,16 +457,10 @@ impl LagrangianInternal for LagrangianDao {
         num_tol: Option<NumberTolerance>,
     ) -> Result<bool, TinnedError> {
         let freq_sum_ext = sum_pert_frequencies(&exten_perturbations).map_err(|e| {
-            generic_error(
-                "Sum of extensive perturbations' frequencies failed",
-                Some(Box::new(e)),
-            )
+            generic_error("Sum of extensive perturbations' frequencies failed", Some(Box::new(e)))
         })?;
         let freq_sum_int = sum_pert_frequencies(&inten_perturbations).map_err(|e| {
-            generic_error(
-                "Sum of intensive perturbations' frequencies failed",
-                Some(Box::new(e)),
-            )
+            generic_error("Sum of intensive perturbations' frequencies failed", Some(Box::new(e)))
         })?;
         // Here we need to inlcude the frequency of `perturbation_a`, which can
         // either be extensive or intensive
@@ -536,10 +471,7 @@ impl LagrangianInternal for LagrangianDao {
         }
 
         let total_freq = Add::new(terms).map_err(|e| {
-            generic_error(
-                "Sum of all perturbations' frequencies failed",
-                Some(Box::new(e)),
-            )
+            generic_error("Sum of all perturbations' frequencies failed", Some(Box::new(e)))
         })?;
 
         Ok(!is_zero_expr(&total_freq, num_tol))
@@ -587,26 +519,15 @@ impl LagrangianInternal for LagrangianDao {
         min_multiplier_order: u32,
     ) -> Result<Arc<dyn Expr>, TinnedError> {
         let mut result = lagrangian
-            .eliminate(
-                &self.tdscf_multiplier,
-                exten_perturbations,
-                min_multiplier_order,
-            )
+            .eliminate(&self.tdscf_multiplier, exten_perturbations, min_multiplier_order)
             .map_err(|e| {
                 generic_error("Elimination of TDSCF multiplier failed", Some(Box::new(e)))
             })?;
 
         result = result
-            .eliminate(
-                &self.idemp_multiplier,
-                exten_perturbations,
-                min_multiplier_order,
-            )
+            .eliminate(&self.idemp_multiplier, exten_perturbations, min_multiplier_order)
             .map_err(|e| {
-                generic_error(
-                    "Elimination of idempotency multiplier failed",
-                    Some(Box::new(e)),
-                )
+                generic_error("Elimination of idempotency multiplier failed", Some(Box::new(e)))
             })?;
 
         // Replace "artificial" multipliers with real differentiated ones
@@ -620,6 +541,11 @@ impl LagrangianInternal for LagrangianDao {
 }
 
 impl Lagrangian for LagrangianDao {
+    #[inline]
+    fn as_any(&self) -> &dyn std::any::Any {
+        self
+    }
+
     #[inline]
     fn get_lagrangian(&self) -> &Arc<dyn Expr> {
         &self.lagrangian_dao

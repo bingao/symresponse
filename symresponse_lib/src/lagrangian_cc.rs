@@ -56,18 +56,10 @@ impl LagrangianCc {
         // excitation opertors and CC amplitudes/multipliers. But that does not
         // give us any benefit for symbolic differentiation and computation. We
         // simply set it as `false` here.
-        let cluster_operator = DotProduct::new(
-            excitation_operators.clone(),
-            false,
-            cc_amplitudes.clone(),
-            false,
-        )?;
-        let lambda_operator = DotProduct::new(
-            excitation_operators.clone(),
-            true,
-            multipliers.clone(),
-            false,
-        )?;
+        let cluster_operator =
+            DotProduct::new(excitation_operators.clone(), false, cc_amplitudes.clone(), false)?;
+        let lambda_operator =
+            DotProduct::new(excitation_operators.clone(), true, multipliers.clone(), false)?;
 
         // Unperturbed Hamiltonian and perturbation operators, see Equations
         // (2) and (5), J. Phys. Chem. A 2025, 129, 3709-3721.
@@ -88,10 +80,7 @@ impl LagrangianCc {
                 .build()?;
         cc_hamiltonian_terms.push(hamiltonian_term.clone());
         lag_terms.push(hamiltonian_term.clone());
-        lag_terms.push(MatrixMul::new(vec![
-            lambda_operator.clone(),
-            hamiltonian_term,
-        ])?);
+        lag_terms.push(MatrixMul::new(vec![lambda_operator.clone(), hamiltonian_term])?);
 
         let mut multiplier_term = ExpAdjointMap::builder(
             cluster_operator.clone(),
@@ -105,10 +94,7 @@ impl LagrangianCc {
         .max_fold(4)
         .build()?;
         multiplier_terms.push(multiplier_term.clone());
-        multiplier_terms.push(MatrixMul::new(vec![
-            lambda_operator.clone(),
-            multiplier_term,
-        ])?);
+        multiplier_terms.push(MatrixMul::new(vec![lambda_operator.clone(), multiplier_term])?);
 
         for oper in perturbation_operators {
             hamiltonian_term = ExpAdjointMap::builder(cluster_operator.clone(), oper.clone())
@@ -117,36 +103,25 @@ impl LagrangianCc {
                 .build()?;
             cc_hamiltonian_terms.push(hamiltonian_term.clone());
             lag_terms.push(hamiltonian_term.clone());
-            lag_terms.push(MatrixMul::new(vec![
-                lambda_operator.clone(),
-                hamiltonian_term,
-            ])?);
+            lag_terms.push(MatrixMul::new(vec![lambda_operator.clone(), hamiltonian_term])?);
 
             multiplier_term = ExpAdjointMap::builder(
                 cluster_operator.clone(),
-                AdjointMap::new(
-                    vec![excitation_operators.clone()],
-                    oper.clone(),
-                    Some(false),
-                )?,
+                AdjointMap::new(vec![excitation_operators.clone()], oper.clone(), Some(false))?,
             )
             .left_action(false)
             .max_fold(4)
             .build()?;
             multiplier_terms.push(multiplier_term.clone());
-            multiplier_terms.push(MatrixMul::new(vec![
-                lambda_operator.clone(),
-                multiplier_term,
-            ])?);
+            multiplier_terms.push(MatrixMul::new(vec![lambda_operator.clone(), multiplier_term])?);
         }
 
         let cc_hamiltonian = MatrixAdd::new(cc_hamiltonian_terms)?;
         let rhs_multiplier = MatrixAdd::new(multiplier_terms)?;
 
         // Perform -i*d/dt (backward) on coupled-cluster amplitudes
-        let dt_cc_amplitudes = TemporumOperator::builder(cc_amplitudes.clone())
-            .is_forward(false)
-            .build()?;
+        let dt_cc_amplitudes =
+            TemporumOperator::builder(cc_amplitudes.clone()).is_forward(false).build()?;
 
         // Here, we should have an inner product (`DotProduct`) between
         // Lagrangian multipliers and the time-differentiated coupled-cluster
@@ -229,10 +204,7 @@ impl LagrangianCc {
                 // `ResidueParameter` ensures that `res_param.perturbations()`
                 // is a subchain of `cc_amplitude.derivative()`, so we check if
                 // the former is also a superchain of the latter.
-                if cc_amplitude
-                    .derivative()
-                    .is_superchain_vec(res_param.perturbations())
-                {
+                if cc_amplitude.derivative().is_superchain_vec(res_param.perturbations()) {
                     return Err(expression_error(
                         "linear_response_rhs() should not be called for a residue CC amplitude",
                         &rsp_parameter,
@@ -246,10 +218,7 @@ impl LagrangianCc {
             } else if let Some(multiplier) =
                 downcast_from_arc::<LagMultiplier>(&res_param.parameter())
             {
-                if multiplier
-                    .derivative()
-                    .is_superchain_vec(res_param.perturbations())
-                {
+                if multiplier.derivative().is_superchain_vec(res_param.perturbations()) {
                     return Err(expression_error(
                         "linear_response_rhs() should not be called for a residue Lagrangian multiplier",
                         &rsp_parameter,
@@ -271,19 +240,14 @@ impl LagrangianCc {
             let residue_info: HashMap<Arc<dyn Expr>, (bool, Vec<Arc<Perturbation>>)> =
                 std::iter::once((
                     res_param.excited_state().clone(),
-                    (
-                        res_param.positive_frequency(),
-                        res_param.perturbations().to_vec(),
-                    ),
+                    (res_param.positive_frequency(), res_param.perturbations().to_vec()),
                 ))
                 .collect();
 
             let (residue_set, residue_map) =
                 self.build_residue_parameters(&vec![unperturbed_param], &residue_info)?;
 
-            diff_rhs
-                .retain(&residue_set, false)?
-                .replace(&residue_map, false)
+            diff_rhs.retain(&residue_set, false)?.replace(&residue_map, false)
         } else {
             return Err(expression_error(
                 "Invalid type of response parameter",
@@ -323,13 +287,16 @@ impl LagrangianInternal for LagrangianCc {
     ) -> Result<Arc<dyn Expr>, TinnedError> {
         // Remove undifferentiated perturbation operators and unperturbed
         // time-differentiated quantities
-        lagrangian
-            .remove(&self.perturbation_operators)?
-            .clean_temporum(num_tol)
+        lagrangian.remove(&self.perturbation_operators)?.clean_temporum(num_tol)
     }
 }
 
 impl Lagrangian for LagrangianCc {
+    #[inline]
+    fn as_any(&self) -> &dyn std::any::Any {
+        self
+    }
+
     #[inline]
     fn get_lagrangian(&self) -> &Arc<dyn Expr> {
         &self.lagrangian_cc

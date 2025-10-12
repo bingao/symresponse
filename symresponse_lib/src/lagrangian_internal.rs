@@ -29,10 +29,7 @@ pub(crate) mod sealed {
                 )
             })?;
             let total_freq = Add::new(vec![freq_sum_ext, freq_sum_int]).map_err(|e| {
-                generic_error(
-                    "Sum of all perturbations' frequencies failed",
-                    Some(Box::new(e)),
-                )
+                generic_error("Sum of all perturbations' frequencies failed", Some(Box::new(e)))
             })?;
 
             Ok(!is_zero_expr(&total_freq, num_tol))
@@ -94,13 +91,8 @@ pub(crate) mod sealed {
             &self,
             parameters: &[Arc<dyn Expr>],
             residue_info: &HashMap<Arc<dyn Expr>, (bool, Vec<Arc<Perturbation>>)>,
-        ) -> Result<
-            (
-                HashSet<Arc<dyn Expr>>,
-                HashMap<Arc<dyn Expr>, Arc<dyn Expr>>,
-            ),
-            TinnedError,
-        > {
+        ) -> Result<(HashSet<Arc<dyn Expr>>, HashMap<Arc<dyn Expr>, Arc<dyn Expr>>), TinnedError>
+        {
             let mut residue_set: HashSet<Arc<dyn Expr>> =
                 HashSet::with_capacity(parameters.len() * residue_info.len());
             let mut residue_map: HashMap<Arc<dyn Expr>, Arc<dyn Expr>> =

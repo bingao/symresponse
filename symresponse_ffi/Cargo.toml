@@ -1,0 +1,20 @@
+[package]
+name = "symresponse_ffi"
+version = "0.1.0"
+edition = "2024"
+include = ["include/**", "src/**", "Cargo.toml"]
+
+[lib]
+name = "symresponse_ffi"
+crate-type = ["cdylib", "staticlib"]
+
+[dependencies]
+tinned = { workspace = true }
+tinned_ffi = { workspace = true }
+symresponse_lib = { path = "../symresponse_lib" }
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+safer-ffi = { version = "0.1.13", features = ["proc_macros"] }
+
+[features]
+c-headers = ["safer-ffi/headers"]

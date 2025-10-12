@@ -24,8 +24,11 @@ first, which has implmented derivatives for different matrix expressions.
 Then clone [Tinned library](https://github.com/bingao/tinned) and build it by
 setting `SymEngine_DIR` to the SymEngine installation or build directory.
 
-Last, build SymResponse by setting both `SymEngine_DIR` and `Tinned_DIR`, where
-the latter is the Tinned installation or build directory.
+For Rust library, run `cargo build-lib`, or `cargo build -p symresponse_lib --release`.
+
+If you want C library, use `cargo build-ffi` or `cargo build -p symresponse_ffi --profile release-ffi`.
+
+Optionally, run `cargo gen-headers `, or `cargo test --features c-headers --profile release-ffi -- --exact header_gen::generate_c_header --nocapture`.
 
 ## SymResponse APIs
 

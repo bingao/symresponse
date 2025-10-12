@@ -1,0 +1,4 @@
+[alias]
+build-lib = "build -p symresponse_lib --release"
+build-ffi = "build -p symresponse_ffi --profile release-ffi"
+gen-headers = "test -p symresponse_ffi --features c-headers --profile release -- --exact header_gen::generate_c_header --nocapture"
