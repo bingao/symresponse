@@ -1,7 +1,7 @@
 #![deny(unsafe_op_in_unsafe_fn)]
 
 mod lagrangian;
-//mod lagrangian_cc;
+mod lagrangian_cc;
 mod lagrangian_dao;
 //mod lagrangian_mcscf;
 //mod types;

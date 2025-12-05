@@ -1,5 +1,5 @@
 cmake_minimum_required(VERSION 3.20)
-project(symresponse_c_tests C)
+project(symresponse_c_examples C)
 
 # User options
 set(WORKSPACE_DIR "${CMAKE_CURRENT_LIST_DIR}/../.." CACHE PATH "Path to symresponse workspace root")
@@ -47,7 +47,7 @@ add_custom_target(rust_lib_symresponse ALL
 if(NOT TINNED_CRATE_DIR)
   message(FATAL_ERROR
     "TINNED_CRATE_DIR is empty. Point it to your local tinned repo's tinned_ffi crate, "
-    "so we can build and import the cdylib for C tests.")
+    "so we can build and import the cdylib for C examples.")
 endif()
 
 add_custom_target(rust_lib_tinned ALL
@@ -110,41 +110,41 @@ else()
 endif()
 add_dependencies(tinned_ffi rust_lib_tinned)
 
-# C tests
-add_executable(test_api
-  "${SYMRESPONSE_CRATE_DIR}/tests/test_api.c"
-  "${SYMRESPONSE_CRATE_DIR}/tests/test_lagrangian_dao.c"
-  "${SYMRESPONSE_CRATE_DIR}/tests/all_tests.def"
+# C examples
+add_executable(main
+  "${SYMRESPONSE_CRATE_DIR}/examples/main.c"
+  "${SYMRESPONSE_CRATE_DIR}/examples/dao_response.c"
+  "${SYMRESPONSE_CRATE_DIR}/examples/all_examples.def"
 )
 
 # Include both headers (must already exist)
-target_include_directories(test_api PRIVATE
+target_include_directories(main PRIVATE
   "${TINNED_CRATE_DIR}/include"
   "${SYMRESPONSE_CRATE_DIR}/include"
-  "${SYMRESPONSE_CRATE_DIR}/tests"
+  "${SYMRESPONSE_CRATE_DIR}/examples"
 )
 
 # Link both FFIs (order: symresponse first, then tinned)
-target_link_libraries(test_api PRIVATE symresponse_ffi tinned_ffi)
+target_link_libraries(main PRIVATE symresponse_ffi tinned_ffi)
 
 # Runtime search path
 if (APPLE)
-  set_target_properties(test_api PROPERTIES
+  set_target_properties(main PROPERTIES
     BUILD_RPATH "@loader_path"
     INSTALL_RPATH "@loader_path"
   )
 elseif(UNIX AND NOT APPLE)
-  set_target_properties(test_api PROPERTIES
+  set_target_properties(main PROPERTIES
     BUILD_RPATH "\$ORIGIN"
     INSTALL_RPATH "\$ORIGIN"
   )
 endif()
 
-# Copy both runtimes next to the test exe
-add_custom_command(TARGET test_api POST_BUILD
+# Copy both runtimes next to the example exe
+add_custom_command(TARGET main POST_BUILD
   COMMAND ${CMAKE_COMMAND} -E copy_if_different
-          "${SYMRESP_RUNTIME}" "$<TARGET_FILE_DIR:test_api>"
+          "${SYMRESP_RUNTIME}" "$<TARGET_FILE_DIR:main>"
   COMMAND ${CMAKE_COMMAND} -E copy_if_different
-          "${TINNED_RUNTIME}" "$<TARGET_FILE_DIR:test_api>"
-  COMMENT "Copying Rust runtimes next to test_api"
+          "${TINNED_RUNTIME}" "$<TARGET_FILE_DIR:main>"
+  COMMENT "Copying Rust runtimes next to main"
 )

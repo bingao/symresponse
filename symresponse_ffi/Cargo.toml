@@ -17,4 +17,7 @@ serde_json = "1"
 safer-ffi = { version = "0.1.13", features = ["proc_macros"] }
 
 [features]
+default = []
+
+# Generate C headers for symresponse
 c-headers = ["safer-ffi/headers"]

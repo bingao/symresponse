@@ -35,6 +35,7 @@ pub trait Lagrangian: std::fmt::Debug + Send + Sync + LagrangianInternal {
         exten_perturbations: &[Arc<Perturbation>],
         inten_perturbations: &[Arc<Perturbation>],
         min_wfn_exten: u32,
+        validate_frequencies: bool,
         num_tol: Option<NumberTolerance>,
     ) -> Result<Arc<dyn Expr>, TinnedError> {
         // Validate that: (i) at least one extensive perturbation, (ii) sum of
@@ -46,11 +47,17 @@ pub trait Lagrangian: std::fmt::Debug + Send + Sync + LagrangianInternal {
                 None,
             ));
         }
-        if self.is_non_zero_sum_freqs(exten_perturbations, inten_perturbations, num_tol.clone())? {
-            return Err(generic_error(
-                "Lagrangian gets perturbations with non-zero sum frequencies",
-                None,
-            ));
+        if validate_frequencies {
+            if self.is_non_zero_sum_freqs(
+                exten_perturbations,
+                inten_perturbations,
+                num_tol.clone(),
+            )? {
+                return Err(generic_error(
+                    "Lagrangian gets perturbations with non-zero sum frequencies",
+                    None,
+                ));
+            }
         }
         if self.has_common_perturbation(exten_perturbations, inten_perturbations) {
             return Err(generic_error(
@@ -143,6 +150,7 @@ pub trait Lagrangian: std::fmt::Debug + Send + Sync + LagrangianInternal {
         inten_perturbations: &[Arc<Perturbation>],
         min_wfn_exten: u32,
         residue_info: &HashMap<Arc<dyn Expr>, (bool, Vec<Arc<Perturbation>>)>,
+        validate_frequencies: bool,
         num_tol: Option<NumberTolerance>,
     ) -> Result<Arc<dyn Expr>, TinnedError> {
         if !self.validate_residue_info(exten_perturbations, inten_perturbations, residue_info) {
@@ -157,6 +165,7 @@ pub trait Lagrangian: std::fmt::Debug + Send + Sync + LagrangianInternal {
             exten_perturbations,
             inten_perturbations,
             min_wfn_exten,
+            validate_frequencies,
             num_tol,
         )?;
 
@@ -200,11 +209,13 @@ pub trait Lagrangian: std::fmt::Debug + Send + Sync + LagrangianInternal {
                  + Send
                  + Sync
          ),
+        validate_frequencies: bool,
     ) -> Result<Option<(i64, ResponseDetail)>, TinnedError> {
         let expr = self.response_function(
             exten_perturbations,
             inten_perturbations,
             min_wfn_exten,
+            validate_frequencies,
             num_tol,
         )?;
 
@@ -272,6 +283,7 @@ pub trait Lagrangian: std::fmt::Debug + Send + Sync + LagrangianInternal {
                  + Send
                  + Sync
          ),
+        validate_frequencies: bool,
         parallel: bool,
     ) -> Result<Option<(i64, Vec<ResponseDetail>)>, TinnedError> {
         let min_wfn_order: u32 = 1 + (exten_perturbations.len() / 2) as u32;
@@ -291,6 +303,7 @@ pub trait Lagrangian: std::fmt::Debug + Send + Sync + LagrangianInternal {
                         num_tol.clone(),
                         excluded_operators,
                         weight_fn,
+                        validate_frequencies,
                     )
                 })
                 .collect::<Result<Vec<_>, TinnedError>>()?
@@ -308,6 +321,7 @@ pub trait Lagrangian: std::fmt::Debug + Send + Sync + LagrangianInternal {
                         num_tol.clone(),
                         excluded_operators,
                         weight_fn,
+                        validate_frequencies,
                     )
                 })
                 .collect::<Result<Vec<_>, TinnedError>>()?
@@ -377,6 +391,7 @@ pub trait Lagrangian: std::fmt::Debug + Send + Sync + LagrangianInternal {
                  + Send
                  + Sync
          ),
+        validate_frequencies: bool,
     ) -> Result<Option<(i64, Vec<ResponseDetail>)>, TinnedError> {
         if avail_perturbations.is_empty() {
             return self.find_optimal_elimination_order(
@@ -385,6 +400,7 @@ pub trait Lagrangian: std::fmt::Debug + Send + Sync + LagrangianInternal {
                 num_tol.clone(),
                 excluded_operators,
                 weight_fn,
+                validate_frequencies,
                 true,
             );
         }
@@ -439,6 +455,7 @@ pub trait Lagrangian: std::fmt::Debug + Send + Sync + LagrangianInternal {
                     num_tol.clone(),
                     excluded_operators,
                     weight_fn,
+                    validate_frequencies,
                     false,
                 )
             })
