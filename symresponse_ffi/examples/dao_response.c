@@ -171,6 +171,9 @@ void dao_response(void) {
         return;
     }
 
+    TINNED_SAFE_FREE_EXPR(weight);
+    TINNED_SAFE_FREE_EXPR(Omega);
+
     ExprHandle_t* hnuc = tinned_non_elec_function_new("hnuc", dependencies, &err);
     if (!hnuc) {
         fprintf(
@@ -184,10 +187,10 @@ void dao_response(void) {
     TINNED_SAFE_FREE_PERT_MULTICHAIN(dependencies);
 
     // Create quasi-energy derivative Lagrangian
-    ExprHandle_t const * const one_elec_operators[1] = {V};
+    ExprHandle_t const * const one_elec_operators[3] = {h, V, T};
     ExprSlice_t one_elec_slice = {
         .ptr = one_elec_operators,
-        .len = 1,
+        .len = 3,
     };
 
     LagrangianHandle_t* La = symresponse_lagrangian_dao_new (
@@ -203,7 +206,9 @@ void dao_response(void) {
     }
 
     TINNED_SAFE_FREE_EXPR(S);
+    TINNED_SAFE_FREE_EXPR(h);
     TINNED_SAFE_FREE_EXPR(V);
+    TINNED_SAFE_FREE_EXPR(T);
     TINNED_SAFE_FREE_EXPR(G);
     TINNED_SAFE_FREE_EXPR(Exc);
     TINNED_SAFE_FREE_EXPR(Vxc);
