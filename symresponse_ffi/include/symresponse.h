@@ -21,12 +21,18 @@ typedef struct LagrangianHandle LagrangianHandle_t;
 /** \brief
  *  An *opaque* handle that C can only pass around
  */
-typedef struct ExprHandle ExprHandle_t;
+typedef struct TinnedErrorHandle TinnedErrorHandle_t;
 
 /** \brief
  *  An *opaque* handle that C can only pass around
  */
-typedef struct TinnedErrorHandle TinnedErrorHandle_t;
+typedef struct ExprHandle ExprHandle_t;
+
+/** <No documentation available> */
+ExprHandle_t *
+symresponse_get_lagrangian (
+    LagrangianHandle_t const * h,
+    TinnedErrorHandle_t * * out_err);
 
 /** <No documentation available> */
 ExprHandle_t *
@@ -249,6 +255,7 @@ tinned_dot_product_new (
     bool use_hermitian,
     ExprHandle_t const * ket,
     bool allow_braket_swap,
+    bool is_scalar,
     TinnedErrorHandle_t * * out_err);
 
 /** <No documentation available> */

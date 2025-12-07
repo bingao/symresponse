@@ -56,10 +56,20 @@ impl LagrangianCc {
         // excitation opertors and CC amplitudes/multipliers. But that does not
         // give us any benefit for symbolic differentiation and computation. We
         // simply set it as `false` here.
-        let cluster_operator =
-            DotProduct::new(excitation_operators.clone(), false, cc_amplitudes.clone(), false)?;
-        let lambda_operator =
-            DotProduct::new(excitation_operators.clone(), true, multipliers.clone(), false)?;
+        let cluster_operator = DotProduct::new(
+            excitation_operators.clone(),
+            false,
+            cc_amplitudes.clone(),
+            false,
+            Some(false),
+        )?;
+        let lambda_operator = DotProduct::new(
+            excitation_operators.clone(),
+            true,
+            multipliers.clone(),
+            false,
+            Some(false),
+        )?;
 
         // Unperturbed Hamiltonian and perturbation operators, see Equations
         // (2) and (5), J. Phys. Chem. A 2025, 129, 3709-3721.

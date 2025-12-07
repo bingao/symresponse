@@ -114,6 +114,7 @@ add_dependencies(tinned_ffi rust_lib_tinned)
 add_executable(main
   "${SYMRESPONSE_CRATE_DIR}/examples/main.c"
   "${SYMRESPONSE_CRATE_DIR}/examples/dao_response.c"
+  "${SYMRESPONSE_CRATE_DIR}/examples/cc_response.c"
   "${SYMRESPONSE_CRATE_DIR}/examples/all_examples.def"
 )
 

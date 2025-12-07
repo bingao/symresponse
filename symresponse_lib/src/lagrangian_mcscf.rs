@@ -42,8 +42,13 @@ impl LagrangianMcscf {
         // state-rotation operators and parameters allows for swapping. But
         // that does not give us any benefit for symbolic differentiation and
         // computation. We simply set it as `false` here.
-        let lambda_operator =
-            DotProduct::new(rotation_operators.clone(), true, rotation_parameters.clone(), false)?;
+        let lambda_operator = DotProduct::new(
+            rotation_operators.clone(),
+            true,
+            rotation_parameters.clone(),
+            false,
+            Some(false),
+        )?;
 
         let len_lag_terms = perturbation_operators.len() + 2;
         let mut lag_terms = Vec::with_capacity(len_lag_terms);

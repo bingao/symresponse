@@ -6,6 +6,7 @@
 
 void dao_response(void) {
     TinnedErrorHandle_t* err = NULL;
+
     // Create perturbation a
     ExprHandle_t* freq_a = tinned_symbol_new("omega_a", &err);
     if (!freq_a) {
@@ -193,7 +194,7 @@ void dao_response(void) {
         .len = 3,
     };
 
-    LagrangianHandle_t* La = symresponse_lagrangian_dao_new (
+    LagrangianHandle_t* La = symresponse_lagrangian_dao_new(
         pert_a, D, S, &one_elec_slice, G, Exc, Vxc, hnuc, NULL, &err
     );
     if (!La) {
@@ -213,6 +214,30 @@ void dao_response(void) {
     TINNED_SAFE_FREE_EXPR(Exc);
     TINNED_SAFE_FREE_EXPR(Vxc);
     TINNED_SAFE_FREE_EXPR(hnuc);
+
+    // Get and serialize the quasi-energy derivative Lagrangian
+    ExprHandle_t* expr_La = symresponse_get_lagrangian (La, &err);
+    if (!expr_La) {
+        fprintf(
+            stderr,
+            "Failed to get the quasi-energy derivative Lagrangian, with error message: %s\n",
+            tinned_error_display(err)
+        );
+        return;
+    }
+
+    char* str_La = tinned_expr_serialize_json(expr_La, &err);
+    if (!str_La) {
+        fprintf(
+            stderr,
+            "Failed to serialize the quasi-energy derivative Lagrangian, with error message: %s\n",
+            tinned_error_display(err)
+        );
+        return;
+    }
+    fprintf(stdout, "L^a = %s\n\n", str_La);
+    TINNED_SAFE_FREE_STR(str_La);
+    TINNED_SAFE_FREE_EXPR(expr_La);
 
     // Compute <<A; B>>
     PerturbationHandle_t const * const exten_perturbations[1] = {pert_b};

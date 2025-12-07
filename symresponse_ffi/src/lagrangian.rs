@@ -45,6 +45,23 @@ pub fn symresponse_lagrangian_free(lag: Option<LagrangianBox>) {
 }
 
 #[ffi_export]
+pub fn symresponse_get_lagrangian(
+    h: Option<&LagrangianHandle>,
+    out_err: Option<Out<'_, TinnedErrorBox>>,
+) -> Option<ExprBox> {
+    match try_with_handle(h, "symresponse_get_lagrangian", "LagrangianHandle", |lh| {
+        let lag_expr = lh.as_ref().get_lagrangian();
+        Ok(ExprBox::new(ExprHandle::new(Arc::clone(lag_expr))))
+    }) {
+        Ok(expr_box) => Some(expr_box),
+        Err(e) => {
+            tinned_error_new(out_err, e);
+            None
+        },
+    }
+}
+
+#[ffi_export]
 pub fn symresponse_response_function(
     h: Option<&LagrangianHandle>,
     exten_slice: Option<&PerturbationSlice>,
