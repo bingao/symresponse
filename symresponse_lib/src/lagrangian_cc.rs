@@ -12,7 +12,7 @@ use crate::lagrangian_internal::sealed::LagrangianInternal;
 
 #[derive(Clone, Debug, serde::Serialize, serde::Deserialize)]
 pub struct LagrangianCc {
-    perturbation_operators: HashSet<Arc<dyn Expr>>,
+    perturbing_operators: HashSet<Arc<dyn Expr>>,
     // Coupled-cluster amplitudes
     cc_amplitudes: Arc<dyn Expr>,
     // Lagrangian multipliers
@@ -31,7 +31,7 @@ impl LagrangianCc {
     // without orbital relaxation.
     pub fn new(
         unperturbed_hamiltonian: Arc<dyn Expr>,
-        perturbation_operators: &[Arc<dyn Expr>],
+        perturbing_operators: &[Arc<dyn Expr>],
         cc_amplitudes: Arc<dyn Expr>,
         excitation_operators: Arc<dyn Expr>,
         multipliers: Arc<dyn Expr>,
@@ -73,7 +73,7 @@ impl LagrangianCc {
 
         // Unperturbed Hamiltonian and perturbation operators, see Equations
         // (2) and (5), J. Phys. Chem. A 2025, 129, 3709-3721.
-        let len_hamiltonian_terms = perturbation_operators.len() + 1;
+        let len_hamiltonian_terms = perturbing_operators.len() + 1;
 
         // Terms to construct Equation (28), J. Phys. Chem. A 2025, 129, 3709-3721.
         let mut cc_hamiltonian_terms = Vec::with_capacity(len_hamiltonian_terms);
@@ -106,7 +106,7 @@ impl LagrangianCc {
         multiplier_terms.push(multiplier_term.clone());
         multiplier_terms.push(MatrixMul::new(vec![lambda_operator.clone(), multiplier_term])?);
 
-        for oper in perturbation_operators {
+        for oper in perturbing_operators {
             hamiltonian_term = ExpAdjointMap::builder(cluster_operator.clone(), oper.clone())
                 .left_action(false)
                 .max_fold(4)
@@ -143,11 +143,11 @@ impl LagrangianCc {
         let lagrangian_cc = MatrixAdd::new(lag_terms)?;
 
         // Users may accidentally provide duplicated perturbation operators,
-        // but it does not matter for the field `perturbation_operators`
+        // but it does not matter for the field `perturbing_operators`
         // because we use the field only for removing undifferentiated
         // perturbation operators.
         Ok(Self {
-            perturbation_operators: perturbation_operators.iter().cloned().collect(),
+            perturbing_operators: perturbing_operators.iter().cloned().collect(),
             cc_amplitudes,
             multipliers,
             cc_hamiltonian,
@@ -198,7 +198,7 @@ impl LagrangianCc {
     ) -> Result<Arc<dyn Expr>, TinnedError> {
         // Undifferentiated perturbation operators and the perturbed
         // `rsp_parameter` itself will be removed from RHS
-        let mut rhs_set = self.perturbation_operators.clone();
+        let mut rhs_set = self.perturbing_operators.clone();
         rhs_set.insert(rsp_parameter.clone());
 
         if let Some(cc_amplitude) = downcast_from_arc::<WfnParameter>(&rsp_parameter) {
@@ -299,7 +299,7 @@ impl LagrangianInternal for LagrangianCc {
     ) -> Result<Arc<dyn Expr>, TinnedError> {
         // Remove undifferentiated perturbation operators and unperturbed
         // time-differentiated quantities
-        lagrangian.remove(&self.perturbation_operators)?.clean_temporum(num_tol)
+        lagrangian.remove(&self.perturbing_operators)?.clean_temporum(num_tol)
     }
 }
 

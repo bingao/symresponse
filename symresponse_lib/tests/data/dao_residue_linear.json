@@ -1,0 +1,1166 @@
+{
+  "Add": {
+    "terms": [
+      {
+        "Mul": {
+          "coefficient": {
+            "Integer": -1
+          },
+          "factors": [
+            {
+              "Trace": {
+                "argument": {
+                  "MatrixMul": {
+                    "coefficient": {
+                      "Number": {
+                        "Integer": 1
+                      }
+                    },
+                    "factors": [
+                      {
+                        "MatrixAdd": {
+                          "terms": [
+                            {
+                              "MatrixMul": {
+                                "coefficient": {
+                                  "Number": {
+                                    "Integer": 1
+                                  }
+                                },
+                                "factors": [
+                                  {
+                                    "ResidueParameter": {
+                                      "positive_frequency": false,
+                                      "perturbations": [
+                                        {
+                                          "name": "b",
+                                          "frequency": {
+                                            "Symbol": {
+                                              "name": "omega_b"
+                                            }
+                                          }
+                                        }
+                                      ],
+                                      "excited_state": {
+                                        "WfnParameter": {
+                                          "name": "Xq",
+                                          "derivative": []
+                                        }
+                                      },
+                                      "parameter": {
+                                        "WfnParameter": {
+                                          "name": "D",
+                                          "derivative": [
+                                            {
+                                              "perturbation": {
+                                                "name": "b",
+                                                "frequency": {
+                                                  "Symbol": {
+                                                    "name": "omega_b"
+                                                  }
+                                                }
+                                              },
+                                              "order": 1
+                                            }
+                                          ]
+                                        }
+                                      }
+                                    }
+                                  },
+                                  {
+                                    "MatrixAdd": {
+                                      "terms": [
+                                        {
+                                          "OneElecOperator": {
+                                            "name": "V",
+                                            "dependencies": [
+                                              {
+                                                "perturbation": {
+                                                  "name": "a",
+                                                  "frequency": {
+                                                    "Symbol": {
+                                                      "name": "omega_a"
+                                                    }
+                                                  }
+                                                },
+                                                "order": 9
+                                              },
+                                              {
+                                                "perturbation": {
+                                                  "name": "b",
+                                                  "frequency": {
+                                                    "Symbol": {
+                                                      "name": "omega_b"
+                                                    }
+                                                  }
+                                                },
+                                                "order": 9
+                                              }
+                                            ],
+                                            "derivative": []
+                                          }
+                                        },
+                                        {
+                                          "OneElecOperator": {
+                                            "name": "h",
+                                            "dependencies": [
+                                              {
+                                                "perturbation": {
+                                                  "name": "a",
+                                                  "frequency": {
+                                                    "Symbol": {
+                                                      "name": "omega_a"
+                                                    }
+                                                  }
+                                                },
+                                                "order": 9
+                                              },
+                                              {
+                                                "perturbation": {
+                                                  "name": "b",
+                                                  "frequency": {
+                                                    "Symbol": {
+                                                      "name": "omega_b"
+                                                    }
+                                                  }
+                                                },
+                                                "order": 9
+                                              }
+                                            ],
+                                            "derivative": []
+                                          }
+                                        },
+                                        {
+                                          "TwoElecOperator": {
+                                            "name": "G",
+                                            "density": {
+                                              "WfnParameter": {
+                                                "name": "D",
+                                                "derivative": []
+                                              }
+                                            },
+                                            "dependencies": [
+                                              {
+                                                "perturbation": {
+                                                  "name": "a",
+                                                  "frequency": {
+                                                    "Symbol": {
+                                                      "name": "omega_a"
+                                                    }
+                                                  }
+                                                },
+                                                "order": 9
+                                              },
+                                              {
+                                                "perturbation": {
+                                                  "name": "b",
+                                                  "frequency": {
+                                                    "Symbol": {
+                                                      "name": "omega_b"
+                                                    }
+                                                  }
+                                                },
+                                                "order": 9
+                                              }
+                                            ],
+                                            "derivative": []
+                                          }
+                                        }
+                                      ]
+                                    }
+                                  },
+                                  {
+                                    "WfnParameter": {
+                                      "name": "D",
+                                      "derivative": []
+                                    }
+                                  }
+                                ]
+                              }
+                            },
+                            {
+                              "MatrixMul": {
+                                "coefficient": {
+                                  "Number": {
+                                    "Integer": 1
+                                  }
+                                },
+                                "factors": [
+                                  {
+                                    "WfnParameter": {
+                                      "name": "D",
+                                      "derivative": []
+                                    }
+                                  },
+                                  {
+                                    "MatrixAdd": {
+                                      "terms": [
+                                        {
+                                          "OneElecOperator": {
+                                            "name": "V",
+                                            "dependencies": [
+                                              {
+                                                "perturbation": {
+                                                  "name": "a",
+                                                  "frequency": {
+                                                    "Symbol": {
+                                                      "name": "omega_a"
+                                                    }
+                                                  }
+                                                },
+                                                "order": 9
+                                              },
+                                              {
+                                                "perturbation": {
+                                                  "name": "b",
+                                                  "frequency": {
+                                                    "Symbol": {
+                                                      "name": "omega_b"
+                                                    }
+                                                  }
+                                                },
+                                                "order": 9
+                                              }
+                                            ],
+                                            "derivative": []
+                                          }
+                                        },
+                                        {
+                                          "OneElecOperator": {
+                                            "name": "h",
+                                            "dependencies": [
+                                              {
+                                                "perturbation": {
+                                                  "name": "a",
+                                                  "frequency": {
+                                                    "Symbol": {
+                                                      "name": "omega_a"
+                                                    }
+                                                  }
+                                                },
+                                                "order": 9
+                                              },
+                                              {
+                                                "perturbation": {
+                                                  "name": "b",
+                                                  "frequency": {
+                                                    "Symbol": {
+                                                      "name": "omega_b"
+                                                    }
+                                                  }
+                                                },
+                                                "order": 9
+                                              }
+                                            ],
+                                            "derivative": []
+                                          }
+                                        },
+                                        {
+                                          "TwoElecOperator": {
+                                            "name": "G",
+                                            "density": {
+                                              "WfnParameter": {
+                                                "name": "D",
+                                                "derivative": []
+                                              }
+                                            },
+                                            "dependencies": [
+                                              {
+                                                "perturbation": {
+                                                  "name": "a",
+                                                  "frequency": {
+                                                    "Symbol": {
+                                                      "name": "omega_a"
+                                                    }
+                                                  }
+                                                },
+                                                "order": 9
+                                              },
+                                              {
+                                                "perturbation": {
+                                                  "name": "b",
+                                                  "frequency": {
+                                                    "Symbol": {
+                                                      "name": "omega_b"
+                                                    }
+                                                  }
+                                                },
+                                                "order": 9
+                                              }
+                                            ],
+                                            "derivative": []
+                                          }
+                                        }
+                                      ]
+                                    }
+                                  },
+                                  {
+                                    "ResidueParameter": {
+                                      "positive_frequency": false,
+                                      "perturbations": [
+                                        {
+                                          "name": "b",
+                                          "frequency": {
+                                            "Symbol": {
+                                              "name": "omega_b"
+                                            }
+                                          }
+                                        }
+                                      ],
+                                      "excited_state": {
+                                        "WfnParameter": {
+                                          "name": "Xq",
+                                          "derivative": []
+                                        }
+                                      },
+                                      "parameter": {
+                                        "WfnParameter": {
+                                          "name": "D",
+                                          "derivative": [
+                                            {
+                                              "perturbation": {
+                                                "name": "b",
+                                                "frequency": {
+                                                  "Symbol": {
+                                                    "name": "omega_b"
+                                                  }
+                                                }
+                                              },
+                                              "order": 1
+                                            }
+                                          ]
+                                        }
+                                      }
+                                    }
+                                  }
+                                ]
+                              }
+                            },
+                            {
+                              "MatrixMul": {
+                                "coefficient": {
+                                  "Number": {
+                                    "Integer": 1
+                                  }
+                                },
+                                "factors": [
+                                  {
+                                    "WfnParameter": {
+                                      "name": "D",
+                                      "derivative": []
+                                    }
+                                  },
+                                  {
+                                    "TwoElecOperator": {
+                                      "name": "G",
+                                      "density": {
+                                        "ResidueParameter": {
+                                          "positive_frequency": false,
+                                          "perturbations": [
+                                            {
+                                              "name": "b",
+                                              "frequency": {
+                                                "Symbol": {
+                                                  "name": "omega_b"
+                                                }
+                                              }
+                                            }
+                                          ],
+                                          "excited_state": {
+                                            "WfnParameter": {
+                                              "name": "Xq",
+                                              "derivative": []
+                                            }
+                                          },
+                                          "parameter": {
+                                            "WfnParameter": {
+                                              "name": "D",
+                                              "derivative": [
+                                                {
+                                                  "perturbation": {
+                                                    "name": "b",
+                                                    "frequency": {
+                                                      "Symbol": {
+                                                        "name": "omega_b"
+                                                      }
+                                                    }
+                                                  },
+                                                  "order": 1
+                                                }
+                                              ]
+                                            }
+                                          }
+                                        }
+                                      },
+                                      "dependencies": [
+                                        {
+                                          "perturbation": {
+                                            "name": "a",
+                                            "frequency": {
+                                              "Symbol": {
+                                                "name": "omega_a"
+                                              }
+                                            }
+                                          },
+                                          "order": 9
+                                        },
+                                        {
+                                          "perturbation": {
+                                            "name": "b",
+                                            "frequency": {
+                                              "Symbol": {
+                                                "name": "omega_b"
+                                              }
+                                            }
+                                          },
+                                          "order": 9
+                                        }
+                                      ],
+                                      "derivative": []
+                                    }
+                                  },
+                                  {
+                                    "WfnParameter": {
+                                      "name": "D",
+                                      "derivative": []
+                                    }
+                                  }
+                                ]
+                              }
+                            },
+                            {
+                              "MatrixMul": {
+                                "coefficient": {
+                                  "Mul": {
+                                    "coefficient": {
+                                      "Fraction": [
+                                        -1,
+                                        2
+                                      ]
+                                    },
+                                    "factors": [
+                                      {
+                                        "Symbol": {
+                                          "name": "omega_b"
+                                        }
+                                      }
+                                    ]
+                                  }
+                                },
+                                "factors": [
+                                  {
+                                    "WfnParameter": {
+                                      "name": "D",
+                                      "derivative": []
+                                    }
+                                  },
+                                  {
+                                    "OneElecOperator": {
+                                      "name": "S",
+                                      "dependencies": [
+                                        {
+                                          "perturbation": {
+                                            "name": "a",
+                                            "frequency": {
+                                              "Symbol": {
+                                                "name": "omega_a"
+                                              }
+                                            }
+                                          },
+                                          "order": 9
+                                        },
+                                        {
+                                          "perturbation": {
+                                            "name": "b",
+                                            "frequency": {
+                                              "Symbol": {
+                                                "name": "omega_b"
+                                              }
+                                            }
+                                          },
+                                          "order": 9
+                                        }
+                                      ],
+                                      "derivative": []
+                                    }
+                                  },
+                                  {
+                                    "ResidueParameter": {
+                                      "positive_frequency": false,
+                                      "perturbations": [
+                                        {
+                                          "name": "b",
+                                          "frequency": {
+                                            "Symbol": {
+                                              "name": "omega_b"
+                                            }
+                                          }
+                                        }
+                                      ],
+                                      "excited_state": {
+                                        "WfnParameter": {
+                                          "name": "Xq",
+                                          "derivative": []
+                                        }
+                                      },
+                                      "parameter": {
+                                        "WfnParameter": {
+                                          "name": "D",
+                                          "derivative": [
+                                            {
+                                              "perturbation": {
+                                                "name": "b",
+                                                "frequency": {
+                                                  "Symbol": {
+                                                    "name": "omega_b"
+                                                  }
+                                                }
+                                              },
+                                              "order": 1
+                                            }
+                                          ]
+                                        }
+                                      }
+                                    }
+                                  }
+                                ]
+                              }
+                            },
+                            {
+                              "MatrixMul": {
+                                "coefficient": {
+                                  "Mul": {
+                                    "coefficient": {
+                                      "Fraction": [
+                                        1,
+                                        2
+                                      ]
+                                    },
+                                    "factors": [
+                                      {
+                                        "Symbol": {
+                                          "name": "omega_b"
+                                        }
+                                      }
+                                    ]
+                                  }
+                                },
+                                "factors": [
+                                  {
+                                    "ResidueParameter": {
+                                      "positive_frequency": false,
+                                      "perturbations": [
+                                        {
+                                          "name": "b",
+                                          "frequency": {
+                                            "Symbol": {
+                                              "name": "omega_b"
+                                            }
+                                          }
+                                        }
+                                      ],
+                                      "excited_state": {
+                                        "WfnParameter": {
+                                          "name": "Xq",
+                                          "derivative": []
+                                        }
+                                      },
+                                      "parameter": {
+                                        "WfnParameter": {
+                                          "name": "D",
+                                          "derivative": [
+                                            {
+                                              "perturbation": {
+                                                "name": "b",
+                                                "frequency": {
+                                                  "Symbol": {
+                                                    "name": "omega_b"
+                                                  }
+                                                }
+                                              },
+                                              "order": 1
+                                            }
+                                          ]
+                                        }
+                                      }
+                                    }
+                                  },
+                                  {
+                                    "OneElecOperator": {
+                                      "name": "S",
+                                      "dependencies": [
+                                        {
+                                          "perturbation": {
+                                            "name": "a",
+                                            "frequency": {
+                                              "Symbol": {
+                                                "name": "omega_a"
+                                              }
+                                            }
+                                          },
+                                          "order": 9
+                                        },
+                                        {
+                                          "perturbation": {
+                                            "name": "b",
+                                            "frequency": {
+                                              "Symbol": {
+                                                "name": "omega_b"
+                                              }
+                                            }
+                                          },
+                                          "order": 9
+                                        }
+                                      ],
+                                      "derivative": []
+                                    }
+                                  },
+                                  {
+                                    "WfnParameter": {
+                                      "name": "D",
+                                      "derivative": []
+                                    }
+                                  }
+                                ]
+                              }
+                            }
+                          ]
+                        }
+                      },
+                      {
+                        "OneElecOperator": {
+                          "name": "S",
+                          "dependencies": [
+                            {
+                              "perturbation": {
+                                "name": "a",
+                                "frequency": {
+                                  "Symbol": {
+                                    "name": "omega_a"
+                                  }
+                                }
+                              },
+                              "order": 9
+                            },
+                            {
+                              "perturbation": {
+                                "name": "b",
+                                "frequency": {
+                                  "Symbol": {
+                                    "name": "omega_b"
+                                  }
+                                }
+                              },
+                              "order": 9
+                            }
+                          ],
+                          "derivative": [
+                            {
+                              "perturbation": {
+                                "name": "a",
+                                "frequency": {
+                                  "Symbol": {
+                                    "name": "omega_a"
+                                  }
+                                }
+                              },
+                              "order": 1
+                            }
+                          ]
+                        }
+                      }
+                    ]
+                  }
+                }
+              }
+            }
+          ]
+        }
+      },
+      {
+        "Trace": {
+          "argument": {
+            "MatrixMul": {
+              "coefficient": {
+                "Number": {
+                  "Integer": 1
+                }
+              },
+              "factors": [
+                {
+                  "OneElecOperator": {
+                    "name": "V",
+                    "dependencies": [
+                      {
+                        "perturbation": {
+                          "name": "a",
+                          "frequency": {
+                            "Symbol": {
+                              "name": "omega_a"
+                            }
+                          }
+                        },
+                        "order": 9
+                      },
+                      {
+                        "perturbation": {
+                          "name": "b",
+                          "frequency": {
+                            "Symbol": {
+                              "name": "omega_b"
+                            }
+                          }
+                        },
+                        "order": 9
+                      }
+                    ],
+                    "derivative": [
+                      {
+                        "perturbation": {
+                          "name": "a",
+                          "frequency": {
+                            "Symbol": {
+                              "name": "omega_a"
+                            }
+                          }
+                        },
+                        "order": 1
+                      }
+                    ]
+                  }
+                },
+                {
+                  "ResidueParameter": {
+                    "positive_frequency": false,
+                    "perturbations": [
+                      {
+                        "name": "b",
+                        "frequency": {
+                          "Symbol": {
+                            "name": "omega_b"
+                          }
+                        }
+                      }
+                    ],
+                    "excited_state": {
+                      "WfnParameter": {
+                        "name": "Xq",
+                        "derivative": []
+                      }
+                    },
+                    "parameter": {
+                      "WfnParameter": {
+                        "name": "D",
+                        "derivative": [
+                          {
+                            "perturbation": {
+                              "name": "b",
+                              "frequency": {
+                                "Symbol": {
+                                  "name": "omega_b"
+                                }
+                              }
+                            },
+                            "order": 1
+                          }
+                        ]
+                      }
+                    }
+                  }
+                }
+              ]
+            }
+          }
+        }
+      },
+      {
+        "Trace": {
+          "argument": {
+            "MatrixMul": {
+              "coefficient": {
+                "Number": {
+                  "Integer": 1
+                }
+              },
+              "factors": [
+                {
+                  "OneElecOperator": {
+                    "name": "h",
+                    "dependencies": [
+                      {
+                        "perturbation": {
+                          "name": "a",
+                          "frequency": {
+                            "Symbol": {
+                              "name": "omega_a"
+                            }
+                          }
+                        },
+                        "order": 9
+                      },
+                      {
+                        "perturbation": {
+                          "name": "b",
+                          "frequency": {
+                            "Symbol": {
+                              "name": "omega_b"
+                            }
+                          }
+                        },
+                        "order": 9
+                      }
+                    ],
+                    "derivative": [
+                      {
+                        "perturbation": {
+                          "name": "a",
+                          "frequency": {
+                            "Symbol": {
+                              "name": "omega_a"
+                            }
+                          }
+                        },
+                        "order": 1
+                      }
+                    ]
+                  }
+                },
+                {
+                  "ResidueParameter": {
+                    "positive_frequency": false,
+                    "perturbations": [
+                      {
+                        "name": "b",
+                        "frequency": {
+                          "Symbol": {
+                            "name": "omega_b"
+                          }
+                        }
+                      }
+                    ],
+                    "excited_state": {
+                      "WfnParameter": {
+                        "name": "Xq",
+                        "derivative": []
+                      }
+                    },
+                    "parameter": {
+                      "WfnParameter": {
+                        "name": "D",
+                        "derivative": [
+                          {
+                            "perturbation": {
+                              "name": "b",
+                              "frequency": {
+                                "Symbol": {
+                                  "name": "omega_b"
+                                }
+                              }
+                            },
+                            "order": 1
+                          }
+                        ]
+                      }
+                    }
+                  }
+                }
+              ]
+            }
+          }
+        }
+      },
+      {
+        "Trace": {
+          "argument": {
+            "MatrixMul": {
+              "coefficient": {
+                "Number": {
+                  "Integer": 1
+                }
+              },
+              "factors": [
+                {
+                  "ResidueParameter": {
+                    "positive_frequency": false,
+                    "perturbations": [
+                      {
+                        "name": "b",
+                        "frequency": {
+                          "Symbol": {
+                            "name": "omega_b"
+                          }
+                        }
+                      }
+                    ],
+                    "excited_state": {
+                      "WfnParameter": {
+                        "name": "Xq",
+                        "derivative": []
+                      }
+                    },
+                    "parameter": {
+                      "WfnParameter": {
+                        "name": "D",
+                        "derivative": [
+                          {
+                            "perturbation": {
+                              "name": "b",
+                              "frequency": {
+                                "Symbol": {
+                                  "name": "omega_b"
+                                }
+                              }
+                            },
+                            "order": 1
+                          }
+                        ]
+                      }
+                    }
+                  }
+                },
+                {
+                  "TemporumOverlap": {
+                    "is_zero_strength": true,
+                    "braket": {
+                      "MatrixAdd": {
+                        "terms": [
+                          {
+                            "MatrixMul": {
+                              "coefficient": {
+                                "Mul": {
+                                  "coefficient": {
+                                    "Fraction": [
+                                      -1,
+                                      2
+                                    ]
+                                  },
+                                  "factors": [
+                                    {
+                                      "Symbol": {
+                                        "name": "omega_a"
+                                      }
+                                    }
+                                  ]
+                                }
+                              },
+                              "factors": [
+                                {
+                                  "OneElecOperator": {
+                                    "name": "Sb",
+                                    "dependencies": [
+                                      {
+                                        "perturbation": {
+                                          "name": "a",
+                                          "frequency": {
+                                            "Symbol": {
+                                              "name": "omega_a"
+                                            }
+                                          }
+                                        },
+                                        "order": 9
+                                      },
+                                      {
+                                        "perturbation": {
+                                          "name": "b",
+                                          "frequency": {
+                                            "Symbol": {
+                                              "name": "omega_b"
+                                            }
+                                          }
+                                        },
+                                        "order": 9
+                                      }
+                                    ],
+                                    "derivative": []
+                                  }
+                                },
+                                {
+                                  "OneElecOperator": {
+                                    "name": "Sk",
+                                    "dependencies": [
+                                      {
+                                        "perturbation": {
+                                          "name": "a",
+                                          "frequency": {
+                                            "Symbol": {
+                                              "name": "omega_a"
+                                            }
+                                          }
+                                        },
+                                        "order": 9
+                                      },
+                                      {
+                                        "perturbation": {
+                                          "name": "b",
+                                          "frequency": {
+                                            "Symbol": {
+                                              "name": "omega_b"
+                                            }
+                                          }
+                                        },
+                                        "order": 9
+                                      }
+                                    ],
+                                    "derivative": [
+                                      {
+                                        "perturbation": {
+                                          "name": "a",
+                                          "frequency": {
+                                            "Symbol": {
+                                              "name": "omega_a"
+                                            }
+                                          }
+                                        },
+                                        "order": 1
+                                      }
+                                    ]
+                                  }
+                                }
+                              ]
+                            }
+                          },
+                          {
+                            "MatrixMul": {
+                              "coefficient": {
+                                "Mul": {
+                                  "coefficient": {
+                                    "Fraction": [
+                                      1,
+                                      2
+                                    ]
+                                  },
+                                  "factors": [
+                                    {
+                                      "Symbol": {
+                                        "name": "omega_a"
+                                      }
+                                    }
+                                  ]
+                                }
+                              },
+                              "factors": [
+                                {
+                                  "OneElecOperator": {
+                                    "name": "Sb",
+                                    "dependencies": [
+                                      {
+                                        "perturbation": {
+                                          "name": "a",
+                                          "frequency": {
+                                            "Symbol": {
+                                              "name": "omega_a"
+                                            }
+                                          }
+                                        },
+                                        "order": 9
+                                      },
+                                      {
+                                        "perturbation": {
+                                          "name": "b",
+                                          "frequency": {
+                                            "Symbol": {
+                                              "name": "omega_b"
+                                            }
+                                          }
+                                        },
+                                        "order": 9
+                                      }
+                                    ],
+                                    "derivative": [
+                                      {
+                                        "perturbation": {
+                                          "name": "a",
+                                          "frequency": {
+                                            "Symbol": {
+                                              "name": "omega_a"
+                                            }
+                                          }
+                                        },
+                                        "order": 1
+                                      }
+                                    ]
+                                  }
+                                },
+                                {
+                                  "OneElecOperator": {
+                                    "name": "Sk",
+                                    "dependencies": [
+                                      {
+                                        "perturbation": {
+                                          "name": "a",
+                                          "frequency": {
+                                            "Symbol": {
+                                              "name": "omega_a"
+                                            }
+                                          }
+                                        },
+                                        "order": 9
+                                      },
+                                      {
+                                        "perturbation": {
+                                          "name": "b",
+                                          "frequency": {
+                                            "Symbol": {
+                                              "name": "omega_b"
+                                            }
+                                          }
+                                        },
+                                        "order": 9
+                                      }
+                                    ],
+                                    "derivative": []
+                                  }
+                                }
+                              ]
+                            }
+                          }
+                        ]
+                      }
+                    },
+                    "dependencies": [
+                      {
+                        "perturbation": {
+                          "name": "a",
+                          "frequency": {
+                            "Symbol": {
+                              "name": "omega_a"
+                            }
+                          }
+                        },
+                        "order": 9
+                      },
+                      {
+                        "perturbation": {
+                          "name": "b",
+                          "frequency": {
+                            "Symbol": {
+                              "name": "omega_b"
+                            }
+                          }
+                        },
+                        "order": 9
+                      }
+                    ],
+                    "derivative": [
+                      {
+                        "perturbation": {
+                          "name": "a",
+                          "frequency": {
+                            "Symbol": {
+                              "name": "omega_a"
+                            }
+                          }
+                        },
+                        "order": 1
+                      }
+                    ]
+                  }
+                }
+              ]
+            }
+          }
+        }
+      }
+    ]
+  }
+}

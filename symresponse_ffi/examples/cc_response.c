@@ -137,9 +137,9 @@ void cc_response(void) {
     }
 
     // Create quasi-energy Lagrangian
-    ExprHandle_t const * const perturbation_operators[3] = {Va, Vb};
+    ExprHandle_t const * const perturbing_operators[3] = {Va, Vb};
     ExprSlice_t perturbation_oper_slice = {
-        .ptr = perturbation_operators,
+        .ptr = perturbing_operators,
         .len = 2,
     };
 

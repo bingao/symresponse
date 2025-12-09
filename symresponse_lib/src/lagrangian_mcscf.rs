@@ -12,7 +12,8 @@ use crate::lagrangian_internal::sealed::LagrangianInternal;
 
 #[derive(Clone, Debug, serde::Serialize, serde::Deserialize)]
 pub struct LagrangianMcscf {
-    perturbation_operators: HashSet<Arc<dyn Expr>>,
+    // Perturbing operators
+    perturbing_operators: HashSet<Arc<dyn Expr>>,
     // Orbital- and state-rotation parameters
     rotation_parameters: Arc<dyn Expr>,
     // To compute the right-hand side of the response equation of orbital- and
@@ -25,7 +26,7 @@ impl LagrangianMcscf {
     // Builds the time-dependent quasi-energy for MCSCF
     pub fn new(
         unperturbed_hamiltonian: Arc<dyn Expr>,
-        perturbation_operators: &[Arc<dyn Expr>],
+        perturbing_operators: &[Arc<dyn Expr>],
         rotation_operators: Arc<dyn Expr>,
         rotation_parameters: Arc<dyn Expr>,
     ) -> Result<Self, TinnedError> {
@@ -50,7 +51,7 @@ impl LagrangianMcscf {
             Some(false),
         )?;
 
-        let len_lag_terms = perturbation_operators.len() + 2;
+        let len_lag_terms = perturbing_operators.len() + 2;
         let mut lag_terms = Vec::with_capacity(len_lag_terms);
         let mut rhs_terms = Vec::with_capacity(len_lag_terms);
 
@@ -62,7 +63,7 @@ impl LagrangianMcscf {
         // Note that `rhs_terms` should be multiplied by `Number::imaginary_unit()`
         rhs_terms.push(AdjointMap::new(vec![rotation_operators.clone()], term, Some(true))?);
 
-        for oper in perturbation_operators {
+        for oper in perturbing_operators {
             term = ExpAdjointMap::builder(lambda_operator.clone(), oper.clone())
                 .left_action(false)
                 .build()?;
@@ -79,11 +80,11 @@ impl LagrangianMcscf {
         let rhs_parameters = MatrixAdd::new(rhs_terms)?;
 
         // Users may accidentally provide duplicated perturbation operators,
-        // but it does not matter for the field `perturbation_operators`
+        // but it does not matter for the field `perturbing_operators`
         // because we use the field only for removing undifferentiated
         // perturbation operators.
         Ok(Self {
-            perturbation_operators: perturbation_operators.iter().cloned().collect(),
+            perturbing_operators: perturbing_operators.iter().cloned().collect(),
             rotation_parameters,
             rhs_parameters,
             lagrangian_mcscf,
@@ -119,7 +120,7 @@ impl LagrangianMcscf {
     ) -> Result<Arc<dyn Expr>, TinnedError> {
         // Undifferentiated perturbation operators and the perturbed
         // `rsp_parameter` itself will be removed from RHS
-        let mut rhs_set = self.perturbation_operators.clone();
+        let mut rhs_set = self.perturbing_operators.clone();
         rhs_set.insert(rsp_parameter.clone());
 
         if let Some(rot_param) = downcast_from_arc::<WfnParameter>(&rsp_parameter) {
@@ -196,7 +197,7 @@ impl LagrangianInternal for LagrangianMcscf {
     ) -> Result<Arc<dyn Expr>, TinnedError> {
         // Remove undifferentiated perturbation operators and unperturbed
         // time-differentiated quantities
-        lagrangian.remove(&self.perturbation_operators)?.clean_temporum(num_tol)
+        lagrangian.remove(&self.perturbing_operators)?.clean_temporum(num_tol)
     }
 }
 

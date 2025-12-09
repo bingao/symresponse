@@ -60,7 +60,7 @@ typedef struct ExprSlice {
 LagrangianHandle_t *
 symresponse_lagrangian_cc_new (
     ExprHandle_t const * unperturbed_hamiltonian,
-    ExprSlice_t const * perturbation_operators,
+    ExprSlice_t const * perturbing_operators,
     ExprHandle_t const * cc_amplitudes,
     ExprHandle_t const * excitation_operators,
     ExprHandle_t const * multipliers,
