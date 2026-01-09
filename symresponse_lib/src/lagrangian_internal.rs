@@ -77,10 +77,10 @@ pub(crate) mod sealed {
         }
 
         // For each parameter, compute its differentiated one with respect to
-        // perturbations given in `residue_info`. A set `residue_set`
-        // containing all these differentiated parameters returns, which can be
-        // used to retain differentiated parameters and their higher-order ones
-        // in an expression.
+        // perturbations given in `residue_info`. A set `residue_set` returns
+        // with all these differentiated parameters, which can be used to
+        // retain differentiated parameters and their higher-order ones in an
+        // expression.
         //
         // For each differentiated parameter, the corresponding residue
         // parameter is also computed. A map `residue_map` returns, which

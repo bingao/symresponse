@@ -3,8 +3,7 @@ use std::collections::{BTreeMap, HashMap};
 use std::sync::Arc;
 use symresponse::{Lagrangian, LagrangianDao};
 use tinned::{
-    Expr, OneElecOperator, PertMultichain, Perturbation, Symbol, TemporumOverlap, TinnedError,
-    TwoElecOperator, WfnParameter,
+    Expr, OneElecOperator, PertMultichain, Perturbation, ResidueParameter, Symbol, TemporumOverlap, TinnedError, TwoElecOperator, WfnParameter
 };
 
 // First-order residue of the linear response function, equation (286), J. Chem. Phys. 129, 214108 (2008)
@@ -31,7 +30,7 @@ fn test_linear_response_function() -> Result<(), TinnedError> {
 
     let lag = LagrangianDao::new(
         pert_a,
-        density_matrix,
+        density_matrix.clone(),
         Some(overlap_matrix),
         &one_elec_opers,
         Some(two_elec_operator),
@@ -46,18 +45,37 @@ fn test_linear_response_function() -> Result<(), TinnedError> {
 
     let excited_state = WfnParameter::builder("Xq").build()?;
     let residue_info: HashMap<Arc<dyn Expr>, (bool, Vec<Arc<Perturbation>>)> =
-        HashMap::from([(excited_state, (false, vec![pert_b]))]);
+        HashMap::from([(excited_state.clone(), (false, vec![pert_b.clone()]))]);
 
     // Using `min_wfn_extern = 3` removes all Lagrangian multipliers
     let residue =
         lag.residue(&exten_perturbations, &inten_perturbations, 3, &residue_info, false, None)?;
 
     // Reference residue
-    let json = include_str!("data/dao_residue_linear.json");
-    let result: Arc<dyn Expr> = serde_json::from_str(json)
+    let residue_json = include_str!("data/dao_linear_residue.json");
+    let expected_residue: Arc<dyn Expr> = serde_json::from_str(residue_json)
         .expect("Failed to deserialize the first-order residue of the linear response function");
 
-    assert_eq!(&residue, &result);
+    assert_eq!(&residue, &expected_residue);
+
+    // Check the right-hand side of the linear response equation (289), J. Chem. Phys. 129, 214108 (2008)
+    let diff_dmat = density_matrix.differentiate(&pert_b)?;
+    let density_freq = ResidueParameter::builder(
+                        vec![pert_b.clone()],
+                        excited_state.clone(),
+                        diff_dmat,
+                    )
+                    .positive_frequency(false)
+                    .build()?;
+    let density_part = WfnParameter::builder("D_P").build()?;
+    let rhs = lag.linear_response_rhs(density_freq, density_part, None)?;
+
+    // Reference RHS
+    let rhs_json = include_str!("data/dao_linear_rhs.json");
+    let expected_rhs: Arc<dyn Expr> = serde_json::from_str(rhs_json)
+        .expect("Failed to deserialize the right-hand side of the linear response equation");
+
+    assert_eq!(&rhs, &expected_rhs);
 
     Ok(())
 }

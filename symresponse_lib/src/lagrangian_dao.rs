@@ -418,18 +418,37 @@ impl LagrangianDao {
             differentiate_expr(&self.tdscf_equation, wfn_param.derivative())?
         } else if let Some(res_param) = downcast_from_arc::<ResidueParameter>(&density_freq) {
             if let Some(wfn) = downcast_from_arc::<WfnParameter>(res_param.parameter()) {
-                let result = differentiate_expr(&self.tdscf_equation, wfn.derivative())?;
+                // `ResidueParameter` ensures that `res_param.perturbations()`
+                // is a subchain of `wfn.derivative()`, so we check if the
+                // former is also a superchain of the latter. Since we do not
+                // replace the sum of frequencies of perturbations by the
+                // excitation energy, nothing is different for the right-hand
+                // side of the residue.
+                if wfn.derivative().is_superchain_vec(res_param.perturbations()) {
+                    let result = differentiate_expr(&self.tdscf_equation, wfn.derivative())?;
+                    let map: HashMap<Arc<dyn Expr>, Arc<dyn Expr>> =
+                        std::iter::once((res_param.parameter().clone(), density_part)).collect();
+                    // Clean `TemporumOperator` and unperturbed
+                    // `TemporumOverlap` objects first, then replace the
+                    // differentiated density by `density_part`; otherwise a
+                    // differentiated `TemporumOperator` (reflected by its
+                    // differentiated argument) will be incorrectly replaced by
+                    // an undifferentiated one and cleaned.
+                    return result.clean_temporum(num_tol)?.replace(&map, true);
+                } else {
+                    let result = differentiate_expr(&self.tdscf_equation, wfn.derivative())?;
 
-                let residue_info: HashMap<Arc<dyn Expr>, (bool, Vec<Arc<Perturbation>>)> =
-                    std::iter::once((
-                        res_param.excited_state().clone(),
-                        (res_param.positive_frequency(), res_param.perturbations().to_vec()),
-                    ))
-                    .collect();
-                let (residue_set, residue_map) = self
-                    .build_residue_parameters(&vec![self.density_matrix.clone()], &residue_info)?;
+                    let residue_info: HashMap<Arc<dyn Expr>, (bool, Vec<Arc<Perturbation>>)> =
+                        std::iter::once((
+                            res_param.excited_state().clone(),
+                            (res_param.positive_frequency(), res_param.perturbations().to_vec()),
+                        ))
+                        .collect();
+                    let (residue_set, residue_map) = self
+                        .build_residue_parameters(&vec![self.density_matrix.clone()], &residue_info)?;
 
-                result.retain(&residue_set, false)?.replace(&residue_map, false)?
+                    result.retain(&residue_set, false)?.replace(&residue_map, false)?
+                }
             } else {
                 return Err(expression_error(
                     "Invalid parameter type of residue density matrix",
@@ -444,7 +463,7 @@ impl LagrangianDao {
         let map: HashMap<Arc<dyn Expr>, Arc<dyn Expr>> =
             std::iter::once((density_freq, density_part)).collect();
 
-        diff_tdscf.replace(&map, true)?.clean_temporum(num_tol)
+        diff_tdscf.clean_temporum(num_tol)?.replace(&map, true)
     }
 }
 
