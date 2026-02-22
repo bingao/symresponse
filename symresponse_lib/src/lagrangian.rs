@@ -3,10 +3,7 @@ use std::sync::Arc;
 
 use rayon::prelude::*;
 
-use tinned::{
-    Expr, NumberTolerance, Perturbation, TinnedError, differentiate_expr, generic_error,
-    is_zero_expr,
-};
+use tinned::{Expr, NumberTolerance, Perturbation, TinnedError, generic_error, is_zero_expr};
 
 use crate::lagrangian_internal::sealed::LagrangianInternal;
 use crate::types::ResponseDetail;
@@ -67,23 +64,25 @@ pub trait Lagrangian: std::fmt::Debug + Send + Sync + LagrangianInternal {
         }
 
         // Differentiate the quasi-energy (derivative) Lagrangian
-        let mut result =
-            differentiate_expr(self.get_lagrangian(), &exten_perturbations).map_err(|e| {
-                generic_error(
-                    "Differentiation with respect to extensive perturbations failed",
-                    Some(Box::new(e)),
-                )
-            })?;
-        result = differentiate_expr(&result, &inten_perturbations).map_err(|e| {
-            generic_error(
-                "Differentiation with respect to intensive perturbations failed",
-                Some(Box::new(e)),
-            )
-        })?;
+        let mut result = self.do_differentiation(
+            "Lagrangian",
+            self.get_lagrangian(),
+            exten_perturbations,
+            inten_perturbations,
+        )?;
         // Usually the differentiated quasi-energy Lagrangian cannot be zero
         if is_zero_expr(&result, num_tol.clone()) {
             return Ok(result);
         }
+
+        result = self
+            .post_differentiation(&result, exten_perturbations, inten_perturbations)
+            .map_err(|e| {
+                generic_error(
+                    "Post operations after differentiating the Lagrangian failed",
+                    Some(Box::new(e)),
+                )
+            })?;
 
         // Minimum order for the elimination of wave function parameters is the
         // next integer of the floor function of the half number of

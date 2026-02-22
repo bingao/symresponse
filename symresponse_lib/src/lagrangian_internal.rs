@@ -46,6 +46,46 @@ pub(crate) mod sealed {
             inten_perturbations.iter().any(|p| exten_set.contains(p))
         }
 
+        // Perform differentiation with respect to extensive and intensive perturbations
+        #[inline]
+        fn do_differentiation(
+            &self,
+            expr: &str,
+            lagrangian: &Arc<dyn Expr>,
+            exten_perturbations: &[Arc<Perturbation>],
+            inten_perturbations: &[Arc<Perturbation>],
+        ) -> Result<Arc<dyn Expr>, TinnedError> {
+            let result = differentiate_expr(lagrangian, &exten_perturbations).map_err(|e| {
+                generic_error(
+                    format!(
+                        "Differentiation of {} with respect to extensive perturbations failed",
+                        expr
+                    ),
+                    Some(Box::new(e)),
+                )
+            })?;
+            differentiate_expr(&result, &inten_perturbations).map_err(|e| {
+                generic_error(
+                    format!(
+                        "Differentiation of {} with respect to intensive perturbations failed",
+                        expr
+                    ),
+                    Some(Box::new(e)),
+                )
+            })
+        }
+
+        // Post operations after differentiating the Lagrangian
+        #[inline]
+        fn post_differentiation(
+            &self,
+            lagrangian: &Arc<dyn Expr>,
+            _exten_perturbations: &[Arc<Perturbation>],
+            _inten_perturbations: &[Arc<Perturbation>],
+        ) -> Result<Arc<dyn Expr>, TinnedError> {
+            Ok(lagrangian.clone())
+        }
+
         // For each element of `residue_info`, its perturbations
         // (`Vec<Arc<Perturbation>>`) must be a proper subchain of the union of
         // extensive and intensive perturbations.

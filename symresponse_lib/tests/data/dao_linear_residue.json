@@ -30,7 +30,7 @@
                                 "factors": [
                                   {
                                     "ResidueParameter": {
-                                      "positive_frequency": false,
+                                      "positive_frequency": true,
                                       "perturbations": [
                                         {
                                           "name": "b",
@@ -296,7 +296,7 @@
                                   },
                                   {
                                     "ResidueParameter": {
-                                      "positive_frequency": false,
+                                      "positive_frequency": true,
                                       "perturbations": [
                                         {
                                           "name": "b",
@@ -355,7 +355,7 @@
                                       "name": "G",
                                       "density": {
                                         "ResidueParameter": {
-                                          "positive_frequency": false,
+                                          "positive_frequency": true,
                                           "perturbations": [
                                             {
                                               "name": "b",
@@ -486,7 +486,7 @@
                                   },
                                   {
                                     "ResidueParameter": {
-                                      "positive_frequency": false,
+                                      "positive_frequency": true,
                                       "perturbations": [
                                         {
                                           "name": "b",
@@ -548,7 +548,7 @@
                                 "factors": [
                                   {
                                     "ResidueParameter": {
-                                      "positive_frequency": false,
+                                      "positive_frequency": true,
                                       "perturbations": [
                                         {
                                           "name": "b",
@@ -731,7 +731,7 @@
                 },
                 {
                   "ResidueParameter": {
-                    "positive_frequency": false,
+                    "positive_frequency": true,
                     "perturbations": [
                       {
                         "name": "b",
@@ -827,7 +827,7 @@
                 },
                 {
                   "ResidueParameter": {
-                    "positive_frequency": false,
+                    "positive_frequency": true,
                     "perturbations": [
                       {
                         "name": "b",
@@ -881,7 +881,7 @@
               "factors": [
                 {
                   "ResidueParameter": {
-                    "positive_frequency": false,
+                    "positive_frequency": true,
                     "perturbations": [
                       {
                         "name": "b",

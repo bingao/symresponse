@@ -7,9 +7,28 @@ use tinned_ffi::{
     expr_vec_from_slice, tinned_error_new, try_with_handle,
 };
 
-use symresponse::LagrangianDao;
+use symresponse::{LagrangianDao, SymmetrizeMode};
 
 use crate::lagrangian::{LagrangianBox, LagrangianHandle};
+
+#[derive_ReprC]
+#[repr(u8)]
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum SymmetrizeModeReprC {
+    Always = 0,
+    Never = 1,
+    Auto = 2,
+}
+
+impl From<SymmetrizeModeReprC> for SymmetrizeMode {
+    fn from(v: SymmetrizeModeReprC) -> Self {
+        match v {
+            SymmetrizeModeReprC::Always => SymmetrizeMode::Always,
+            SymmetrizeModeReprC::Never => SymmetrizeMode::Never,
+            SymmetrizeModeReprC::Auto => SymmetrizeMode::Auto,
+        }
+    }
+}
 
 #[ffi_export]
 pub fn symresponse_lagrangian_dao_new(
@@ -21,6 +40,7 @@ pub fn symresponse_lagrangian_dao_new(
     xc_energy: Option<&ExprHandle>,
     xc_potential: Option<&ExprHandle>,
     h_nuc: Option<&ExprHandle>,
+    symmetrized_mode: Option<&SymmetrizeModeReprC>,
     num_tol: Option<&NumberToleranceHandle>,
     out_err: Option<Out<'_, TinnedErrorBox>>,
 ) -> Option<LagrangianBox> {
@@ -55,6 +75,7 @@ pub fn symresponse_lagrangian_dao_new(
         xc_e_arc,
         xc_v_arc,
         h_nuc_arc,
+        symmetrized_mode.copied().map(Into::into),
         num_tolerance,
     ) {
         Ok(lag) => Some(LagrangianBox::new(LagrangianHandle::new(Arc::new(lag)))),

@@ -11,12 +11,25 @@ use crate::lagrangian::Lagrangian;
 use crate::lagrangian_internal::sealed::LagrangianInternal;
 
 #[derive(Clone, Debug, serde::Serialize, serde::Deserialize)]
-pub struct LagrangianCc {
+pub struct LagrangianOrbCc {
     perturbing_operators: HashSet<Arc<dyn Expr>>,
     // Coupled-cluster amplitudes
     cc_amplitudes: Arc<dyn Expr>,
-    // Lagrangian multipliers
-    multipliers: Arc<dyn Expr>,
+    // Coupled-cluster Lagrangian multipliers
+    cc_multipliers: Arc<dyn Expr>,
+    // Orbital rotation parameters (amplitudes)
+    orb_rotation_parameters: Arc<dyn Expr>,
+    // Brillouin condition multipliers
+    brillouin_multipliers: Arc<dyn Expr>,
+    // Symbol for one-electron density matrix
+    one_electron_matrix: Arc<dyn Expr>,
+    // Expression for one-electron density matrix
+    one_electron_expr: Arc<dyn Expr>,
+    // Symbol two one-electron density matrix
+    two_electron_matrix: Arc<dyn Expr>,
+    // Expression for two-electron density matrix
+    two_electron_expr: Arc<dyn Expr>,
+
     // Similarity-transformed Hamiltonian, or exponential map. To compute
     // Equation (28), J. Phys. Chem. A 2025, 129, 3709-3721.
     cc_hamiltonian: Arc<dyn Expr>,
@@ -26,17 +39,20 @@ pub struct LagrangianCc {
     lagrangian_expr: Arc<dyn Expr>,
 }
 
-impl LagrangianCc {
-    // Builds time-averaged quasi-energy Lagrangian for coupled-cluster models
-    // without orbital relaxation.
+impl LagrangianOrbCc {
+    // Builds orbital-relaxed coupled-cluster Lagrangian
     pub fn new(
         unperturbed_hamiltonian: Arc<dyn Expr>,
         perturbing_operators: &[Arc<dyn Expr>],
         cc_amplitudes: Arc<dyn Expr>,
-        excitation_operators: Arc<dyn Expr>,
-        multipliers: Arc<dyn Expr>,
+        cc_excitation_operators: Arc<dyn Expr>,
+        cc_multipliers: Arc<dyn Expr>,
+        orb_rotation_parameters: Arc<dyn Expr>,
+        // Orbital rotation generators, $\hat{a}^{\dagger)_{r}\hat{a}_{s}$
+        orb_rotation_generators: Arc<dyn Expr>,
+        brillouin_multipliers: Arc<dyn Expr>,
     ) -> Result<Self, TinnedError> {
-        // Check types of coupled-cluster amplitudes and Lagrangian multipliers
+        // Check types of coupled-cluster amplitudes, orbital rotation parameters and generators, as well as Lagrangian multipliers
         if !is_expr_type::<WfnParameter>(&cc_amplitudes) {
             return Err(expression_error(
                 "Invalid type of coupled-cluster amplitudes",
@@ -44,32 +60,70 @@ impl LagrangianCc {
                 None,
             ));
         }
-        if !is_expr_type::<LagMultiplier>(&multipliers) {
+        if !is_expr_type::<LagMultiplier>(&cc_multipliers) {
             return Err(expression_error(
-                "Invalid type of Lagrangian multipliers",
-                &multipliers,
+                "Invalid type of coupled-cluster Lagrangian multipliers",
+                &cc_multipliers,
+                None,
+            ));
+        }
+        if !is_expr_type::<WfnParameter>(&orb_rotation_parameters) {
+            return Err(expression_error(
+                "Invalid type of orbital rotation parameters",
+                &orb_rotation_parameters,
+                None,
+            ));
+        }
+        if !is_expr_type::<LagMultiplier>(&brillouin_multipliers) {
+            return Err(expression_error(
+                "Invalid type of Brillouin condition multipliers",
+                &brillouin_multipliers,
                 None,
             ));
         }
 
         // Theoretically. the following dot products allow for swaping
-        // excitation opertors and CC amplitudes/multipliers. But that does not
+        // CC excitation opertors and amplitudes/multipliers. But that does not
         // give us any benefit for symbolic differentiation and computation. We
         // simply set it as `false` here.
         let cluster_operator = DotProduct::new(
-            excitation_operators.clone(),
+            cc_excitation_operators.clone(),
             false,
             cc_amplitudes.clone(),
             false,
             Some(false),
         )?;
-        let lambda_operator = DotProduct::new(
-            excitation_operators.clone(),
+        let cc_lambda_oper = DotProduct::new(
+            cc_excitation_operators.clone(),
             true,
-            multipliers.clone(),
+            cc_multipliers.clone(),
             false,
             Some(false),
         )?;
+        // Orbital rotation operator, and we also set `allow_braket_swap` as `false`.
+        let kappa_operator = DotProduct::new(
+            orb_rotation_generators.clone(),
+            true,
+            orb_rotation_parameters.clone(),
+            false,
+            Some(false),
+        )?;
+        //
+        let brillouin_lambda_oper = DotProduct::new(
+            orb_rotation_generators.clone(),
+            true,
+            brillouin_multipliers.clone(),
+            false,
+            Some(false),
+        )?;
+
+        // Set one-electron density matrix and its expression
+        let one_electron_matrix = WfnParameter::builder("one-electron-density").build()?;
+        let one_electron_expr = ;
+
+        // Set two-electron density matrix and its expression
+        let two_electron_matrix = WfnParameter::builder("two-electron-density").build()?;
+        let two_electron_expr = ;
 
         // Unperturbed Hamiltonian and perturbation operators, see Equations
         // (2) and (5), J. Phys. Chem. A 2025, 129, 3709-3721.
@@ -155,15 +209,6 @@ impl LagrangianCc {
             lagrangian_expr,
         })
     }
-
-    // Builds time-averaged quasi-energy Lagrangian for coupled-cluster models
-    // with orbital relaxation.
-    //
-    // Using one- and two-particle density matrices
-    //#[inline]
-    //pub fn new_orbital_relaxed(
-    //) -> Result<Self, TinnedError> {
-    //}
 
     // Returns right-hand side (RHS) of the (linear) response equation.
     // `rsp_parameter`, which can be the type of `WfnParameter`
@@ -270,7 +315,7 @@ impl LagrangianCc {
     }
 }
 
-impl LagrangianInternal for LagrangianCc {
+impl LagrangianInternal for LagrangianOrbCc {
     #[inline]
     fn eliminate_wfn_parameter(
         &self,
@@ -303,7 +348,7 @@ impl LagrangianInternal for LagrangianCc {
     }
 }
 
-impl Lagrangian for LagrangianCc {
+impl Lagrangian for LagrangianOrbCc {
     #[inline]
     fn as_any(&self) -> &dyn std::any::Any {
         self

@@ -19,7 +19,7 @@ pub struct LagrangianMcscf {
     // To compute the right-hand side of the response equation of orbital- and
     // state-rotation parameters, ses Equation (xx), ...
     rhs_parameters: Arc<dyn Expr>,
-    lagrangian_mcscf: Arc<dyn Expr>,
+    lagrangian_expr: Arc<dyn Expr>,
 }
 
 impl LagrangianMcscf {
@@ -76,7 +76,7 @@ impl LagrangianMcscf {
         lag_terms.push(term.clone());
         rhs_terms.push(AdjointMap::new(vec![rotation_operators.clone()], term, Some(true))?);
 
-        let lagrangian_mcscf = MatrixAdd::new(lag_terms)?;
+        let lagrangian_expr = MatrixAdd::new(lag_terms)?;
         let rhs_parameters = MatrixAdd::new(rhs_terms)?;
 
         // Users may accidentally provide duplicated perturbation operators,
@@ -87,7 +87,7 @@ impl LagrangianMcscf {
             perturbing_operators: perturbing_operators.iter().cloned().collect(),
             rotation_parameters,
             rhs_parameters,
-            lagrangian_mcscf,
+            lagrangian_expr,
         })
     }
 
@@ -209,7 +209,7 @@ impl Lagrangian for LagrangianMcscf {
 
     #[inline]
     fn get_lagrangian(&self) -> &Arc<dyn Expr> {
-        &self.lagrangian_mcscf
+        &self.lagrangian_expr
     }
 
     #[inline]
