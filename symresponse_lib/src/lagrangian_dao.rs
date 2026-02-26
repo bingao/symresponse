@@ -73,7 +73,7 @@ impl LagrangianDao {
             h_nuc,
         )?;
 
-        let fock_matrix = LagMultiplier::builder("generalized-fock-matrix").build()?;
+        let fock_matrix = LagMultiplier::builder("artificial-generalized-fock").build()?;
 
         // |i\frac{\partial `D_`}{\partial t}>
         let density_t =
@@ -257,8 +257,9 @@ impl LagrangianDao {
             };
 
         // Make "artificial" Lagrangian multipliers for elimination
-        let tdscf_multiplier = LagMultiplier::builder("tdscf-multiplier").build()?;
-        let idemp_multiplier = LagMultiplier::builder("idemp_multiplier").build()?;
+        let tdscf_multiplier = LagMultiplier::builder("artificial-tdscf-multiplier").build()?;
+        let idemp_multiplier =
+            LagMultiplier::builder("artificial-idempotency-multiplier").build()?;
 
         lag_terms.push(Trace::new(MatrixMul::new(vec![
             tdscf_multiplier.clone(),

@@ -2,9 +2,10 @@ use std::collections::{HashMap, HashSet};
 use std::sync::Arc;
 
 use tinned::{
-    AdjointMap, DotProduct, ExpAdjointMap, Expr, LagMultiplier, MatrixAdd, MatrixMul,
-    NumberTolerance, Perturbation, ResidueParameter, TemporumOperator, TinnedError, WfnParameter,
-    differentiate_expr, downcast_from_arc, expression_error, is_expr_type,
+    Add, AdjointMap, DotProduct, ExpAdjointMap, Expr, LagMultiplier, MatrixAdd, MatrixMul,
+    NumberTolerance, Perturbation, ResidueParameter, TemporumOperator, TinnedError, Trace,
+    WfnParameter, differentiate_expr, downcast_from_arc, expression_error, generic_error,
+    is_expr_type,
 };
 
 use crate::lagrangian::Lagrangian;
@@ -12,7 +13,10 @@ use crate::lagrangian_internal::sealed::LagrangianInternal;
 
 #[derive(Clone, Debug, serde::Serialize, serde::Deserialize)]
 pub struct LagrangianOrbCc {
-    perturbing_operators: HashSet<Arc<dyn Expr>>,
+    // One-electron operator
+    one_elec_operator: Arc<dyn Expr>,
+    // Two-electron operator
+    two_elec_operator: Arc<dyn Expr>,
     // Coupled-cluster amplitudes
     cc_amplitudes: Arc<dyn Expr>,
     // Coupled-cluster Lagrangian multipliers
@@ -22,28 +26,21 @@ pub struct LagrangianOrbCc {
     // Brillouin condition multipliers
     brillouin_multipliers: Arc<dyn Expr>,
     // Symbol for one-electron density matrix
-    one_electron_matrix: Arc<dyn Expr>,
+    one_density_matrix: Arc<dyn Expr>,
     // Expression for one-electron density matrix
-    one_electron_expr: Arc<dyn Expr>,
+    one_density_expr: Arc<dyn Expr>,
     // Symbol two one-electron density matrix
-    two_electron_matrix: Arc<dyn Expr>,
+    two_density_matrix: Arc<dyn Expr>,
     // Expression for two-electron density matrix
-    two_electron_expr: Arc<dyn Expr>,
-
-    // Similarity-transformed Hamiltonian, or exponential map. To compute
-    // Equation (28), J. Phys. Chem. A 2025, 129, 3709-3721.
-    cc_hamiltonian: Arc<dyn Expr>,
-    // To compute the right-hand side of the response equation of Lagrangian
-    // multipliers, ses Equation (29), J. Phys. Chem. A 2025, 129, 3709-3721.
-    rhs_multiplier: Arc<dyn Expr>,
+    two_density_expr: Arc<dyn Expr>,
     lagrangian_expr: Arc<dyn Expr>,
 }
 
 impl LagrangianOrbCc {
     // Builds orbital-relaxed coupled-cluster Lagrangian
     pub fn new(
-        unperturbed_hamiltonian: Arc<dyn Expr>,
-        perturbing_operators: &[Arc<dyn Expr>],
+        one_elec_operator: Arc<dyn Expr>,
+        two_elec_operator: Arc<dyn Expr>,
         cc_amplitudes: Arc<dyn Expr>,
         cc_excitation_operators: Arc<dyn Expr>,
         cc_multipliers: Arc<dyn Expr>,
@@ -52,7 +49,8 @@ impl LagrangianOrbCc {
         orb_rotation_generators: Arc<dyn Expr>,
         brillouin_multipliers: Arc<dyn Expr>,
     ) -> Result<Self, TinnedError> {
-        // Check types of coupled-cluster amplitudes, orbital rotation parameters and generators, as well as Lagrangian multipliers
+        // Check types of coupled-cluster amplitudes, orbital rotation
+        // parameters and generators, as well as Lagrangian multipliers
         if !is_expr_type::<WfnParameter>(&cc_amplitudes) {
             return Err(expression_error(
                 "Invalid type of coupled-cluster amplitudes",
@@ -82,8 +80,8 @@ impl LagrangianOrbCc {
             ));
         }
 
-        // Theoretically. the following dot products allow for swaping
-        // CC excitation opertors and amplitudes/multipliers. But that does not
+        // Theoretically. the following dot products allow for swaping CC
+        // excitation opertors and amplitudes/multipliers. But that does not
         // give us any benefit for symbolic differentiation and computation. We
         // simply set it as `false` here.
         let cluster_operator = DotProduct::new(
@@ -108,104 +106,81 @@ impl LagrangianOrbCc {
             false,
             Some(false),
         )?;
-        //
-        let brillouin_lambda_oper = DotProduct::new(
-            orb_rotation_generators.clone(),
-            true,
-            brillouin_multipliers.clone(),
-            false,
-            Some(false),
-        )?;
+
+        // Similarity-transformed orbital rotation generator, e^{kappa} * E_{pq} * e^{-kappa}
+        let kappa_transformed_generator =
+            ExpAdjointMap::builder(kappa_operator.clone(), orb_rotation_generators.clone())
+                .left_action(true)
+                .build()?;
+        let similarity_transformed_generator =
+            ExpAdjointMap::builder(cluster_operator.clone(), kappa_transformed_generator.clone())
+                .left_action(false)
+                .max_fold(4) //FIXME: or 2, or infinite?
+                .build()?;
 
         // Set one-electron density matrix and its expression
-        let one_electron_matrix = WfnParameter::builder("one-electron-density").build()?;
-        let one_electron_expr = ;
+        let one_density_matrix =
+            WfnParameter::builder("artificial-one-electron-density").build()?;
+        let one_density_expr = MatrixAdd::new(vec![
+            similarity_transformed_generator.clone(),
+            MatrixMul::new(vec![cc_lambda_oper.clone(), similarity_transformed_generator.clone()])?,
+        ])?;
 
         // Set two-electron density matrix and its expression
-        let two_electron_matrix = WfnParameter::builder("two-electron-density").build()?;
-        let two_electron_expr = ;
+        let two_density_matrix =
+            WfnParameter::builder("artificial-two-electron-density").build()?;
+        //FIXME: here we simply use the expression of one-electron density matrix
+        let two_density_expr = one_density_expr.clone();
 
-        // Unperturbed Hamiltonian and perturbation operators, see Equations
-        // (2) and (5), J. Phys. Chem. A 2025, 129, 3709-3721.
-        let len_hamiltonian_terms = perturbing_operators.len() + 1;
+        // Similarity-transformed Hamiltonian, e^{kappa} * H * e^{-kappa}
+        let kappa_transformed_hamiltonian = MatrixAdd::new(vec![
+            ExpAdjointMap::builder(kappa_operator.clone(), one_elec_operator.clone())
+                .left_action(true)
+                .build()?,
+            ExpAdjointMap::builder(kappa_operator.clone(), two_elec_operator.clone())
+                .left_action(true)
+                .build()?,
+        ])?;
 
-        // Terms to construct Equation (28), J. Phys. Chem. A 2025, 129, 3709-3721.
-        let mut cc_hamiltonian_terms = Vec::with_capacity(len_hamiltonian_terms);
-        // Terms to construct Equation (29), J. Phys. Chem. A 2025, 129, 3709-3721.
-        let mut multiplier_terms = Vec::with_capacity(2 * len_hamiltonian_terms);
-        // Terms to construct coupled-cluster quasi-energy Lagrangian, Equation
-        // (20), J. Phys. Chem. A 2025, 129, 3709-3721.
-        let mut lag_terms = Vec::with_capacity(multiplier_terms.capacity() + 1);
-
-        let mut hamiltonian_term =
-            ExpAdjointMap::builder(cluster_operator.clone(), unperturbed_hamiltonian.clone())
-                .left_action(false)
-                .max_fold(4)
-                .build()?;
-        cc_hamiltonian_terms.push(hamiltonian_term.clone());
-        lag_terms.push(hamiltonian_term.clone());
-        lag_terms.push(MatrixMul::new(vec![lambda_operator.clone(), hamiltonian_term])?);
-
-        let mut multiplier_term = ExpAdjointMap::builder(
-            cluster_operator.clone(),
-            AdjointMap::new(
-                vec![excitation_operators.clone()],
-                unperturbed_hamiltonian.clone(),
-                Some(false),
+        // Set up the Lagrangian
+        let lagrangian_expr = Add::new(vec![
+            Trace::new(MatrixMul::new(vec![
+                one_density_matrix.clone(),
+                one_elec_operator.clone(),
+            ])?)?,
+            Trace::new(MatrixMul::new(vec![
+                two_density_matrix.clone(),
+                two_elec_operator.clone(),
+            ])?)?,
+            DotProduct::new(
+                // [\hat{a}^{\dagger)_{r}\hat{a}_{s}, e^{kappa} * H * e^{-kappa}]
+                AdjointMap::new(
+                    vec![orb_rotation_generators.clone()],
+                    kappa_transformed_hamiltonian.clone(),
+                    Some(false),
+                )?,
+                true,
+                brillouin_multipliers.clone(),
+                false,
+                Some(true),
             )?,
-        )
-        .left_action(false)
-        .max_fold(4)
-        .build()?;
-        multiplier_terms.push(multiplier_term.clone());
-        multiplier_terms.push(MatrixMul::new(vec![lambda_operator.clone(), multiplier_term])?);
-
-        for oper in perturbing_operators {
-            hamiltonian_term = ExpAdjointMap::builder(cluster_operator.clone(), oper.clone())
-                .left_action(false)
-                .max_fold(4)
-                .build()?;
-            cc_hamiltonian_terms.push(hamiltonian_term.clone());
-            lag_terms.push(hamiltonian_term.clone());
-            lag_terms.push(MatrixMul::new(vec![lambda_operator.clone(), hamiltonian_term])?);
-
-            multiplier_term = ExpAdjointMap::builder(
-                cluster_operator.clone(),
-                AdjointMap::new(vec![excitation_operators.clone()], oper.clone(), Some(false))?,
-            )
-            .left_action(false)
-            .max_fold(4)
-            .build()?;
-            multiplier_terms.push(multiplier_term.clone());
-            multiplier_terms.push(MatrixMul::new(vec![lambda_operator.clone(), multiplier_term])?);
-        }
-
-        let cc_hamiltonian = MatrixAdd::new(cc_hamiltonian_terms)?;
-        let rhs_multiplier = MatrixAdd::new(multiplier_terms)?;
-
-        // Perform -i*d/dt (backward) on coupled-cluster amplitudes
-        let dt_cc_amplitudes =
-            TemporumOperator::builder(cc_amplitudes.clone()).is_forward(false).build()?;
-
-        // Here, we should have an inner product (`DotProduct`) between
-        // Lagrangian multipliers and the time-differentiated coupled-cluster
-        // amplitudes instead of `MatrixMul`. But it will be problematic for
-        // the sum of `lag_terms` unless we make both `ExpAdjointMap` and
-        // `AdjointMap` be scalar (a bit weird too) or wrapped in another
-        // scalar `Expr` like `ExpectationValue` (unnecessary layer for users).
-        lag_terms.push(MatrixMul::new(vec![multipliers.clone(), dt_cc_amplitudes])?);
-        let lagrangian_expr = MatrixAdd::new(lag_terms)?;
+        ])?;
 
         // Users may accidentally provide duplicated perturbation operators,
         // but it does not matter for the field `perturbing_operators`
         // because we use the field only for removing undifferentiated
         // perturbation operators.
         Ok(Self {
-            perturbing_operators: perturbing_operators.iter().cloned().collect(),
+            one_elec_operator,
+            two_elec_operator,
             cc_amplitudes,
-            multipliers,
-            cc_hamiltonian,
-            rhs_multiplier,
+            cc_multipliers,
+            orb_rotation_parameters,
+            brillouin_multipliers,
+            one_density_matrix,
+            one_density_expr,
+            two_density_matrix,
+            two_density_expr,
             lagrangian_expr,
         })
     }
@@ -241,77 +216,7 @@ impl LagrangianOrbCc {
         &self,
         rsp_parameter: Arc<dyn Expr>,
     ) -> Result<Arc<dyn Expr>, TinnedError> {
-        // Undifferentiated perturbation operators and the perturbed
-        // `rsp_parameter` itself will be removed from RHS
-        let mut rhs_set = self.perturbing_operators.clone();
-        rhs_set.insert(rsp_parameter.clone());
-
-        if let Some(cc_amplitude) = downcast_from_arc::<WfnParameter>(&rsp_parameter) {
-            let result = differentiate_expr(&self.cc_hamiltonian, cc_amplitude.derivative())?;
-
-            result.remove(&rhs_set)
-        } else if let Some(multiplier) = downcast_from_arc::<LagMultiplier>(&rsp_parameter) {
-            let result = differentiate_expr(&self.rhs_multiplier, multiplier.derivative())?;
-
-            result.remove(&rhs_set)
-        } else if let Some(res_param) = downcast_from_arc::<ResidueParameter>(&rsp_parameter) {
-            let (diff_rhs, unperturbed_param) = if let Some(cc_amplitude) =
-                downcast_from_arc::<WfnParameter>(res_param.parameter())
-            {
-                // `ResidueParameter` ensures that `res_param.perturbations()`
-                // is a subchain of `cc_amplitude.derivative()`, so we check if
-                // the former is also a superchain of the latter.
-                if cc_amplitude.derivative().is_superchain_vec(res_param.perturbations()) {
-                    return Err(expression_error(
-                        "linear_response_rhs() should not be called for a residue CC amplitude",
-                        &rsp_parameter,
-                        None,
-                    ));
-                }
-
-                let result = differentiate_expr(&self.cc_hamiltonian, cc_amplitude.derivative())?;
-
-                (result.remove(&rhs_set)?, self.cc_amplitudes.clone())
-            } else if let Some(multiplier) =
-                downcast_from_arc::<LagMultiplier>(&res_param.parameter())
-            {
-                if multiplier.derivative().is_superchain_vec(res_param.perturbations()) {
-                    return Err(expression_error(
-                        "linear_response_rhs() should not be called for a residue Lagrangian multiplier",
-                        &rsp_parameter,
-                        None,
-                    ));
-                }
-
-                let result = differentiate_expr(&self.rhs_multiplier, multiplier.derivative())?;
-
-                (result.remove(&rhs_set)?, self.multipliers.clone())
-            } else {
-                return Err(expression_error(
-                    "Invalid parameter type of residue parameter",
-                    &rsp_parameter,
-                    None,
-                ));
-            };
-
-            let residue_info: HashMap<Arc<dyn Expr>, (bool, Vec<Arc<Perturbation>>)> =
-                std::iter::once((
-                    res_param.excited_state().clone(),
-                    (res_param.positive_frequency(), res_param.perturbations().to_vec()),
-                ))
-                .collect();
-
-            let (residue_set, residue_map) =
-                self.build_residue_parameters(&vec![unperturbed_param], &residue_info)?;
-
-            diff_rhs.retain(&residue_set, false)?.replace(&residue_map, false)
-        } else {
-            return Err(expression_error(
-                "Invalid type of response parameter",
-                &rsp_parameter,
-                None,
-            ));
-        }
+        Err(generic_error("Sum of extensive perturbations' frequencies failed", None))
     }
 }
 
@@ -323,6 +228,7 @@ impl LagrangianInternal for LagrangianOrbCc {
         exten_perturbations: &[Arc<Perturbation>],
         min_wfn_order: u32,
     ) -> Result<Arc<dyn Expr>, TinnedError> {
+        //FIXME
         lagrangian.eliminate(&self.cc_amplitudes, exten_perturbations, min_wfn_order)
     }
 
@@ -333,18 +239,8 @@ impl LagrangianInternal for LagrangianOrbCc {
         exten_perturbations: &[Arc<Perturbation>],
         min_multiplier_order: u32,
     ) -> Result<Arc<dyn Expr>, TinnedError> {
-        lagrangian.eliminate(&self.multipliers, exten_perturbations, min_multiplier_order)
-    }
-
-    #[inline]
-    fn at_zero_strength(
-        &self,
-        lagrangian: &Arc<dyn Expr>,
-        num_tol: Option<NumberTolerance>,
-    ) -> Result<Arc<dyn Expr>, TinnedError> {
-        // Remove undifferentiated perturbation operators and unperturbed
-        // time-differentiated quantities
-        lagrangian.remove(&self.perturbing_operators)?.clean_temporum(num_tol)
+        //FIXME
+        lagrangian.eliminate(&self.cc_multipliers, exten_perturbations, min_multiplier_order)
     }
 }
 
@@ -361,11 +257,11 @@ impl Lagrangian for LagrangianOrbCc {
 
     #[inline]
     fn get_wfn_parameter(&self) -> Vec<Arc<dyn Expr>> {
-        vec![self.cc_amplitudes.clone()]
+        vec![self.cc_amplitudes.clone(), self.orb_rotation_parameters.clone()]
     }
 
     #[inline]
     fn get_lag_multiplier(&self) -> Vec<Arc<dyn Expr>> {
-        vec![self.multipliers.clone()]
+        vec![self.cc_multipliers.clone(), self.brillouin_multipliers.clone()]
     }
 }

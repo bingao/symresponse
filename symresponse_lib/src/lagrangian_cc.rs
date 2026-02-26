@@ -2,9 +2,9 @@ use std::collections::{HashMap, HashSet};
 use std::sync::Arc;
 
 use tinned::{
-    AdjointMap, DotProduct, ExpAdjointMap, Expr, LagMultiplier, MatrixAdd, MatrixMul,
-    NumberTolerance, Perturbation, ResidueParameter, TemporumOperator, TinnedError, WfnParameter,
-    differentiate_expr, downcast_from_arc, expression_error, is_expr_type,
+    AdjointMap, DotProduct, ExpAdjointMap, Expr, LagMultiplier, MatrixAdd, MatrixMul, Perturbation,
+    ResidueParameter, TemporumOperator, TinnedError, WfnParameter, differentiate_expr,
+    downcast_from_arc, expression_error, is_expr_type,
 };
 
 use crate::lagrangian::Lagrangian;
@@ -289,17 +289,6 @@ impl LagrangianInternal for LagrangianCc {
         min_multiplier_order: u32,
     ) -> Result<Arc<dyn Expr>, TinnedError> {
         lagrangian.eliminate(&self.multipliers, exten_perturbations, min_multiplier_order)
-    }
-
-    #[inline]
-    fn at_zero_strength(
-        &self,
-        lagrangian: &Arc<dyn Expr>,
-        num_tol: Option<NumberTolerance>,
-    ) -> Result<Arc<dyn Expr>, TinnedError> {
-        // Remove undifferentiated perturbation operators and unperturbed
-        // time-differentiated quantities
-        lagrangian.remove(&self.perturbing_operators)?.clean_temporum(num_tol)
     }
 }
 

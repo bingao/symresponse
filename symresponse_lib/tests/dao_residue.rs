@@ -16,7 +16,7 @@ fn test_linear_response_function() -> Result<(), TinnedError> {
     let freq_b = Symbol::new("omega_b");
     let pert_b = Perturbation::new("b", freq_b);
 
-    let density_matrix: Arc<dyn Expr> = WfnParameter::builder("D").build()?;
+    let density_matrix = WfnParameter::builder("D").build()?;
 
     let oper_deps =
         PertMultichain::from_map(BTreeMap::from([(pert_a.clone(), 9), (pert_b.clone(), 9)]));
@@ -96,7 +96,7 @@ fn test_mcd() -> Result<(), TinnedError> {
     let freq_c = Symbol::new("omega_c");
     let pert_c = Perturbation::new("c", freq_c);
 
-    let density_matrix: Arc<dyn Expr> = WfnParameter::builder("D").build()?;
+    let density_matrix = WfnParameter::builder("D").build()?;
 
     // Since we use London atomic orbitals, all operators depend on the
     // magnetic perturbation
@@ -149,8 +149,8 @@ fn test_mcd() -> Result<(), TinnedError> {
     // the next integer of the floor function of the half number of extensive
     // perturbations
     let residue =
-        lag.residue(&exten_perturbations, &inten_perturbations, 0, &residue_info, false, None)?;
-        //lag.response_function(&exten_perturbations, &inten_perturbations, 1, false, None)?;
+        //lag.residue(&exten_perturbations, &inten_perturbations, 0, &residue_info, false, None)?;
+        lag.response_function(&exten_perturbations, &inten_perturbations, 0, false, None)?;
 
     let json_residue = serde_json::to_string(&residue).unwrap();
     println!("reside: {}", json_residue);
