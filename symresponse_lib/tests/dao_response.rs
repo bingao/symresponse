@@ -8,7 +8,7 @@ use tinned::{
 // Magnetic circular dichroism
 // J. Chem. Phys. 135, 024112 (2011)
 #[test]
-fn test_mcd() -> Result<(), TinnedError> {
+fn lao_quadratic_response() -> Result<(), TinnedError> {
     // `a` and `c` are electric perturbations with frequency as -omega and +omega
     let freq_el = Symbol::new("omega");
     let pert_a = Perturbation::new("a", Mul::new(vec![Number::minus_one(), freq_el.clone()])?);

@@ -3,7 +3,7 @@ use std::sync::Arc;
 
 use tinned::{
     Add, AdjointMap, DotProduct, ExpAdjointMap, Expr, LagMultiplier, MatrixAdd, MatrixMul,
-    NumberTolerance, Perturbation, ResidueParameter, TemporumOperator, TinnedError, Trace,
+    NumberTolerance, Perturbation, ResidueParameter, SubExpr, TemporumOperator, TinnedError, Trace,
     WfnParameter, differentiate_expr, downcast_from_arc, expression_error, generic_error,
     is_expr_type,
 };
@@ -27,12 +27,8 @@ pub struct LagrangianOrbCc {
     brillouin_multipliers: Arc<dyn Expr>,
     // Symbol for one-electron density matrix
     one_density_matrix: Arc<dyn Expr>,
-    // Expression for one-electron density matrix
-    one_density_expr: Arc<dyn Expr>,
     // Symbol two one-electron density matrix
     two_density_matrix: Arc<dyn Expr>,
-    // Expression for two-electron density matrix
-    two_density_expr: Arc<dyn Expr>,
     lagrangian_expr: Arc<dyn Expr>,
 }
 
@@ -118,19 +114,18 @@ impl LagrangianOrbCc {
                 .max_fold(4) //FIXME: or 2, or infinite?
                 .build()?;
 
-        // Set one-electron density matrix and its expression
-        let one_density_matrix =
-            WfnParameter::builder("artificial-one-electron-density").build()?;
+        // Set one-electron density matrix
         let one_density_expr = MatrixAdd::new(vec![
             similarity_transformed_generator.clone(),
             MatrixMul::new(vec![cc_lambda_oper.clone(), similarity_transformed_generator.clone()])?,
         ])?;
+        let one_density_matrix =
+            SubExpr::builder("one-electron-density", one_density_expr.clone()).build()?;
 
-        // Set two-electron density matrix and its expression
-        let two_density_matrix =
-            WfnParameter::builder("artificial-two-electron-density").build()?;
+        // Set two-electron density matrix
         //FIXME: here we simply use the expression of one-electron density matrix
-        let two_density_expr = one_density_expr.clone();
+        let two_density_matrix =
+            SubExpr::builder("two-electron-density", one_density_expr).build()?;
 
         // Similarity-transformed Hamiltonian, e^{kappa} * H * e^{-kappa}
         let kappa_transformed_hamiltonian = MatrixAdd::new(vec![
@@ -178,9 +173,7 @@ impl LagrangianOrbCc {
             orb_rotation_parameters,
             brillouin_multipliers,
             one_density_matrix,
-            one_density_expr,
             two_density_matrix,
-            two_density_expr,
             lagrangian_expr,
         })
     }
@@ -211,6 +204,8 @@ impl LagrangianOrbCc {
     // Note that `rsp_parameter` should be a differentiated
     // `self.cc_amplitudes` or `self.multipliers`, otherwise the result will be
     // incorrect.
+    // J. Chem. Phys. 92, 4924-4940 (Apr. 1990)
+    // notes: equations (10)-(13)
     #[inline]
     pub fn linear_response_rhs(
         &self,
@@ -228,8 +223,13 @@ impl LagrangianInternal for LagrangianOrbCc {
         exten_perturbations: &[Arc<Perturbation>],
         min_wfn_order: u32,
     ) -> Result<Arc<dyn Expr>, TinnedError> {
-        //FIXME
-        lagrangian.eliminate(&self.cc_amplitudes, exten_perturbations, min_wfn_order)
+        // See J. Chem. Phys. 92, 4924-4940
+        let result = lagrangian.eliminate(
+            &self.orb_rotation_parameters,
+            exten_perturbations,
+            min_wfn_order,
+        )?;
+        result.eliminate(&self.cc_amplitudes, exten_perturbations, min_wfn_order)
     }
 
     #[inline]
@@ -239,10 +239,18 @@ impl LagrangianInternal for LagrangianOrbCc {
         exten_perturbations: &[Arc<Perturbation>],
         min_multiplier_order: u32,
     ) -> Result<Arc<dyn Expr>, TinnedError> {
-        //FIXME
-        lagrangian.eliminate(&self.cc_multipliers, exten_perturbations, min_multiplier_order)
+        // See J. Chem. Phys. 92, 4924-4940
+        let result = lagrangian.eliminate(
+            &self.brillouin_multipliers,
+            exten_perturbations,
+            min_multiplier_order,
+        )?;
+        result.eliminate(&self.cc_multipliers, exten_perturbations, min_multiplier_order)
+        //FIXME: remove unperturbed `brillouin_multipliers`!
     }
 }
+
+// at_zero_strength(), e^{kappa} = 1 when kappa is not differentiated
 
 impl Lagrangian for LagrangianOrbCc {
     #[inline]

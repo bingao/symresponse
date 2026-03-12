@@ -2,12 +2,10 @@ use std::collections::{BTreeMap, HashMap};
 use std::sync::Arc;
 use symresponse::{Lagrangian, LagrangianOrbCc};
 use tinned::{
-    LagMultiplier, Mul, Number, OneElecOperator, PertMultichain, Perturbation, Symbol,
-    TinnedError, TwoElecOperator, WfnParameter,
+    LagMultiplier, Mul, Number, OneElecOperator, PertMultichain, Perturbation, Symbol, TinnedError,
+    TwoElecOperator, WfnParameter,
 };
 
-// Magnetic circular dichroism
-// J. Chem. Phys. 135, 024112 (2011)
 #[test]
 fn orb_cc_linear() -> Result<(), TinnedError> {
     let freq_a = Symbol::new("omega_a");
@@ -47,9 +45,25 @@ fn orb_cc_linear() -> Result<(), TinnedError> {
         brillouin_multipliers,
     )?;
 
-    let result = lag.get_lagrangian();
-    let json = serde_json::to_string(&result).unwrap();
-    println!("result: {}", json);
+    let mut result = lag.get_lagrangian().clone();
+    match serde_json::to_string(&result) {
+        Ok(json) => println!("Lagrangian = {}", json),
+        Err(err) => {
+            eprintln!("Serialization of Lagrangian failed: {err}");
+        },
+    }
+
+    let exten_perturbations = vec![pert_a.clone(), pert_b.clone(), pert_c.clone()];
+    let inten_perturbations: Vec<Arc<Perturbation>> = Vec::new();
+
+    // Using `min_wfn_extern = 3` removes all Lagrangian multipliers
+    result = lag.response_function(&exten_perturbations, &inten_perturbations, 3, false, None)?;
+    match serde_json::to_string(&result) {
+        Ok(json) => println!("L^{{abc}} = {}", json),
+        Err(err) => {
+            eprintln!("Serialization of L^{{abc}} failed: {err}");
+        },
+    }
 
     Ok(())
 }

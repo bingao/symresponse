@@ -5,7 +5,7 @@ use num_rational::Rational64;
 
 use tinned::{
     Add, Expr, LagMultiplier, MatrixAdd, MatrixMul, Number, NumberTolerance, PertMultichain,
-    Perturbation, ResidueParameter, TemporumOperator, TinnedError, Trace, TwoElecEnergy,
+    Perturbation, ResidueParameter, SubExpr, TemporumOperator, TinnedError, Trace, TwoElecEnergy,
     TwoElecOperator, WfnParameter, ZeroOperator, anticommutator, commutator, differentiate_expr,
     downcast_from_arc, expression_error, generic_error, is_expr_type, is_zero_expr,
     s_anticommutator, s_commutator, subtract_exprs, sum_pert_frequencies,
@@ -36,13 +36,12 @@ pub struct LagrangianDao {
     density_matrix: Arc<dyn Expr>,
     overlap_matrix: Option<Arc<dyn Expr>>,
     fock_matrix: Arc<dyn Expr>,
-    fock_expr: Arc<dyn Expr>,
-    gew_density_expr: Option<Arc<dyn Expr>>,
-    lambda_expr: Arc<dyn Expr>,
+    general_ew_density: Option<Arc<dyn Expr>>,
     tdscf_multiplier: Arc<dyn Expr>,
+    tdscf_multiplier_expr: Arc<dyn Expr>,
     tdscf_equation: Arc<dyn Expr>,
-    zeta_expr: Arc<dyn Expr>,
     idemp_multiplier: Arc<dyn Expr>,
+    idemp_multiplier_expr: Arc<dyn Expr>,
     idempotency: Arc<dyn Expr>,
     lagrangian_expr: Arc<dyn Expr>,
     symmetrized_mode: SymmetrizeMode,
@@ -64,7 +63,7 @@ impl LagrangianDao {
         symmetrized_mode: Option<SymmetrizeMode>,
         num_tol: Option<NumberTolerance>,
     ) -> Result<Self, TinnedError> {
-        let (generalized_energy, fock_expr) = Self::build_energy_and_fock(
+        let (generalized_energy, fock_matrix) = Self::build_energy_and_fock(
             density_matrix.clone(),
             one_elec_operators,
             two_elec_operator,
@@ -72,8 +71,6 @@ impl LagrangianDao {
             xc_potential,
             h_nuc,
         )?;
-
-        let fock_matrix = LagMultiplier::builder("artificial-generalized-fock").build()?;
 
         // |i\frac{\partial `D_`}{\partial t}>
         let density_t =
@@ -84,182 +81,182 @@ impl LagrangianDao {
         // Constraint and Lagrangian terms
         let mut lag_terms = Vec::with_capacity(3);
 
-        let (gew_density_expr, lambda_expr, tdscf_equation, zeta_expr, idempotency) =
-            if let Some(overlap) = &overlap_matrix {
-                // |i\frac{\partial `S`}{\partial t}>
-                let overlap_t =
-                    TemporumOperator::builder(overlap.clone()).is_forward(true).build()?;
-                let minus_one = Number::minus_one();
-                let one_half = Number::one_half();
-                let negative_one_half = Number::from_rational(Rational64::new(-1, 2));
+        let (
+            general_ew_density,
+            tdscf_multiplier_expr,
+            tdscf_equation_expr,
+            idemp_multiplier_expr,
+            idempotency_expr,
+        ) = if let Some(overlap) = &overlap_matrix {
+            // |i\frac{\partial `S`}{\partial t}>
+            let overlap_t = TemporumOperator::builder(overlap.clone()).is_forward(true).build()?;
+            let minus_one = Number::minus_one();
+            let one_half = Number::one_half();
+            let negative_one_half = Number::from_rational(Rational64::new(-1, 2));
 
-                // Equation (220), J. Chem. Phys. 129, 214108 (2008)
-                let lambda_expr =
-                    s_commutator(density_a.clone(), density_matrix.clone(), overlap.clone())?;
+            // Equation (220), J. Chem. Phys. 129, 214108 (2008)
+            let tdscf_multiplier_expr =
+                s_commutator(density_a.clone(), density_matrix.clone(), overlap.clone())?;
 
-                // Equation (229), J. Chem. Phys. 129, 214108 (2008)
-                let tdscf_equation = MatrixAdd::new(vec![
-                    MatrixMul::new(vec![
-                        fock_matrix.clone(),
-                        density_matrix.clone(),
-                        overlap.clone(),
-                    ])?,
-                    MatrixMul::new(vec![
-                        minus_one.clone(),
-                        overlap.clone(),
-                        density_matrix.clone(),
-                        fock_matrix.clone(),
-                    ])?,
-                    MatrixMul::new(vec![
-                        minus_one.clone(),
-                        overlap.clone(),
-                        density_t.clone(),
-                        overlap.clone(),
-                    ])?,
-                    MatrixMul::new(vec![
-                        negative_one_half.clone(),
-                        overlap_t.clone(),
-                        density_matrix.clone(),
-                        overlap.clone(),
-                    ])?,
-                    MatrixMul::new(vec![
-                        negative_one_half.clone(),
-                        overlap.clone(),
-                        density_matrix.clone(),
-                        overlap_t.clone(),
-                    ])?,
-                ])?;
-
-                // Equation (224), J. Chem. Phys. 129, 214108 (2008)
-                let overlap_a = overlap.differentiate(&perturbation_a)?;
-                let (gew_density_expr, zeta_expr) = if is_zero_expr(&overlap_a, num_tol) {
-                    (
-                        None,
-                        MatrixAdd::new(vec![
-                            MatrixMul::new(vec![
-                                fock_a.clone(),
-                                density_matrix.clone(),
-                                overlap.clone(),
-                            ])?,
-                            MatrixMul::new(vec![
-                                overlap.clone(),
-                                density_matrix.clone(),
-                                fock_a.clone(),
-                            ])?,
-                            MatrixMul::new(vec![minus_one.clone(), fock_a])?,
-                        ])?,
-                    )
-                } else {
-                    // Equation (95), J. Chem. Phys. 129, 214108 (2008)
-                    let gew_density_expr = MatrixAdd::new(vec![
-                        MatrixMul::new(vec![
-                            density_matrix.clone(),
-                            fock_matrix.clone(),
-                            density_matrix.clone(),
-                        ])?,
-                        MatrixMul::new(vec![
-                            one_half.clone(),
-                            density_t.clone(),
-                            overlap.clone(),
-                            density_matrix.clone(),
-                        ])?,
-                        MatrixMul::new(vec![
-                            negative_one_half.clone(),
-                            density_matrix.clone(),
-                            overlap.clone(),
-                            density_t.clone(),
-                        ])?,
-                    ])?;
-                    // Pulay term
-                    lag_terms.push(Trace::new(MatrixMul::new(vec![
-                        overlap_a.clone(),
-                        gew_density_expr.clone(),
-                    ])?)?);
-
-                    let zeta_expr = MatrixAdd::new(vec![
-                        MatrixMul::new(vec![
-                            fock_a.clone(),
-                            density_matrix.clone(),
-                            overlap.clone(),
-                        ])?,
-                        MatrixMul::new(vec![
-                            minus_one.clone(),
-                            fock_matrix.clone(),
-                            density_matrix.clone(),
-                            overlap_a.clone(),
-                        ])?,
-                        MatrixMul::new(vec![
-                            one_half.clone(),
-                            overlap_t.clone(),
-                            density_matrix.clone(),
-                            overlap_a.clone(),
-                        ])?,
-                        MatrixMul::new(vec![
-                            overlap.clone(),
-                            density_t.clone(),
-                            overlap_a.clone(),
-                        ])?,
-                        MatrixMul::new(vec![
-                            overlap.clone(),
-                            density_matrix.clone(),
-                            fock_a.clone(),
-                        ])?,
-                        MatrixMul::new(vec![
-                            minus_one.clone(),
-                            overlap_a.clone(),
-                            density_matrix.clone(),
-                            fock_matrix.clone(),
-                        ])?,
-                        MatrixMul::new(vec![
-                            negative_one_half,
-                            overlap_a.clone(),
-                            density_matrix.clone(),
-                            overlap_t,
-                        ])?,
-                        MatrixMul::new(vec![
-                            minus_one.clone(),
-                            overlap_a,
-                            density_t,
-                            overlap.clone(),
-                        ])?,
-                        MatrixMul::new(vec![minus_one, fock_a])?,
-                    ])?;
-
-                    (Some(gew_density_expr), zeta_expr)
-                };
-
-                // First term of Equation (230), J. Chem. Phys. 129, 214108 (2008)
-                let idempotency = MatrixMul::new(vec![
-                    density_matrix.clone(),
+            // Equation (229), J. Chem. Phys. 129, 214108 (2008)
+            let tdscf_equation_expr = MatrixAdd::new(vec![
+                MatrixMul::new(vec![fock_matrix.clone(), density_matrix.clone(), overlap.clone()])?,
+                MatrixMul::new(vec![
+                    minus_one.clone(),
                     overlap.clone(),
                     density_matrix.clone(),
+                    fock_matrix.clone(),
+                ])?,
+                MatrixMul::new(vec![
+                    minus_one.clone(),
+                    overlap.clone(),
+                    density_t.clone(),
+                    overlap.clone(),
+                ])?,
+                MatrixMul::new(vec![
+                    negative_one_half.clone(),
+                    overlap_t.clone(),
+                    density_matrix.clone(),
+                    overlap.clone(),
+                ])?,
+                MatrixMul::new(vec![
+                    negative_one_half.clone(),
+                    overlap.clone(),
+                    density_matrix.clone(),
+                    overlap_t.clone(),
+                ])?,
+            ])?;
+
+            // Equation (224), J. Chem. Phys. 129, 214108 (2008)
+            let overlap_a = overlap.differentiate(&perturbation_a)?;
+            let (general_ew_density, idemp_multiplier_expr) = if is_zero_expr(&overlap_a, num_tol) {
+                (
+                    None,
+                    MatrixAdd::new(vec![
+                        MatrixMul::new(vec![
+                            fock_a.clone(),
+                            density_matrix.clone(),
+                            overlap.clone(),
+                        ])?,
+                        MatrixMul::new(vec![
+                            overlap.clone(),
+                            density_matrix.clone(),
+                            fock_a.clone(),
+                        ])?,
+                        MatrixMul::new(vec![minus_one.clone(), fock_a])?,
+                    ])?,
+                )
+            } else {
+                // Equation (95), J. Chem. Phys. 129, 214108 (2008)
+                let general_ew_density_expr = MatrixAdd::new(vec![
+                    MatrixMul::new(vec![
+                        density_matrix.clone(),
+                        fock_matrix.clone(),
+                        density_matrix.clone(),
+                    ])?,
+                    MatrixMul::new(vec![
+                        one_half.clone(),
+                        density_t.clone(),
+                        overlap.clone(),
+                        density_matrix.clone(),
+                    ])?,
+                    MatrixMul::new(vec![
+                        negative_one_half.clone(),
+                        density_matrix.clone(),
+                        overlap.clone(),
+                        density_t.clone(),
+                    ])?,
+                ])?;
+                let general_ew_density = SubExpr::builder(
+                    "generalized-energy-weighted-density-matrix",
+                    general_ew_density_expr,
+                )
+                .build()?;
+                // Pulay term
+                lag_terms.push(Trace::new(MatrixMul::new(vec![
+                    overlap_a.clone(),
+                    general_ew_density.clone(),
+                ])?)?);
+
+                let idemp_multiplier_expr = MatrixAdd::new(vec![
+                    MatrixMul::new(vec![fock_a.clone(), density_matrix.clone(), overlap.clone()])?,
+                    MatrixMul::new(vec![
+                        minus_one.clone(),
+                        fock_matrix.clone(),
+                        density_matrix.clone(),
+                        overlap_a.clone(),
+                    ])?,
+                    MatrixMul::new(vec![
+                        one_half.clone(),
+                        overlap_t.clone(),
+                        density_matrix.clone(),
+                        overlap_a.clone(),
+                    ])?,
+                    MatrixMul::new(vec![overlap.clone(), density_t.clone(), overlap_a.clone()])?,
+                    MatrixMul::new(vec![overlap.clone(), density_matrix.clone(), fock_a.clone()])?,
+                    MatrixMul::new(vec![
+                        minus_one.clone(),
+                        overlap_a.clone(),
+                        density_matrix.clone(),
+                        fock_matrix.clone(),
+                    ])?,
+                    MatrixMul::new(vec![
+                        negative_one_half,
+                        overlap_a.clone(),
+                        density_matrix.clone(),
+                        overlap_t,
+                    ])?,
+                    MatrixMul::new(vec![minus_one.clone(), overlap_a, density_t, overlap.clone()])?,
+                    MatrixMul::new(vec![minus_one, fock_a])?,
                 ])?;
 
-                (gew_density_expr, lambda_expr, tdscf_equation, zeta_expr, idempotency)
-            } else {
-                // = D^{a}D-DD^{a}
-                let lambda_expr = commutator(density_a.clone(), density_matrix.clone())?;
-                // Y = FD-DF-i\frac{\partial D}{\partial t}
-                let tdscf_equation = subtract_exprs(
-                    commutator(fock_matrix.clone(), density_matrix.clone())?,
-                    density_t,
-                )?;
-                // = F^{a}D+DF^{a}-F^{a}
-                let zeta_expr = subtract_exprs(
-                    anticommutator(fock_a.clone(), density_matrix.clone())?,
-                    fock_a,
-                )?;
-                // = D*D
-                let idempotency =
-                    MatrixMul::new(vec![density_matrix.clone(), density_matrix.clone()])?;
-
-                (None, lambda_expr, tdscf_equation, zeta_expr, idempotency)
+                (Some(general_ew_density), idemp_multiplier_expr)
             };
 
+            // First term of Equation (230), J. Chem. Phys. 129, 214108 (2008)
+            let idempotency_expr = MatrixMul::new(vec![
+                density_matrix.clone(),
+                overlap.clone(),
+                density_matrix.clone(),
+            ])?;
+
+            (
+                general_ew_density,
+                tdscf_multiplier_expr,
+                tdscf_equation_expr,
+                idemp_multiplier_expr,
+                idempotency_expr,
+            )
+        } else {
+            // = D^{a}D-DD^{a}
+            let tdscf_multiplier_expr = commutator(density_a.clone(), density_matrix.clone())?;
+            // Y = FD-DF-i\frac{\partial D}{\partial t}
+            let tdscf_equation_expr = subtract_exprs(
+                commutator(fock_matrix.clone(), density_matrix.clone())?,
+                density_t,
+            )?;
+            // = F^{a}D+DF^{a}-F^{a}
+            let idemp_multiplier_expr =
+                subtract_exprs(anticommutator(fock_a.clone(), density_matrix.clone())?, fock_a)?;
+            // = D*D
+            let idempotency_expr =
+                MatrixMul::new(vec![density_matrix.clone(), density_matrix.clone()])?;
+
+            (
+                None,
+                tdscf_multiplier_expr,
+                tdscf_equation_expr,
+                idemp_multiplier_expr,
+                idempotency_expr,
+            )
+        };
+
+        let tdscf_equation = SubExpr::builder("tdscf-equation", tdscf_equation_expr).build()?;
+        let idempotency = SubExpr::builder("idempotency-constraint", idempotency_expr).build()?;
+
         // Make "artificial" Lagrangian multipliers for elimination
-        let tdscf_multiplier = LagMultiplier::builder("artificial-tdscf-multiplier").build()?;
-        let idemp_multiplier =
-            LagMultiplier::builder("artificial-idempotency-multiplier").build()?;
+        let tdscf_multiplier = LagMultiplier::builder("tdscf-multiplier").build()?;
+        let idemp_multiplier = LagMultiplier::builder("idempotency-multiplier").build()?;
 
         lag_terms.push(Trace::new(MatrixMul::new(vec![
             tdscf_multiplier.clone(),
@@ -271,15 +268,18 @@ impl LagrangianDao {
         ])?)?);
 
         // The first term in Equation (98), J. Chem. Phys. 129, 214108 (2008)
-        let set: HashSet<Arc<dyn Expr>> = [density_a].into_iter().collect();
+        let dens_a_set: HashSet<Arc<dyn Expr>> = [density_a].into_iter().collect();
         // Note that we differentiate the energy with respect to perturbation
         // `a`. We expect that users provide us a list of reasonable
         // `one_elec_operators` for the computation of response
         // functions and residues. We therefore do not need to remove
         // undifferentiated `one_elec_operators` in the method
         // `at_zero_strength()` as that of `LagrangianCc`.
-        let generalized_energy_a =
-            generalized_energy.differentiate(&perturbation_a)?.remove(&set)?;
+        let generalized_energy_a = SubExpr::builder(
+            "generalized-energy-a",
+            generalized_energy.differentiate(&perturbation_a)?.remove(&dens_a_set)?,
+        )
+        .build()?;
 
         // The time-averaged quasi-energy derivative Lagrangian
         let lagrangian_expr = subtract_exprs(generalized_energy_a, Add::new(lag_terms)?)?;
@@ -289,13 +289,12 @@ impl LagrangianDao {
             density_matrix,
             overlap_matrix,
             fock_matrix,
-            fock_expr,
-            gew_density_expr,
-            lambda_expr,
+            general_ew_density,
             tdscf_multiplier,
+            tdscf_multiplier_expr,
             tdscf_equation,
-            zeta_expr,
             idemp_multiplier,
+            idemp_multiplier_expr,
             idempotency,
             lagrangian_expr,
             symmetrized_mode: symmetrized_mode.unwrap_or_default(),
@@ -360,7 +359,9 @@ impl LagrangianDao {
         }
 
         let generalized_energy = Add::new(energy_terms)?;
-        let fock_matrix = MatrixAdd::new(fock_terms)?;
+
+        let fock_expr = MatrixAdd::new(fock_terms)?;
+        let fock_matrix = SubExpr::builder("generalized-fock-matrix", fock_expr).build()?;
 
         Ok((generalized_energy, fock_matrix))
     }
@@ -480,14 +481,10 @@ impl LagrangianDao {
         density_part: Arc<dyn Expr>,
         num_tol: Option<NumberTolerance>,
     ) -> Result<Arc<dyn Expr>, TinnedError> {
-        let fock_map: HashMap<Arc<dyn Expr>, Arc<dyn Expr>> =
-            HashMap::from([(self.fock_matrix.clone(), self.fock_expr.clone())]);
-        let tdscf_equation = self.tdscf_equation.replace(&fock_map, false)?;
-
         let diff_tdscf: Arc<dyn Expr> = if let Some(wfn_param) =
             downcast_from_arc::<WfnParameter>(&density_freq)
         {
-            differentiate_expr(&tdscf_equation, wfn_param.derivative())?
+            differentiate_expr(&self.tdscf_equation, wfn_param.derivative())?
         } else if let Some(res_param) = downcast_from_arc::<ResidueParameter>(&density_freq) {
             if let Some(wfn) = downcast_from_arc::<WfnParameter>(res_param.parameter()) {
                 // `ResidueParameter` ensures that `res_param.perturbations()`
@@ -497,7 +494,7 @@ impl LagrangianDao {
                 // excitation energy, nothing is different for the right-hand
                 // side of the residue.
                 if wfn.derivative().is_superchain_vec(res_param.perturbations()) {
-                    let result = differentiate_expr(&tdscf_equation, wfn.derivative())?;
+                    let result = differentiate_expr(&self.tdscf_equation, wfn.derivative())?;
                     let dens_map: HashMap<Arc<dyn Expr>, Arc<dyn Expr>> =
                         std::iter::once((res_param.parameter().clone(), density_part)).collect();
                     // Clean `TemporumOperator` and unperturbed
@@ -508,7 +505,7 @@ impl LagrangianDao {
                     // an undifferentiated one and cleaned.
                     return result.clean_temporum(num_tol)?.replace(&dens_map, true);
                 } else {
-                    let result = differentiate_expr(&tdscf_equation, wfn.derivative())?;
+                    let result = differentiate_expr(&self.tdscf_equation, wfn.derivative())?;
 
                     let residue_info: HashMap<Arc<dyn Expr>, (bool, Vec<Arc<Perturbation>>)> =
                         std::iter::once((
@@ -573,10 +570,6 @@ impl LagrangianInternal for LagrangianDao {
         exten_perturbations: &[Arc<Perturbation>],
         inten_perturbations: &[Arc<Perturbation>],
     ) -> Result<Arc<dyn Expr>, TinnedError> {
-        // Replace Fock matrix and its differentiated ones with corresponding expressions
-        let fock_map: HashMap<Arc<dyn Expr>, Arc<dyn Expr>> =
-            HashMap::from([(self.fock_matrix.clone(), self.fock_expr.clone())]);
-
         let do_symmetrize: bool = match self.symmetrized_mode {
             SymmetrizeMode::Always => true,
             SymmetrizeMode::Never => false,
@@ -585,7 +578,7 @@ impl LagrangianInternal for LagrangianDao {
         };
 
         if !do_symmetrize {
-            return lagrangian.replace(&fock_map, false);
+            return Ok(lagrangian.clone());
         }
 
         let diff_fock_matrix = self.do_differentiation(
@@ -596,15 +589,15 @@ impl LagrangianInternal for LagrangianDao {
         )?;
         let mut diff_set: HashSet<Arc<dyn Expr>> = [diff_fock_matrix].into_iter().collect();
 
-        let diff_fock_expr = self.do_differentiation(
+        let diff_fock_matrix = self.do_differentiation(
             "Fock expression",
-            &self.fock_expr,
+            &self.fock_matrix,
             exten_perturbations,
             inten_perturbations,
         )?;
         let diff_dens = self.density_matrix.differentiate(&self.perturbation_a)?;
         let mut simplified_terms =
-            vec![Trace::new(MatrixMul::new(vec![diff_fock_expr, diff_dens])?)?];
+            vec![Trace::new(MatrixMul::new(vec![diff_fock_matrix, diff_dens])?)?];
 
         if let Some(overlap) = &self.overlap_matrix {
             let diff_overlap = self.do_differentiation(
@@ -614,7 +607,7 @@ impl LagrangianInternal for LagrangianDao {
                 inten_perturbations,
             )?;
             diff_set.insert(diff_overlap.clone());
-            if let Some(gew_density) = &self.gew_density_expr {
+            if let Some(gew_density) = &self.general_ew_density {
                 let diff_gew_density = gew_density.differentiate(&self.perturbation_a)?;
                 simplified_terms.push(Trace::new(MatrixMul::new(vec![
                     Number::minus_one(),
@@ -627,8 +620,7 @@ impl LagrangianInternal for LagrangianDao {
         // Removes terms not containing maximum order derivatives of Fock and overlap matrices
         simplified_terms.push(lagrangian.remove(&diff_set)?);
 
-        let result = Add::new(simplified_terms)?;
-        result.replace(&fock_map, false)
+        Add::new(simplified_terms)
     }
 
     #[inline]
@@ -684,8 +676,8 @@ impl LagrangianInternal for LagrangianDao {
 
         // Replace "artificial" multipliers with real differentiated ones
         let multiplier_map: HashMap<Arc<dyn Expr>, Arc<dyn Expr>> = HashMap::from([
-            (self.tdscf_multiplier.clone(), self.lambda_expr.clone()),
-            (self.idemp_multiplier.clone(), self.zeta_expr.clone()),
+            (self.tdscf_multiplier.clone(), self.tdscf_multiplier_expr.clone()),
+            (self.idemp_multiplier.clone(), self.idemp_multiplier_expr.clone()),
         ]);
 
         result.replace(&multiplier_map, false)
@@ -710,6 +702,6 @@ impl Lagrangian for LagrangianDao {
 
     #[inline]
     fn get_lag_multiplier(&self) -> Vec<Arc<dyn Expr>> {
-        Vec::new()
+        vec![self.tdscf_multiplier.clone(), self.idemp_multiplier.clone()]
     }
 }
