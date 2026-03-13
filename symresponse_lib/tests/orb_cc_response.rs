@@ -56,8 +56,8 @@ fn orb_cc_linear() -> Result<(), TinnedError> {
     let exten_perturbations = vec![pert_a.clone(), pert_b.clone(), pert_c.clone()];
     let inten_perturbations: Vec<Arc<Perturbation>> = Vec::new();
 
-    // Using `min_wfn_extern = 3` removes all Lagrangian multipliers
-    result = lag.response_function(&exten_perturbations, &inten_perturbations, 3, false, None)?;
+    // Using `min_wfn_extern = 0` means 2n+1 and 2n+2 rules
+    result = lag.response_function(&exten_perturbations, &inten_perturbations, 0, false, None)?;
     //match serde_json::to_string(&result) {
     //    Ok(json) => println!("L^{{abc}} = {}", json),
     //    Err(err) => {
@@ -121,6 +121,21 @@ fn orb_cc_linear() -> Result<(), TinnedError> {
                 Ok(json) => println!("Cluster amplitude = {}\n", json),
                 Err(err) => {
                     eprintln!("Serialization of cluster amplitude failed: {err}");
+                },
+            }
+        }
+    }
+
+    // Find all (un)perturbed coupled-cluster multipliers
+    let cc_multipliers = result.find_superchains(&cc_multiplier);
+
+    for (order, multipliers) in &cc_multipliers {
+        println!("\norder = {}", order);
+        for multiplier in multipliers {
+            match serde_json::to_string(multiplier) {
+                Ok(json) => println!("Cluster multiplier = {}\n", json),
+                Err(err) => {
+                    eprintln!("Serialization of cluster multiplier failed: {err}");
                 },
             }
         }
