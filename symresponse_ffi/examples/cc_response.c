@@ -104,8 +104,8 @@ void cc_response(void) {
     TINNED_SAFE_FREE_PERT_MULTICHAIN(deps_Vb);
 
     // Amplitudes
-    ExprHandle_t* cc_amplitudes = tinned_wfn_parameter_new("t", &err);
-    if (!cc_amplitudes) {
+    ExprHandle_t* cc_amplitude = tinned_wfn_parameter_new("t", &err);
+    if (!cc_amplitude) {
         fprintf(
             stderr,
             "Failed to create amplitudes, with error message: %s\n",
@@ -144,7 +144,7 @@ void cc_response(void) {
     };
 
     LagrangianHandle_t* L = symresponse_lagrangian_cc_new(
-        H0, &perturbation_oper_slice, cc_amplitudes, excitation_operators, multipliers, &err
+        H0, &perturbation_oper_slice, cc_amplitude, excitation_operators, multipliers, &err
     );
     if (!L) {
         fprintf(
@@ -158,7 +158,7 @@ void cc_response(void) {
     TINNED_SAFE_FREE_EXPR(H0);
     TINNED_SAFE_FREE_EXPR(Va);
     TINNED_SAFE_FREE_EXPR(Vb);
-    TINNED_SAFE_FREE_EXPR(cc_amplitudes);
+    TINNED_SAFE_FREE_EXPR(cc_amplitude);
     TINNED_SAFE_FREE_EXPR(excitation_operators);
     TINNED_SAFE_FREE_EXPR(multipliers);
 

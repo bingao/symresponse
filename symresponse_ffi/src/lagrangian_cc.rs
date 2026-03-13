@@ -15,7 +15,7 @@ use crate::lagrangian::{LagrangianBox, LagrangianHandle};
 pub fn symresponse_lagrangian_cc_new(
     unperturbed_hamiltonian: &ExprHandle,
     perturbing_operators: Option<&ExprSlice>,
-    cc_amplitudes: &ExprHandle,
+    cc_amplitude: &ExprHandle,
     excitation_operators: &ExprHandle,
     multipliers: &ExprHandle,
     out_err: Option<Out<'_, TinnedErrorBox>>,
@@ -33,14 +33,14 @@ pub fn symresponse_lagrangian_cc_new(
         None => Vec::new(),
     };
 
-    let cc_amplitudes_arc: Arc<dyn Expr> = cc_amplitudes.clone_arc();
+    let cc_amplitude_arc: Arc<dyn Expr> = cc_amplitude.clone_arc();
     let excitation_operators_arc: Arc<dyn Expr> = excitation_operators.clone_arc();
     let multipliers_arc: Arc<dyn Expr> = multipliers.clone_arc();
 
     match LagrangianCc::new(
         unperturbed_hamiltonian_arc,
         &perturbing_ops,
-        cc_amplitudes_arc,
+        cc_amplitude_arc,
         excitation_operators_arc,
         multipliers_arc,
     ) {

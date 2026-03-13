@@ -18,13 +18,13 @@ pub struct LagrangianOrbCc {
     // Two-electron operator
     two_elec_operator: Arc<dyn Expr>,
     // Coupled-cluster amplitudes
-    cc_amplitudes: Arc<dyn Expr>,
+    cc_amplitude: Arc<dyn Expr>,
     // Coupled-cluster Lagrangian multipliers
-    cc_multipliers: Arc<dyn Expr>,
+    cc_multiplier: Arc<dyn Expr>,
     // Orbital rotation parameters (amplitudes)
-    orb_rotation_parameters: Arc<dyn Expr>,
+    orb_rotation_parameter: Arc<dyn Expr>,
     // Brillouin condition multipliers
-    brillouin_multipliers: Arc<dyn Expr>,
+    brillouin_multiplier: Arc<dyn Expr>,
     // Symbol for one-electron density matrix
     one_density_matrix: Arc<dyn Expr>,
     // Symbol two one-electron density matrix
@@ -37,41 +37,41 @@ impl LagrangianOrbCc {
     pub fn new(
         one_elec_operator: Arc<dyn Expr>,
         two_elec_operator: Arc<dyn Expr>,
-        cc_amplitudes: Arc<dyn Expr>,
-        cc_excitation_operators: Arc<dyn Expr>,
-        cc_multipliers: Arc<dyn Expr>,
-        orb_rotation_parameters: Arc<dyn Expr>,
+        cc_amplitude: Arc<dyn Expr>,
+        cc_excitation_operator: Arc<dyn Expr>,
+        cc_multiplier: Arc<dyn Expr>,
+        orb_rotation_parameter: Arc<dyn Expr>,
         // Orbital rotation generators, $\hat{a}^{\dagger)_{r}\hat{a}_{s}$
-        orb_rotation_generators: Arc<dyn Expr>,
-        brillouin_multipliers: Arc<dyn Expr>,
+        orb_rotation_generator: Arc<dyn Expr>,
+        brillouin_multiplier: Arc<dyn Expr>,
     ) -> Result<Self, TinnedError> {
         // Check types of coupled-cluster amplitudes, orbital rotation
         // parameters and generators, as well as Lagrangian multipliers
-        if !is_expr_type::<WfnParameter>(&cc_amplitudes) {
+        if !is_expr_type::<WfnParameter>(&cc_amplitude) {
             return Err(expression_error(
                 "Invalid type of coupled-cluster amplitudes",
-                &cc_amplitudes,
+                &cc_amplitude,
                 None,
             ));
         }
-        if !is_expr_type::<LagMultiplier>(&cc_multipliers) {
+        if !is_expr_type::<LagMultiplier>(&cc_multiplier) {
             return Err(expression_error(
                 "Invalid type of coupled-cluster Lagrangian multipliers",
-                &cc_multipliers,
+                &cc_multiplier,
                 None,
             ));
         }
-        if !is_expr_type::<WfnParameter>(&orb_rotation_parameters) {
+        if !is_expr_type::<WfnParameter>(&orb_rotation_parameter) {
             return Err(expression_error(
                 "Invalid type of orbital rotation parameters",
-                &orb_rotation_parameters,
+                &orb_rotation_parameter,
                 None,
             ));
         }
-        if !is_expr_type::<LagMultiplier>(&brillouin_multipliers) {
+        if !is_expr_type::<LagMultiplier>(&brillouin_multiplier) {
             return Err(expression_error(
                 "Invalid type of Brillouin condition multipliers",
-                &brillouin_multipliers,
+                &brillouin_multiplier,
                 None,
             ));
         }
@@ -81,31 +81,31 @@ impl LagrangianOrbCc {
         // give us any benefit for symbolic differentiation and computation. We
         // simply set it as `false` here.
         let cluster_operator = DotProduct::new(
-            cc_excitation_operators.clone(),
+            cc_excitation_operator.clone(),
             false,
-            cc_amplitudes.clone(),
+            cc_amplitude.clone(),
             false,
             Some(false),
         )?;
         let cc_lambda_oper = DotProduct::new(
-            cc_excitation_operators.clone(),
+            cc_excitation_operator.clone(),
             true,
-            cc_multipliers.clone(),
+            cc_multiplier.clone(),
             false,
             Some(false),
         )?;
         // Orbital rotation operator, and we also set `allow_braket_swap` as `false`.
         let kappa_operator = DotProduct::new(
-            orb_rotation_generators.clone(),
+            orb_rotation_generator.clone(),
             true,
-            orb_rotation_parameters.clone(),
+            orb_rotation_parameter.clone(),
             false,
             Some(false),
         )?;
 
         // Similarity-transformed orbital rotation generator, e^{kappa} * E_{pq} * e^{-kappa}
         let kappa_transformed_generator =
-            ExpAdjointMap::builder(kappa_operator.clone(), orb_rotation_generators.clone())
+            ExpAdjointMap::builder(kappa_operator.clone(), orb_rotation_generator.clone())
                 .left_action(true)
                 .build()?;
         let similarity_transformed_generator =
@@ -150,12 +150,12 @@ impl LagrangianOrbCc {
             DotProduct::new(
                 // [\hat{a}^{\dagger)_{r}\hat{a}_{s}, e^{kappa} * H * e^{-kappa}]
                 AdjointMap::new(
-                    vec![orb_rotation_generators.clone()],
+                    vec![orb_rotation_generator.clone()],
                     kappa_transformed_hamiltonian.clone(),
                     Some(false),
                 )?,
                 true,
-                brillouin_multipliers.clone(),
+                brillouin_multiplier.clone(),
                 false,
                 Some(true),
             )?,
@@ -168,10 +168,10 @@ impl LagrangianOrbCc {
         Ok(Self {
             one_elec_operator,
             two_elec_operator,
-            cc_amplitudes,
-            cc_multipliers,
-            orb_rotation_parameters,
-            brillouin_multipliers,
+            cc_amplitude,
+            cc_multiplier,
+            orb_rotation_parameter,
+            brillouin_multiplier,
             one_density_matrix,
             two_density_matrix,
             lagrangian_expr,
@@ -202,7 +202,7 @@ impl LagrangianOrbCc {
     //     `parameter`'s.
     //
     // Note that `rsp_parameter` should be a differentiated
-    // `self.cc_amplitudes` or `self.multipliers`, otherwise the result will be
+    // `self.cc_amplitude` or `self.multipliers`, otherwise the result will be
     // incorrect.
     // J. Chem. Phys. 92, 4924-4940 (Apr. 1990)
     // notes: equations (10)-(13)
@@ -212,6 +212,16 @@ impl LagrangianOrbCc {
         rsp_parameter: Arc<dyn Expr>,
     ) -> Result<Arc<dyn Expr>, TinnedError> {
         Err(generic_error("Sum of extensive perturbations' frequencies failed", None))
+    }
+
+    #[inline]
+    pub fn one_electron_density(&self) -> &Arc<dyn Expr> {
+        &self.one_density_matrix
+    }
+
+    #[inline]
+    pub fn two_electron_density(&self) -> &Arc<dyn Expr> {
+        &self.two_density_matrix
     }
 }
 
@@ -225,11 +235,11 @@ impl LagrangianInternal for LagrangianOrbCc {
     ) -> Result<Arc<dyn Expr>, TinnedError> {
         // See J. Chem. Phys. 92, 4924-4940
         let result = lagrangian.eliminate(
-            &self.orb_rotation_parameters,
+            &self.orb_rotation_parameter,
             exten_perturbations,
             min_wfn_order,
         )?;
-        result.eliminate(&self.cc_amplitudes, exten_perturbations, min_wfn_order)
+        result.eliminate(&self.cc_amplitude, exten_perturbations, min_wfn_order)
     }
 
     #[inline]
@@ -241,12 +251,12 @@ impl LagrangianInternal for LagrangianOrbCc {
     ) -> Result<Arc<dyn Expr>, TinnedError> {
         // See J. Chem. Phys. 92, 4924-4940
         let result = lagrangian.eliminate(
-            &self.brillouin_multipliers,
+            &self.brillouin_multiplier,
             exten_perturbations,
             min_multiplier_order,
         )?;
-        result.eliminate(&self.cc_multipliers, exten_perturbations, min_multiplier_order)
-        //FIXME: remove unperturbed `brillouin_multipliers`!
+        result.eliminate(&self.cc_multiplier, exten_perturbations, min_multiplier_order)
+        //FIXME: remove unperturbed `brillouin_multiplier`!
     }
 }
 
@@ -265,11 +275,11 @@ impl Lagrangian for LagrangianOrbCc {
 
     #[inline]
     fn get_wfn_parameter(&self) -> Vec<Arc<dyn Expr>> {
-        vec![self.cc_amplitudes.clone(), self.orb_rotation_parameters.clone()]
+        vec![self.cc_amplitude.clone(), self.orb_rotation_parameter.clone()]
     }
 
     #[inline]
     fn get_lag_multiplier(&self) -> Vec<Arc<dyn Expr>> {
-        vec![self.cc_multipliers.clone(), self.brillouin_multipliers.clone()]
+        vec![self.cc_multiplier.clone(), self.brillouin_multiplier.clone()]
     }
 }

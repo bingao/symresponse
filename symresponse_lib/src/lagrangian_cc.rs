@@ -14,7 +14,7 @@ use crate::lagrangian_internal::sealed::LagrangianInternal;
 pub struct LagrangianCc {
     perturbing_operators: HashSet<Arc<dyn Expr>>,
     // Coupled-cluster amplitudes
-    cc_amplitudes: Arc<dyn Expr>,
+    cc_amplitude: Arc<dyn Expr>,
     // Lagrangian multipliers
     multipliers: Arc<dyn Expr>,
     // Similarity-transformed Hamiltonian, or exponential map. To compute
@@ -32,15 +32,15 @@ impl LagrangianCc {
     pub fn new(
         unperturbed_hamiltonian: Arc<dyn Expr>,
         perturbing_operators: &[Arc<dyn Expr>],
-        cc_amplitudes: Arc<dyn Expr>,
+        cc_amplitude: Arc<dyn Expr>,
         excitation_operators: Arc<dyn Expr>,
         multipliers: Arc<dyn Expr>,
     ) -> Result<Self, TinnedError> {
         // Check types of coupled-cluster amplitudes and Lagrangian multipliers
-        if !is_expr_type::<WfnParameter>(&cc_amplitudes) {
+        if !is_expr_type::<WfnParameter>(&cc_amplitude) {
             return Err(expression_error(
                 "Invalid type of coupled-cluster amplitudes",
-                &cc_amplitudes,
+                &cc_amplitude,
                 None,
             ));
         }
@@ -59,7 +59,7 @@ impl LagrangianCc {
         let cluster_operator = DotProduct::new(
             excitation_operators.clone(),
             false,
-            cc_amplitudes.clone(),
+            cc_amplitude.clone(),
             false,
             Some(false),
         )?;
@@ -130,8 +130,8 @@ impl LagrangianCc {
         let rhs_multiplier = MatrixAdd::new(multiplier_terms)?;
 
         // Perform -i*d/dt (backward) on coupled-cluster amplitudes
-        let dt_cc_amplitudes =
-            TemporumOperator::builder(cc_amplitudes.clone()).is_forward(false).build()?;
+        let dt_cc_amplitude =
+            TemporumOperator::builder(cc_amplitude.clone()).is_forward(false).build()?;
 
         // Here, we should have an inner product (`DotProduct`) between
         // Lagrangian multipliers and the time-differentiated coupled-cluster
@@ -139,7 +139,7 @@ impl LagrangianCc {
         // the sum of `lag_terms` unless we make both `ExpAdjointMap` and
         // `AdjointMap` be scalar (a bit weird too) or wrapped in another
         // scalar `Expr` like `ExpectationValue` (unnecessary layer for users).
-        lag_terms.push(MatrixMul::new(vec![multipliers.clone(), dt_cc_amplitudes])?);
+        lag_terms.push(MatrixMul::new(vec![multipliers.clone(), dt_cc_amplitude])?);
         let lagrangian_expr = MatrixAdd::new(lag_terms)?;
 
         // Users may accidentally provide duplicated perturbation operators,
@@ -148,7 +148,7 @@ impl LagrangianCc {
         // perturbation operators.
         Ok(Self {
             perturbing_operators: perturbing_operators.iter().cloned().collect(),
-            cc_amplitudes,
+            cc_amplitude,
             multipliers,
             cc_hamiltonian,
             rhs_multiplier,
@@ -189,7 +189,7 @@ impl LagrangianCc {
     //     `parameter`'s.
     //
     // Note that `rsp_parameter` should be a differentiated
-    // `self.cc_amplitudes` or `self.multipliers`, otherwise the result will be
+    // `self.cc_amplitude` or `self.multipliers`, otherwise the result will be
     // incorrect.
     #[inline]
     pub fn linear_response_rhs(
@@ -226,7 +226,7 @@ impl LagrangianCc {
 
                 let result = differentiate_expr(&self.cc_hamiltonian, cc_amplitude.derivative())?;
 
-                (result.remove(&rhs_set)?, self.cc_amplitudes.clone())
+                (result.remove(&rhs_set)?, self.cc_amplitude.clone())
             } else if let Some(multiplier) =
                 downcast_from_arc::<LagMultiplier>(&res_param.parameter())
             {
@@ -278,7 +278,7 @@ impl LagrangianInternal for LagrangianCc {
         exten_perturbations: &[Arc<Perturbation>],
         min_wfn_order: u32,
     ) -> Result<Arc<dyn Expr>, TinnedError> {
-        lagrangian.eliminate(&self.cc_amplitudes, exten_perturbations, min_wfn_order)
+        lagrangian.eliminate(&self.cc_amplitude, exten_perturbations, min_wfn_order)
     }
 
     #[inline]
@@ -305,7 +305,7 @@ impl Lagrangian for LagrangianCc {
 
     #[inline]
     fn get_wfn_parameter(&self) -> Vec<Arc<dyn Expr>> {
-        vec![self.cc_amplitudes.clone()]
+        vec![self.cc_amplitude.clone()]
     }
 
     #[inline]
