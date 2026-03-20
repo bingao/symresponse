@@ -140,7 +140,7 @@ impl LagrangianMcscf {
                     ));
                 }
 
-                let diff_rhs = differentiate_expr(&self.rhs_parameters, rot_param.derivative())?;
+                let rhs_deriv = differentiate_expr(&self.rhs_parameters, rot_param.derivative())?;
 
                 let residue_info: HashMap<Arc<dyn Expr>, (bool, Vec<Arc<Perturbation>>)> =
                     std::iter::once((
@@ -154,7 +154,7 @@ impl LagrangianMcscf {
                     &residue_info,
                 )?;
 
-                diff_rhs.retain(&residue_set, false)?.replace(&residue_map, false)
+                rhs_deriv.retain(&residue_set, false)?.replace(&residue_map, false)
             } else {
                 Err(expression_error(
                     "Invalid parameter type of residue parameter",
@@ -197,7 +197,7 @@ impl LagrangianInternal for LagrangianMcscf {
     ) -> Result<Arc<dyn Expr>, TinnedError> {
         // Remove undifferentiated perturbation operators and unperturbed
         // time-differentiated quantities
-        lagrangian.remove(&self.perturbing_operators)?.clean_temporum(num_tol)
+        lagrangian.remove(&self.perturbing_operators)?.apply_zero_rules(num_tol)
     }
 }
 

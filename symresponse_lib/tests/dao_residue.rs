@@ -127,7 +127,7 @@ fn dao_first_order_lr_residue() -> Result<(), TinnedError> {
             ])?,
         ])?)?,
     )?
-    .clean_temporum(None)?;
+    .apply_zero_rules(None)?;
 
     let json_residue = serde_json::to_string(&residue).unwrap();
     println!("reside: {}", json_residue);

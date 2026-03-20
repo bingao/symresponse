@@ -210,7 +210,7 @@ impl LagrangianCc {
 
             result.remove(&rhs_set)
         } else if let Some(res_param) = downcast_from_arc::<ResidueParameter>(&rsp_parameter) {
-            let (diff_rhs, unperturbed_param) = if let Some(cc_amplitude) =
+            let (rhs_deriv, unperturbed_param) = if let Some(cc_amplitude) =
                 downcast_from_arc::<WfnParameter>(res_param.parameter())
             {
                 // `ResidueParameter` ensures that `res_param.perturbations()`
@@ -259,7 +259,7 @@ impl LagrangianCc {
             let (residue_set, residue_map) =
                 self.build_residue_parameters(&vec![unperturbed_param], &residue_info)?;
 
-            diff_rhs.retain(&residue_set, false)?.replace(&residue_map, false)
+            rhs_deriv.retain(&residue_set, false)?.replace(&residue_map, false)
         } else {
             return Err(expression_error(
                 "Invalid type of response parameter",

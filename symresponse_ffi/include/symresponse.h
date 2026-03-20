@@ -422,7 +422,7 @@ tinned_exp_adjoint_map_target (
 
 /** <No documentation available> */
 ExprHandle_t *
-tinned_expr_clean_temporum (
+tinned_expr_apply_zero_rules (
     ExprHandle_t const * h,
     NumberToleranceHandle_t const * tol,
     TinnedErrorHandle_t * * out_err);

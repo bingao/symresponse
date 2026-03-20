@@ -36,6 +36,7 @@ pub struct LagrangianDao {
     density_matrix: Arc<dyn Expr>,
     overlap_matrix: Option<Arc<dyn Expr>>,
     fock_matrix: Arc<dyn Expr>,
+    generalized_energy_a: Arc<dyn Expr>,
     general_ew_density: Option<Arc<dyn Expr>>,
     tdscf_multiplier: Arc<dyn Expr>,
     tdscf_multiplier_expr: Arc<dyn Expr>,
@@ -282,13 +283,14 @@ impl LagrangianDao {
         .build()?;
 
         // The time-averaged quasi-energy derivative Lagrangian
-        let lagrangian_expr = subtract_exprs(generalized_energy_a, Add::new(lag_terms)?)?;
+        let lagrangian_expr = subtract_exprs(generalized_energy_a.clone(), Add::new(lag_terms)?)?;
 
         Ok(Self {
             perturbation_a,
             density_matrix,
             overlap_matrix,
             fock_matrix,
+            generalized_energy_a,
             general_ew_density,
             tdscf_multiplier,
             tdscf_multiplier_expr,
@@ -394,7 +396,7 @@ impl LagrangianDao {
         &self,
         density_freq: Arc<dyn Expr>,
     ) -> Result<Arc<dyn Expr>, TinnedError> {
-        let diff_idempotency: Arc<dyn Expr> = if let Some(wfn_param) =
+        let idemp_deriv: Arc<dyn Expr> = if let Some(wfn_param) =
             downcast_from_arc::<WfnParameter>(&density_freq)
         {
             let set: HashSet<Arc<dyn Expr>> = [density_freq.clone()].into_iter().collect();
@@ -434,16 +436,12 @@ impl LagrangianDao {
         };
 
         let anticomm_idemp_dm = if let Some(overlap) = &self.overlap_matrix {
-            s_anticommutator(
-                diff_idempotency.clone(),
-                self.density_matrix.clone(),
-                overlap.clone(),
-            )?
+            s_anticommutator(idemp_deriv.clone(), self.density_matrix.clone(), overlap.clone())?
         } else {
-            anticommutator(diff_idempotency.clone(), self.density_matrix.clone())?
+            anticommutator(idemp_deriv.clone(), self.density_matrix.clone())?
         };
 
-        subtract_exprs(anticomm_idemp_dm, diff_idempotency)
+        subtract_exprs(anticomm_idemp_dm, idemp_deriv)
     }
 
     // Returns right-hand side (RHS) of the (linear) response equation.
@@ -481,7 +479,7 @@ impl LagrangianDao {
         density_part: Arc<dyn Expr>,
         num_tol: Option<NumberTolerance>,
     ) -> Result<Arc<dyn Expr>, TinnedError> {
-        let diff_tdscf: Arc<dyn Expr> = if let Some(wfn_param) =
+        let tdscf_deriv: Arc<dyn Expr> = if let Some(wfn_param) =
             downcast_from_arc::<WfnParameter>(&density_freq)
         {
             differentiate_expr(&self.tdscf_equation, wfn_param.derivative())?
@@ -503,7 +501,7 @@ impl LagrangianDao {
                     // differentiated `TemporumOperator` (reflected by its
                     // differentiated argument) will be incorrectly replaced by
                     // an undifferentiated one and cleaned.
-                    return result.clean_temporum(num_tol)?.replace(&dens_map, true);
+                    return result.apply_zero_rules(num_tol)?.replace(&dens_map, true);
                 } else {
                     let result = differentiate_expr(&self.tdscf_equation, wfn.derivative())?;
 
@@ -534,7 +532,57 @@ impl LagrangianDao {
         let dens_map: HashMap<Arc<dyn Expr>, Arc<dyn Expr>> =
             std::iter::once((density_freq, density_part)).collect();
 
-        diff_tdscf.clean_temporum(num_tol)?.replace(&dens_map, true)
+        tdscf_deriv.apply_zero_rules(num_tol)?.replace(&dens_map, true)
+    }
+
+    #[inline]
+    pub fn perturbation_a(&self) -> &Arc<Perturbation> {
+        &self.perturbation_a
+    }
+
+    #[inline]
+    pub fn overlap_matrix(&self) -> Option<&Arc<dyn Expr>> {
+        self.overlap_matrix.as_ref()
+    }
+
+    #[inline]
+    pub fn fock_matrix(&self) -> &Arc<dyn Expr> {
+        &self.fock_matrix
+    }
+
+    #[inline]
+    pub fn generalized_energy_a(&self) -> &Arc<dyn Expr> {
+        &self.generalized_energy_a
+    }
+
+    #[inline]
+    pub fn general_ew_density(&self) -> Option<&Arc<dyn Expr>> {
+        self.general_ew_density.as_ref()
+    }
+
+    #[inline]
+    pub fn tdscf_multiplier_expr(&self) -> &Arc<dyn Expr> {
+        &self.tdscf_multiplier_expr
+    }
+
+    #[inline]
+    pub fn tdscf_equation(&self) -> &Arc<dyn Expr> {
+        &self.tdscf_equation
+    }
+
+    #[inline]
+    pub fn idemp_multiplier_expr(&self) -> &Arc<dyn Expr> {
+        &self.idemp_multiplier_expr
+    }
+
+    #[inline]
+    pub fn idempotency(&self) -> &Arc<dyn Expr> {
+        &self.idempotency
+    }
+
+    #[inline]
+    pub fn symmetrized_mode(&self) -> SymmetrizeMode {
+        self.symmetrized_mode
     }
 }
 
@@ -581,44 +629,29 @@ impl LagrangianInternal for LagrangianDao {
             return Ok(lagrangian.clone());
         }
 
-        let diff_fock_matrix = self.do_differentiation(
-            "Fock matrix",
-            &self.fock_matrix,
-            exten_perturbations,
-            inten_perturbations,
-        )?;
-        let mut diff_set: HashSet<Arc<dyn Expr>> = [diff_fock_matrix].into_iter().collect();
+        let fock_deriv =
+            self.do_differentiation(&self.fock_matrix, exten_perturbations, inten_perturbations)?;
+        let mut max_fs_derivs: HashSet<Arc<dyn Expr>> = [fock_deriv.clone()].into_iter().collect();
 
-        let diff_fock_matrix = self.do_differentiation(
-            "Fock expression",
-            &self.fock_matrix,
-            exten_perturbations,
-            inten_perturbations,
-        )?;
-        let diff_dens = self.density_matrix.differentiate(&self.perturbation_a)?;
-        let mut simplified_terms =
-            vec![Trace::new(MatrixMul::new(vec![diff_fock_matrix, diff_dens])?)?];
+        let dens_deriv = self.density_matrix.differentiate(&self.perturbation_a)?;
+        let mut simplified_terms = vec![Trace::new(MatrixMul::new(vec![fock_deriv, dens_deriv])?)?];
 
         if let Some(overlap) = &self.overlap_matrix {
-            let diff_overlap = self.do_differentiation(
-                "overlap matrix",
-                &overlap,
-                exten_perturbations,
-                inten_perturbations,
-            )?;
-            diff_set.insert(diff_overlap.clone());
+            let overlap_deriv =
+                self.do_differentiation(&overlap, exten_perturbations, inten_perturbations)?;
+            max_fs_derivs.insert(overlap_deriv.clone());
             if let Some(gew_density) = &self.general_ew_density {
-                let diff_gew_density = gew_density.differentiate(&self.perturbation_a)?;
+                let gew_density_deriv = gew_density.differentiate(&self.perturbation_a)?;
                 simplified_terms.push(Trace::new(MatrixMul::new(vec![
                     Number::minus_one(),
-                    diff_overlap,
-                    diff_gew_density,
+                    overlap_deriv,
+                    gew_density_deriv,
                 ])?)?);
             }
         }
 
-        // Removes terms not containing maximum order derivatives of Fock and overlap matrices
-        simplified_terms.push(lagrangian.remove(&diff_set)?);
+        // Removes terms containing maximum order derivatives of Fock and overlap matrices
+        simplified_terms.push(lagrangian.remove(&max_fs_derivs)?);
 
         Add::new(simplified_terms)
     }

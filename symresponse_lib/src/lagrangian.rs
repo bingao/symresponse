@@ -65,7 +65,6 @@ pub trait Lagrangian: std::fmt::Debug + Send + Sync + LagrangianInternal {
 
         // Differentiate the quasi-energy (derivative) Lagrangian
         let mut result = self.do_differentiation(
-            "Lagrangian",
             self.get_lagrangian(),
             exten_perturbations,
             inten_perturbations,
@@ -75,6 +74,7 @@ pub trait Lagrangian: std::fmt::Debug + Send + Sync + LagrangianInternal {
             return Ok(result);
         }
 
+        // Used, for example symmetrization in DAO response theory
         result = self
             .post_differentiation(&result, exten_perturbations, inten_perturbations)
             .map_err(|e| {

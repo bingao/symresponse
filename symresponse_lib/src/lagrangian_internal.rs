@@ -4,7 +4,7 @@ pub(crate) mod sealed {
 
     use tinned::{
         Add, Expr, NumberTolerance, PertMultichain, Perturbation, ResidueParameter, TinnedError,
-        differentiate_expr, generic_error, is_zero_expr, sum_pert_frequencies,
+        differentiate_expr, expression_error, generic_error, is_zero_expr, sum_pert_frequencies,
     };
 
     pub trait LagrangianInternal {
@@ -50,26 +50,21 @@ pub(crate) mod sealed {
         #[inline]
         fn do_differentiation(
             &self,
-            expr: &str,
-            lagrangian: &Arc<dyn Expr>,
+            expr: &Arc<dyn Expr>,
             exten_perturbations: &[Arc<Perturbation>],
             inten_perturbations: &[Arc<Perturbation>],
         ) -> Result<Arc<dyn Expr>, TinnedError> {
-            let result = differentiate_expr(lagrangian, &exten_perturbations).map_err(|e| {
-                generic_error(
-                    format!(
-                        "Differentiation of {} with respect to extensive perturbations failed",
-                        expr
-                    ),
+            let result = differentiate_expr(expr, &exten_perturbations).map_err(|e| {
+                expression_error(
+                    "Differentiation with respect to extensive perturbations failed",
+                    expr,
                     Some(Box::new(e)),
                 )
             })?;
             differentiate_expr(&result, &inten_perturbations).map_err(|e| {
-                generic_error(
-                    format!(
-                        "Differentiation of {} with respect to intensive perturbations failed",
-                        expr
-                    ),
+                expression_error(
+                    "Differentiation with respect to intensive perturbations failed",
+                    expr,
                     Some(Box::new(e)),
                 )
             })
@@ -140,16 +135,16 @@ pub(crate) mod sealed {
 
             for param in parameters {
                 for (excited_state, (positive_frequency, perturbations)) in residue_info {
-                    let diff_param = differentiate_expr(param, perturbations)?;
+                    let param_deriv = differentiate_expr(param, perturbations)?;
                     let residue_param = ResidueParameter::builder(
                         perturbations.clone(),
                         excited_state.clone(),
-                        diff_param.clone(),
+                        param_deriv.clone(),
                     )
                     .positive_frequency(*positive_frequency)
                     .build()?;
-                    residue_set.insert(diff_param.clone());
-                    residue_map.insert(diff_param, residue_param);
+                    residue_set.insert(param_deriv.clone());
+                    residue_map.insert(param_deriv, residue_param);
                 }
             }
 
@@ -193,7 +188,7 @@ pub(crate) mod sealed {
             // Replace those with non-zero sum of frequencies by corresponding
             // derivatives in the frequency domain multiplied by the sum of
             // frequencies.
-            lagrangian.clean_temporum(num_tol)
+            lagrangian.apply_zero_rules(num_tol)
         }
     }
 }
