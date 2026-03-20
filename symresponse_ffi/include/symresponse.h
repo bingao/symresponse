@@ -84,6 +84,24 @@ symresponse_lagrangian_dao_linear_response_rhs (
 typedef struct PerturbationHandle PerturbationHandle_t;
 
 /** <No documentation available> */
+/** \remark Has the same ABI as `uint8_t` **/
+#ifdef DOXYGEN
+typedef
+#endif
+enum SymmetrizeModeReprC {
+    /** <No documentation available> */
+    SYMMETRIZE_MODE_REPR_C_ALWAYS = 0,
+    /** <No documentation available> */
+    SYMMETRIZE_MODE_REPR_C_NEVER = 1,
+    /** <No documentation available> */
+    SYMMETRIZE_MODE_REPR_C_AUTO = 2,
+}
+#ifndef DOXYGEN
+; typedef uint8_t
+#endif
+SymmetrizeModeReprC_t;
+
+/** <No documentation available> */
 LagrangianHandle_t *
 symresponse_lagrangian_dao_new (
     PerturbationHandle_t const * perturbation_a,
@@ -94,6 +112,7 @@ symresponse_lagrangian_dao_new (
     ExprHandle_t const * xc_energy,
     ExprHandle_t const * xc_potential,
     ExprHandle_t const * h_nuc,
+    SymmetrizeModeReprC_t const * symmetrized_mode,
     NumberToleranceHandle_t const * num_tol,
     TinnedErrorHandle_t * * out_err);
 
@@ -383,12 +402,6 @@ tinned_exp_adjoint_map_is_temporum (
 
 /** <No documentation available> */
 bool
-tinned_exp_adjoint_map_is_zero_strength (
-    ExprHandle_t const * h,
-    TinnedErrorHandle_t * * out_err);
-
-/** <No documentation available> */
-bool
 tinned_exp_adjoint_map_left_action (
     ExprHandle_t const * h,
     TinnedErrorHandle_t * * out_err);
@@ -417,6 +430,12 @@ tinned_exp_adjoint_map_result (
 /** <No documentation available> */
 ExprHandle_t *
 tinned_exp_adjoint_map_target (
+    ExprHandle_t const * h,
+    TinnedErrorHandle_t * * out_err);
+
+/** <No documentation available> */
+bool
+tinned_exp_adjoint_map_zero_rules_applied (
     ExprHandle_t const * h,
     TinnedErrorHandle_t * * out_err);
 
@@ -1128,15 +1147,15 @@ tinned_temporum_overlap_derivative (
     TinnedErrorHandle_t * * out_err);
 
 /** <No documentation available> */
-bool
-tinned_temporum_overlap_is_zero_strength (
-    ExprHandle_t const * h,
-    TinnedErrorHandle_t * * out_err);
-
-/** <No documentation available> */
 ExprHandle_t *
 tinned_temporum_overlap_new (
     PertMultichainHandle_t const * dependencies,
+    TinnedErrorHandle_t * * out_err);
+
+/** <No documentation available> */
+bool
+tinned_temporum_overlap_zero_rules_applied (
+    ExprHandle_t const * h,
     TinnedErrorHandle_t * * out_err);
 
 /** <No documentation available> */
@@ -1285,6 +1304,8 @@ enum ExprTag {
     EXPR_TAG_POWER,
     /** <No documentation available> */
     EXPR_TAG_RESIDUE_PARAMETER,
+    /** <No documentation available> */
+    EXPR_TAG_SUB_EXPR,
     /** <No documentation available> */
     EXPR_TAG_SYMBOL,
     /** <No documentation available> */
