@@ -3,8 +3,8 @@ use std::collections::{BTreeMap, HashMap};
 use std::sync::Arc;
 use symresponse::{Lagrangian, LagrangianDao, SymmetrizeMode};
 use tinned::{
-    Add, Expr, MatrixAdd, MatrixMul, Number, OneElecOperator, PertMultichain, Perturbation,
-    ResidueParameter, Symbol, TemporumOverlap, TinnedError, Trace, TwoElecOperator, WfnParameter,
+    Add, AoTwoElecMatrix, Expr, MatrixAdd, MatrixMul, Number, OneElecMatrix, PertMultichain,
+    Perturbation, ResidueParameter, Symbol, TemporumOverlap, TinnedError, Trace, WfnParameter,
     downcast_from_arc, s_anticommutator, s_commutator, subtract_exprs,
 };
 
@@ -22,17 +22,17 @@ fn dao_first_order_lr_residue() -> Result<(), TinnedError> {
     let oper_deps =
         PertMultichain::from_map(BTreeMap::from([(pert_a.clone(), 9), (pert_b.clone(), 9)]));
 
-    let overlap_matrix = OneElecOperator::builder("S").dependencies(oper_deps.clone()).build()?;
+    let overlap_matrix = OneElecMatrix::builder("S").dependencies(oper_deps.clone()).build()?;
     let one_elec_hamiltonian =
-        OneElecOperator::builder("h").dependencies(oper_deps.clone()).build()?;
-    let perturbing_oper = OneElecOperator::builder("V").dependencies(oper_deps.clone()).build()?;
+        OneElecMatrix::builder("h").dependencies(oper_deps.clone()).build()?;
+    let perturbing_oper = OneElecMatrix::builder("V").dependencies(oper_deps.clone()).build()?;
     let t_matrix = TemporumOverlap::builder(oper_deps.clone()).build()?;
 
     let one_elec_opers =
         vec![one_elec_hamiltonian.clone(), perturbing_oper.clone(), t_matrix.clone()];
 
     let two_elec_operator =
-        TwoElecOperator::builder("G", density_matrix.clone()).dependencies(oper_deps).build()?;
+        AoTwoElecMatrix::builder("G", density_matrix.clone()).dependencies(oper_deps).build()?;
 
     let lag = LagrangianDao::new(
         pert_a.clone(),
@@ -75,7 +75,7 @@ fn dao_first_order_lr_residue() -> Result<(), TinnedError> {
         perturbing_oper.clone(),
         t_matrix.clone(),
     ])?;
-    let two_elec_op = downcast_from_arc::<TwoElecOperator>(&two_elec_operator)
+    let two_elec_op = downcast_from_arc::<AoTwoElecMatrix>(&two_elec_operator)
         .expect("Invalid two-electron operator");
     // Equation (286)
     let expected_residue = subtract_exprs(
@@ -169,9 +169,9 @@ fn lao_mcd() -> Result<(), TinnedError> {
     let magnectic_deps = PertMultichain::from_map(BTreeMap::from([(pert_b.clone(), 9)]));
 
     let overlap_matrix =
-        OneElecOperator::builder("S").dependencies(magnectic_deps.clone()).build()?;
+        OneElecMatrix::builder("S").dependencies(magnectic_deps.clone()).build()?;
     let one_elec_hamiltonian =
-        OneElecOperator::builder("h").dependencies(magnectic_deps.clone()).build()?;
+        OneElecMatrix::builder("h").dependencies(magnectic_deps.clone()).build()?;
     let t_matrix = TemporumOverlap::builder(magnectic_deps.clone()).build()?;
 
     // The perturbing operator should depend on all perturbations
@@ -180,11 +180,11 @@ fn lao_mcd() -> Result<(), TinnedError> {
         (pert_b.clone(), 9),
         (pert_c.clone(), 9),
     ]));
-    let perturbing_oper = OneElecOperator::builder("V").dependencies(perturbing_deps).build()?;
+    let perturbing_oper = OneElecMatrix::builder("V").dependencies(perturbing_deps).build()?;
 
     let one_elec_opers = vec![one_elec_hamiltonian, perturbing_oper, t_matrix];
 
-    let two_elec_operator = TwoElecOperator::builder("G", density_matrix.clone())
+    let two_elec_operator = AoTwoElecMatrix::builder("G", density_matrix.clone())
         .dependencies(magnectic_deps)
         .build()?;
 

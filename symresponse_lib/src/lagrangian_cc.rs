@@ -156,15 +156,6 @@ impl LagrangianCc {
         })
     }
 
-    // Builds time-averaged quasi-energy Lagrangian for coupled-cluster models
-    // with orbital relaxation.
-    //
-    // Using one- and two-particle density matrices
-    //#[inline]
-    //pub fn new_orbital_relaxed(
-    //) -> Result<Self, TinnedError> {
-    //}
-
     // Returns right-hand side (RHS) of the (linear) response equation.
     // `rsp_parameter`, which can be the type of `WfnParameter`
     // (coupled-cluster amplitudes), `LagMultiplier` (Lagrangian multipliers),

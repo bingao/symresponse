@@ -2,8 +2,8 @@ use std::collections::{BTreeMap, BTreeSet, HashSet};
 use std::sync::Arc;
 use symresponse::{Lagrangian, LagrangianDao, SymmetrizeMode};
 use tinned::{
-    Add, Expr, MatrixMul, Mul, Number, OneElecOperator, PertMultichain, Perturbation, Symbol,
-    TemporumOverlap, TinnedError, Trace, TwoElecOperator, WfnParameter, differentiate_expr,
+    Add, AoTwoElecMatrix, Expr, MatrixMul, Mul, Number, OneElecMatrix, PertMultichain,
+    Perturbation, Symbol, TemporumOverlap, TinnedError, Trace, WfnParameter, differentiate_expr,
 };
 
 // Magnetic circular dichroism
@@ -24,9 +24,9 @@ fn lao_quadratic_response() -> Result<(), TinnedError> {
     let perturbing_b_deps = PertMultichain::from_map(BTreeMap::from([(pert_b.clone(), 99)]));
 
     let overlap_matrix =
-        OneElecOperator::builder("S").dependencies(perturbing_b_deps.clone()).build()?;
+        OneElecMatrix::builder("S").dependencies(perturbing_b_deps.clone()).build()?;
     let one_elec_hamiltonian =
-        OneElecOperator::builder("h").dependencies(perturbing_b_deps.clone()).build()?;
+        OneElecMatrix::builder("h").dependencies(perturbing_b_deps.clone()).build()?;
     let t_matrix = TemporumOverlap::builder(perturbing_b_deps.clone()).build()?;
 
     // Perturbing operator of Equation (B2), which can be differentiated with
@@ -37,15 +37,15 @@ fn lao_quadratic_response() -> Result<(), TinnedError> {
         (pert_c.clone(), 1),
     ]));
     let perturbing_indep_perts = BTreeSet::from([pert_a.clone(), pert_c.clone()]);
-    let perturbing_oper = OneElecOperator::builder("V")
+    let perturbing_oper = OneElecMatrix::builder("V")
+        .is_perturbing(true)
         .dependencies(perturbing_deps)
         .independent_perturbations(perturbing_indep_perts)
-        .is_perturbing(true)
         .build()?;
 
     let one_elec_opers = vec![one_elec_hamiltonian, perturbing_oper.clone(), t_matrix];
 
-    let two_elec_operator = TwoElecOperator::builder("G", density_matrix.clone())
+    let two_elec_operator = AoTwoElecMatrix::builder("G", density_matrix.clone())
         .dependencies(perturbing_b_deps)
         .build()?;
 
@@ -102,20 +102,18 @@ fn lao_quadratic_response() -> Result<(), TinnedError> {
             Add::new(vec![
                 // TDSCF equation constraint
                 Trace::new(MatrixMul::new(vec![
-                    lag.tdscf_multiplier_expr().clone(),
+                    lag.tdscf_multiplier().clone(),
                     tdscf_equation_bc,
                 ])?)?,
                 // Idempotency constraint
-                Trace::new(MatrixMul::new(vec![
-                    lag.idemp_multiplier_expr().clone(),
-                    idempotency_bc,
-                ])?)?,
+                Trace::new(MatrixMul::new(vec![lag.idemp_multiplier().clone(), idempotency_bc])?)?,
             ])?,
         ])?,
     ])?
     .eliminate(&density_matrix, &exten_perturbations, 2)?;
 
-    // Elimiate multipliers for TDSCF equation and dempotency constraints
+    //FIXME: is this elimination necessary?
+    // Elimiate multipliers for TDSCF equation and idempotency constraints
     let multipliers = lag.get_lag_multiplier();
     for multiplier in &multipliers {
         expected_response = expected_response.eliminate(multiplier, &exten_perturbations, 1)?;

@@ -2,12 +2,12 @@ use std::collections::{BTreeMap, HashMap};
 use std::sync::Arc;
 use symresponse::{Lagrangian, LagrangianOrbCc};
 use tinned::{
-    LagMultiplier, Mul, Number, OneElecOperator, PertMultichain, Perturbation, Symbol, TinnedError,
-    TwoElecOperator, WfnParameter,
+    ExcitationOperator, LagMultiplier, Mul, Number, OneElecMatrix, PertMultichain, Perturbation,
+    Symbol, TinnedError, TwoElecMatrix, WfnParameter,
 };
 
 #[test]
-fn orb_cc_linear() -> Result<(), TinnedError> {
+fn orb_cc_quadratic() -> Result<(), TinnedError> {
     let freq_a = Symbol::new("omega_a");
     let pert_a = Perturbation::new("a", freq_a);
     let freq_b = Symbol::new("omega_b");
@@ -16,32 +16,33 @@ fn orb_cc_linear() -> Result<(), TinnedError> {
     let pert_c = Perturbation::new("c", freq_c);
 
     let oper_deps = PertMultichain::from_map(BTreeMap::from([
-        (pert_a.clone(), 9),
-        (pert_b.clone(), 9),
-        (pert_c.clone(), 9),
+        (pert_a.clone(), 99),
+        (pert_b.clone(), 99),
+        (pert_c.clone(), 99),
     ]));
 
-    let one_elec_operator =
-        OneElecOperator::builder("h").dependencies(oper_deps.clone()).build()?;
-    //FIXME: `two_elec_operator` is simply an operator without dependency on wave function parameter
-    let two_elec_operator =
-        OneElecOperator::builder("g").dependencies(oper_deps.clone()).build()?;
+    let one_elec_matrix = OneElecMatrix::builder("h").dependencies(oper_deps.clone()).build()?;
+    let single_excitation_operator = ExcitationOperator::new("E_{pq}");
+    let two_elec_matrix = TwoElecMatrix::builder("g").dependencies(oper_deps.clone()).build()?;
+    let double_excitation_operator = ExcitationOperator::new("e_{pqrs}");
     let cc_amplitude = WfnParameter::builder("t").build()?;
-    let cc_excitation_operator = OneElecOperator::builder("tau").build()?;
+    let cc_excitation_operator = ExcitationOperator::new("tau");
     let cc_multiplier = LagMultiplier::builder("tbar").build()?;
-    let orb_rotation_parameter = WfnParameter::builder("kappa").build()?;
-    // Orbital rotation generators, $\hat{a}^{\dagger)_{r}\hat{a}_{s}$
-    let orb_rotation_generator = OneElecOperator::builder("E-").build()?;
+    let orb_rot_parameter = WfnParameter::builder("kappa").is_perturbing(true).build()?;
+    // Orbital rotation generator, $E_{pq}-E_{qp}$
+    let orb_rot_generator = ExcitationOperator::new("E-");
     let brillouin_multiplier = LagMultiplier::builder("kbar").build()?;
 
     let lag = LagrangianOrbCc::new(
-        one_elec_operator.clone(),
-        two_elec_operator.clone(),
+        one_elec_matrix.clone(),
+        single_excitation_operator.clone(),
+        two_elec_matrix.clone(),
+        double_excitation_operator.clone(),
         cc_amplitude.clone(),
         cc_excitation_operator.clone(),
         cc_multiplier.clone(),
-        orb_rotation_parameter.clone(),
-        orb_rotation_generator.clone(),
+        orb_rot_parameter.clone(),
+        orb_rot_generator.clone(),
         brillouin_multiplier.clone(),
     )?;
 
@@ -53,17 +54,17 @@ fn orb_cc_linear() -> Result<(), TinnedError> {
         },
     }
 
-    let exten_perturbations = vec![pert_a.clone(), pert_b.clone(), pert_c.clone()];
+    let exten_perturbations = vec![pert_a.clone(), pert_a.clone(), pert_a.clone()];
     let inten_perturbations: Vec<Arc<Perturbation>> = Vec::new();
 
-    // Using `min_wfn_extern = 0` means 2n+1 and 2n+2 rules
+    // Using `min_wfn_exten = 0` means 2n+1 and 2n+2 rules
     result = lag.response_function(&exten_perturbations, &inten_perturbations, 0, false, None)?;
-    //match serde_json::to_string(&result) {
-    //    Ok(json) => println!("L^{{abc}} = {}", json),
-    //    Err(err) => {
-    //        eprintln!("Serialization of L^{{abc}} failed: {err}");
-    //    },
-    //}
+    match serde_json::to_string(&result) {
+        Ok(json) => println!("L^{{aaa}} = {}", json),
+        Err(err) => {
+            eprintln!("Serialization of L^{{aaa}} failed: {err}");
+        },
+    }
 
     // Get one- and two-electron density matrices
     let one_electron_density = lag.one_electron_density();
