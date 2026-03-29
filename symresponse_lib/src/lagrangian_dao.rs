@@ -548,7 +548,7 @@ impl LagrangianDao {
                 let (residue_set, residue_map) = self
                     .build_residue_parameters(&vec![self.density_matrix.clone()], &residue_info)?;
 
-                result.retain(&residue_set, false)?.replace(&residue_map, false)?
+                result.retain(&residue_set, true)?.replace(&residue_map, true)?
             } else {
                 return Err(expression_error(
                     "Invalid parameter type of residue density matrix",
@@ -626,7 +626,7 @@ impl LagrangianDao {
                     // differentiated `TemporumOperator` (reflected by its
                     // differentiated argument) will be incorrectly replaced by
                     // an undifferentiated one and cleaned.
-                    return result.apply_zero_rules(num_tol)?.replace(&dens_map, true);
+                    return result.apply_zero_rules(num_tol)?.replace(&dens_map, false);
                 } else {
                     let result = differentiate_expr(&self.tdscf_equation, wfn.derivative())?;
 
@@ -641,7 +641,7 @@ impl LagrangianDao {
                         &residue_info,
                     )?;
 
-                    result.retain(&residue_set, false)?.replace(&residue_map, false)?
+                    result.retain(&residue_set, true)?.replace(&residue_map, true)?
                 }
             } else {
                 return Err(expression_error(
@@ -657,7 +657,7 @@ impl LagrangianDao {
         let dens_map: HashMap<Arc<dyn Expr>, Arc<dyn Expr>> =
             std::iter::once((density_freq, density_part)).collect();
 
-        tdscf_deriv.apply_zero_rules(num_tol)?.replace(&dens_map, true)
+        tdscf_deriv.apply_zero_rules(num_tol)?.replace(&dens_map, false)
     }
 
     #[inline]
@@ -838,7 +838,7 @@ impl LagrangianInternal for LagrangianDao {
             (self.idemp_multiplier_proxy.clone(), self.idemp_multiplier.clone()),
         ]);
 
-        result.replace(&multiplier_map, false)
+        result.replace(&multiplier_map, true)
     }
 }
 

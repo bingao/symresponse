@@ -6,6 +6,8 @@ resolver = "3"
 [workspace.dependencies]
 tinned = { git = "https://github.com/bingao/tinned", branch = "tinned-rust", package = "tinned_lib" }
 tinned_ffi = { git = "https://github.com/bingao/tinned", branch = "tinned-rust", package = "tinned_ffi" }
+#tinned = { path = "../tinned/tinned_lib", package = "tinned_lib" }
+#tinned_ffi = { path = "../tinned/tinned_ffi" }
 
 [profile.dev]
 panic = "unwind"

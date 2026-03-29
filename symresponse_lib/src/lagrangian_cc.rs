@@ -2,9 +2,9 @@ use std::collections::{HashMap, HashSet};
 use std::sync::Arc;
 
 use tinned::{
-    AdjointMap, DotProduct, ExpAdjointMap, Expr, LagMultiplier, MatrixAdd, MatrixMul, Perturbation,
-    ResidueParameter, TemporumOperator, TinnedError, WfnParameter, differentiate_expr,
-    downcast_from_arc, expression_error, is_expr_type,
+    AdjointMap, AdjointMode, DotProduct, ExpAdjointMap, Expr, LagMultiplier, MatrixAdd, MatrixMul,
+    Perturbation, ResidueParameter, TemporumOperator, TinnedError, WfnParameter,
+    differentiate_expr, downcast_from_arc, expression_error, is_expr_type,
 };
 
 use crate::lagrangian::Lagrangian;
@@ -83,11 +83,14 @@ impl LagrangianCc {
         // (20), J. Phys. Chem. A 2025, 129, 3709-3721.
         let mut lag_terms = Vec::with_capacity(multiplier_terms.capacity() + 1);
 
-        let mut hamiltonian_term =
-            ExpAdjointMap::builder(cluster_operator.clone(), unperturbed_hamiltonian.clone())
-                .left_action(false)
-                .max_fold(4)
-                .build()?;
+        let mut hamiltonian_term = ExpAdjointMap::builder(
+            cluster_operator.clone(),
+            unperturbed_hamiltonian.clone(),
+            Some(true),
+        )
+        .left_action(false)
+        .max_fold(4)
+        .build()?;
         cc_hamiltonian_terms.push(hamiltonian_term.clone());
         lag_terms.push(hamiltonian_term.clone());
         lag_terms.push(MatrixMul::new(vec![lambda_operator.clone(), hamiltonian_term])?);
@@ -98,7 +101,9 @@ impl LagrangianCc {
                 vec![excitation_operators.clone()],
                 unperturbed_hamiltonian.clone(),
                 Some(false),
+                Some(AdjointMode::Commutative),
             )?,
+            Some(true),
         )
         .left_action(false)
         .max_fold(4)
@@ -107,17 +112,24 @@ impl LagrangianCc {
         multiplier_terms.push(MatrixMul::new(vec![lambda_operator.clone(), multiplier_term])?);
 
         for oper in perturbing_operators {
-            hamiltonian_term = ExpAdjointMap::builder(cluster_operator.clone(), oper.clone())
-                .left_action(false)
-                .max_fold(4)
-                .build()?;
+            hamiltonian_term =
+                ExpAdjointMap::builder(cluster_operator.clone(), oper.clone(), Some(true))
+                    .left_action(false)
+                    .max_fold(4)
+                    .build()?;
             cc_hamiltonian_terms.push(hamiltonian_term.clone());
             lag_terms.push(hamiltonian_term.clone());
             lag_terms.push(MatrixMul::new(vec![lambda_operator.clone(), hamiltonian_term])?);
 
             multiplier_term = ExpAdjointMap::builder(
                 cluster_operator.clone(),
-                AdjointMap::new(vec![excitation_operators.clone()], oper.clone(), Some(false))?,
+                AdjointMap::new(
+                    vec![excitation_operators.clone()],
+                    oper.clone(),
+                    Some(false),
+                    Some(AdjointMode::Commutative),
+                )?,
+                Some(true),
             )
             .left_action(false)
             .max_fold(4)
@@ -250,7 +262,7 @@ impl LagrangianCc {
             let (residue_set, residue_map) =
                 self.build_residue_parameters(&vec![unperturbed_param], &residue_info)?;
 
-            rhs_deriv.retain(&residue_set, false)?.replace(&residue_map, false)
+            rhs_deriv.retain(&residue_set, true)?.replace(&residue_map, true)
         } else {
             return Err(expression_error(
                 "Invalid type of response parameter",

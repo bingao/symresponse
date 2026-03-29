@@ -178,10 +178,10 @@ pub trait Lagrangian: std::fmt::Debug + Send + Sync + LagrangianInternal {
         // Retains differentiated parameters specified by `residue_info`, as
         // well as their higher-order ones while removes other
         // (un)differentiated parameters.
-        result = result.retain(&residue_set, false)?;
+        result = result.retain(&residue_set, true)?;
 
         // Replaces differentiated parameters by their residue parameters.
-        result.replace(&residue_map, false)
+        result.replace(&residue_map, true)
     }
 
     // Returns response function with its weight.
@@ -218,7 +218,7 @@ pub trait Lagrangian: std::fmt::Debug + Send + Sync + LagrangianInternal {
             num_tol,
         )?;
 
-        if expr.exist_any(excluded_operators) {
+        if expr.exist_any(excluded_operators, false) {
             return Ok(None);
         }
 

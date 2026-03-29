@@ -2,9 +2,9 @@ use std::collections::{HashMap, HashSet};
 use std::sync::Arc;
 
 use tinned::{
-    AdjointMap, DotProduct, ExpAdjointMap, Expr, MatrixAdd, NumberTolerance, Perturbation,
-    ResidueParameter, TinnedError, WfnParameter, differentiate_expr, downcast_from_arc,
-    expression_error, is_expr_type,
+    AdjointMap, AdjointMode, DotProduct, ExpAdjointMap, Expr, MatrixAdd, NumberTolerance,
+    Perturbation, ResidueParameter, TinnedError, WfnParameter, differentiate_expr,
+    downcast_from_arc, expression_error, is_expr_type,
 };
 
 use crate::lagrangian::Lagrangian;
@@ -55,26 +55,45 @@ impl LagrangianMcscf {
         let mut lag_terms = Vec::with_capacity(len_lag_terms);
         let mut rhs_terms = Vec::with_capacity(len_lag_terms);
 
-        let mut term =
-            ExpAdjointMap::builder(lambda_operator.clone(), unperturbed_hamiltonian.clone())
-                .left_action(false)
-                .build()?;
+        let mut term = ExpAdjointMap::builder(
+            lambda_operator.clone(),
+            unperturbed_hamiltonian.clone(),
+            Some(false),
+        )
+        .left_action(false)
+        .build()?;
         lag_terms.push(term.clone());
         // Note that `rhs_terms` should be multiplied by `Number::imaginary_unit()`
-        rhs_terms.push(AdjointMap::new(vec![rotation_operators.clone()], term, Some(true))?);
+        rhs_terms.push(AdjointMap::new(
+            vec![rotation_operators.clone()],
+            term,
+            Some(true),
+            Some(AdjointMode::Symmetric),
+        )?);
 
         for oper in perturbing_operators {
-            term = ExpAdjointMap::builder(lambda_operator.clone(), oper.clone())
+            term = ExpAdjointMap::builder(lambda_operator.clone(), oper.clone(), Some(false))
                 .left_action(false)
                 .build()?;
             lag_terms.push(term.clone());
-            rhs_terms.push(AdjointMap::new(vec![rotation_operators.clone()], term, Some(true))?);
+            rhs_terms.push(AdjointMap::new(
+                vec![rotation_operators.clone()],
+                term,
+                Some(true),
+                Some(AdjointMode::Symmetric),
+            )?);
         }
 
-        term =
-            ExpAdjointMap::builder_temporum(lambda_operator, false).left_action(false).build()?;
+        term = ExpAdjointMap::builder_temporum(lambda_operator, false, Some(false))
+            .left_action(false)
+            .build()?;
         lag_terms.push(term.clone());
-        rhs_terms.push(AdjointMap::new(vec![rotation_operators.clone()], term, Some(true))?);
+        rhs_terms.push(AdjointMap::new(
+            vec![rotation_operators.clone()],
+            term,
+            Some(true),
+            Some(AdjointMode::Symmetric),
+        )?);
 
         let lagrangian_expr = MatrixAdd::new(lag_terms)?;
         let rhs_parameters = MatrixAdd::new(rhs_terms)?;
@@ -154,7 +173,7 @@ impl LagrangianMcscf {
                     &residue_info,
                 )?;
 
-                rhs_deriv.retain(&residue_set, false)?.replace(&residue_map, false)
+                rhs_deriv.retain(&residue_set, true)?.replace(&residue_map, true)
             } else {
                 Err(expression_error(
                     "Invalid parameter type of residue parameter",
