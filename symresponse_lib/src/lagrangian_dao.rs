@@ -4,12 +4,12 @@ use std::sync::Arc;
 use num_rational::Rational64;
 
 use tinned::{
-    Add, AoTwoElecEnergy, AoTwoElecMatrix, ExchCorrEnergy, ExchCorrPotential, Expr, LagMultiplier,
-    MatrixAdd, MatrixMul, NonElecFunction, Number, NumberTolerance, OneElecMatrix, PertMultichain,
-    Perturbation, ResidueParameter, SubExpr, TemporumOperator, TemporumOverlap, TinnedError, Trace,
-    WfnParameter, ZeroOperator, anticommutator, commutator, differentiate_expr, downcast_from_arc,
-    expression_error, generic_error, is_expr_type, is_zero_expr, s_anticommutator, s_commutator,
-    subtract_exprs, sum_pert_frequencies,
+    Add, AoTwoElecEnergy, AoTwoElecMatrix, BasisTimeEvolution, ExchCorrEnergy, ExchCorrPotential,
+    Expr, LagMultiplier, MatrixAdd, MatrixMul, NonElecFunction, Number, NumberTolerance,
+    OneElecMatrix, PertMultichain, Perturbation, ResidueParameter, SubExpr, TimeEvolution,
+    TinnedError, Trace, WfnParameter, ZeroOperator, anticommutator, commutator, differentiate_expr,
+    downcast_from_arc, expression_error, generic_error, is_expr_type, is_zero_expr,
+    s_anticommutator, s_commutator, subtract_exprs, sum_pert_frequencies,
 };
 
 use crate::lagrangian::Lagrangian;
@@ -210,7 +210,7 @@ impl LagrangianDao {
         let mut fock_terms = Vec::with_capacity(one_elec_operators.len() + 2);
 
         for op in one_elec_operators {
-            if !is_expr_type::<OneElecMatrix>(&op) && !is_expr_type::<TemporumOverlap>(&op) {
+            if !is_expr_type::<OneElecMatrix>(&op) && !is_expr_type::<BasisTimeEvolution>(&op) {
                 return Err(expression_error("Invalid type of one-electron matrix", &op, None));
             }
 
@@ -275,7 +275,7 @@ impl LagrangianDao {
     // Apply the time-evolution operator i*\frac{\partial}{\partial t} to a given expression
     #[inline]
     fn apply_time_evolution(expr: Arc<dyn Expr>) -> Result<Arc<dyn Expr>, TinnedError> {
-        TemporumOperator::builder(expr).is_forward(true).build()
+        TimeEvolution::builder(expr).is_forward(true).build()
     }
 
     // Build generalized energy-weighted density matrix, Pulay term, TDSCF
@@ -626,7 +626,9 @@ impl LagrangianDao {
                     // differentiated `TemporumOperator` (reflected by its
                     // differentiated argument) will be incorrectly replaced by
                     // an undifferentiated one and cleaned.
-                    return result.apply_zero_rules(num_tol)?.replace(&dens_map, false);
+                    return result
+                        .substitute_zero_perturbations(num_tol)?
+                        .replace(&dens_map, false);
                 } else {
                     let result = differentiate_expr(&self.tdscf_equation, wfn.derivative())?;
 
@@ -657,7 +659,7 @@ impl LagrangianDao {
         let dens_map: HashMap<Arc<dyn Expr>, Arc<dyn Expr>> =
             std::iter::once((density_freq, density_part)).collect();
 
-        tdscf_deriv.apply_zero_rules(num_tol)?.replace(&dens_map, false)
+        tdscf_deriv.substitute_zero_perturbations(num_tol)?.replace(&dens_map, false)
     }
 
     #[inline]
@@ -858,9 +860,9 @@ impl Lagrangian for LagrangianDao {
         vec![self.density_matrix.clone()]
     }
 
-    // Here, we return the proxies of Lagrangian multipliers
+    // We return an empty vector because we actually use ansatze of Lagrangian multipliers
     #[inline]
     fn get_lag_multiplier(&self) -> Vec<Arc<dyn Expr>> {
-        vec![self.tdscf_multiplier_proxy.clone(), self.idemp_multiplier_proxy.clone()]
+        Vec::new()
     }
 }

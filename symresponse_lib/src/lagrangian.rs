@@ -159,6 +159,8 @@ pub trait Lagrangian: std::fmt::Debug + Send + Sync + LagrangianInternal {
             ));
         }
 
+        //FIXME: For the test dao_3p_tme, n+1 rule gives 0 response function, how to explain? Is it valid?
+
         // Computes response function.
         let mut result = self.response_function(
             exten_perturbations,
@@ -179,6 +181,8 @@ pub trait Lagrangian: std::fmt::Debug + Send + Sync + LagrangianInternal {
         // well as their higher-order ones while removes other
         // (un)differentiated parameters.
         result = result.retain(&residue_set, true)?;
+
+        //FIXME: `result` may become zero after `retain()`, we could consider the "complementary" residue parameters
 
         // Replaces differentiated parameters by their residue parameters.
         result.replace(&residue_map, true)
@@ -488,6 +492,7 @@ pub trait Lagrangian: std::fmt::Debug + Send + Sync + LagrangianInternal {
     // Returns unperturbed wave function parameters
     fn get_wfn_parameter(&self) -> Vec<Arc<dyn Expr>>;
 
-    // Returns unperturbed Lagrangian multipliers
+    // Returns unperturbed Lagrangian multipliers, currently used for functions
+    // `response_function_with_weight()` and `residue()`
     fn get_lag_multiplier(&self) -> Vec<Arc<dyn Expr>>;
 }

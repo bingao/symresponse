@@ -2,8 +2,9 @@ use std::collections::{BTreeMap, BTreeSet, HashSet};
 use std::sync::Arc;
 use symresponse::{Lagrangian, LagrangianDao, SymmetrizeMode};
 use tinned::{
-    Add, AoTwoElecMatrix, Expr, MatrixMul, Mul, Number, OneElecMatrix, PertMultichain,
-    Perturbation, Symbol, TemporumOverlap, TinnedError, Trace, WfnParameter, differentiate_expr,
+    Add, AoTwoElecMatrix, BasisTimeEvolution, ExchCorrEnergy, ExchCorrPotential, Expr, MatrixMul,
+    Mul, NonElecFunction, Number, OneElecMatrix, PertMultichain, Perturbation, Symbol, TinnedError,
+    Trace, WfnParameter, differentiate_expr,
 };
 
 // Magnetic circular dichroism
@@ -27,7 +28,7 @@ fn lao_quadratic_response() -> Result<(), TinnedError> {
         OneElecMatrix::builder("S").dependencies(perturbing_b_deps.clone()).build()?;
     let one_elec_hamiltonian =
         OneElecMatrix::builder("h").dependencies(perturbing_b_deps.clone()).build()?;
-    let t_matrix = TemporumOverlap::builder(perturbing_b_deps.clone()).build()?;
+    let t_matrix = BasisTimeEvolution::builder(perturbing_b_deps.clone()).build()?;
 
     // Perturbing operator of Equation (B2), which can be differentiated with
     // respect to electric perturbations only once
@@ -49,6 +50,23 @@ fn lao_quadratic_response() -> Result<(), TinnedError> {
         .dependencies(perturbing_b_deps)
         .build()?;
 
+    let grid_weight = NonElecFunction::builder("w").build()?;
+    let overlap_distribution = OneElecMatrix::builder("Omega").build()?;
+    let xc_energy = ExchCorrEnergy::builder(
+        "Exc",
+        grid_weight.clone(),
+        density_matrix.clone(),
+        overlap_distribution.clone(),
+    )
+    .build()?;
+    let xc_potential = ExchCorrPotential::builder(
+        "Vxc",
+        grid_weight,
+        density_matrix.clone(),
+        overlap_distribution,
+    )
+    .build()?;
+
     // We ignore exchange-correlation functional in this simple example.
     // Equation (B1) is obtained by symmetrization so we set `symmetrized_mode` as `Always`.
     let lag = LagrangianDao::new(
@@ -57,8 +75,8 @@ fn lao_quadratic_response() -> Result<(), TinnedError> {
         Some(overlap_matrix),
         &one_elec_opers,
         Some(two_elec_operator),
-        None,
-        None,
+        Some(xc_energy),
+        Some(xc_potential),
         None,
         Some(SymmetrizeMode::Always),
         None,
@@ -120,7 +138,7 @@ fn lao_quadratic_response() -> Result<(), TinnedError> {
     }
 
     // Final result of Equation (B1)
-    expected_response = expected_response.apply_zero_rules(None)?;
+    expected_response = expected_response.substitute_zero_perturbations(None)?;
 
     //FIXME: Maybe we should construct the expected response function from inputs we sent to LagrangianDao::new()?
     assert_eq!(&response, &expected_response);

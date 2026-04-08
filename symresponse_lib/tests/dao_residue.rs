@@ -1,11 +1,10 @@
-use serde_json;
-use std::collections::{BTreeMap, HashMap};
+use std::collections::{BTreeMap, BTreeSet, HashMap, HashSet};
 use std::sync::Arc;
 use symresponse::{Lagrangian, LagrangianDao, SymmetrizeMode};
 use tinned::{
-    Add, AoTwoElecMatrix, Expr, MatrixAdd, MatrixMul, Number, OneElecMatrix, PertMultichain,
-    Perturbation, ResidueParameter, Symbol, TemporumOverlap, TinnedError, Trace, WfnParameter,
-    downcast_from_arc, s_anticommutator, s_commutator, subtract_exprs,
+    Add, AoTwoElecMatrix, BasisTimeEvolution, Expr, MatrixMul, Mul, Number, OneElecMatrix,
+    PertMultichain, Perturbation, ResidueParameter, Symbol, TinnedError, Trace, WfnParameter,
+    differentiate_expr, subtract_exprs,
 };
 
 // First-order residue of the linear response function, equation (286),
@@ -27,10 +26,9 @@ fn dao_first_order_lr_residue() -> Result<(), TinnedError> {
         OneElecMatrix::builder("h").dependencies(oper_deps.clone()).build()?;
     let perturbing_oper =
         OneElecMatrix::builder("V").is_perturbing(true).dependencies(oper_deps.clone()).build()?;
-    let t_matrix = TemporumOverlap::builder(oper_deps.clone()).build()?;
+    let t_matrix = BasisTimeEvolution::builder(oper_deps.clone()).build()?;
 
-    let one_elec_opers =
-        vec![one_elec_hamiltonian.clone(), perturbing_oper.clone(), t_matrix.clone()];
+    let one_elec_opers = vec![one_elec_hamiltonian, perturbing_oper, t_matrix];
 
     let two_elec_operator =
         AoTwoElecMatrix::builder("G", density_matrix.clone()).dependencies(oper_deps).build()?;
@@ -40,7 +38,7 @@ fn dao_first_order_lr_residue() -> Result<(), TinnedError> {
         density_matrix.clone(),
         Some(overlap_matrix.clone()),
         &one_elec_opers,
-        Some(two_elec_operator.clone()),
+        Some(two_elec_operator),
         None,
         None,
         None,
@@ -60,94 +58,60 @@ fn dao_first_order_lr_residue() -> Result<(), TinnedError> {
     // Using `min_wfn_extern = 3` removes all Lagrangian multipliers
     let residue =
         lag.residue(&exten_perturbations, &inten_perturbations, 3, &residue_info, false, None)?;
-    //lag.response_function(&exten_perturbations, &inten_perturbations, 3, false, None)?;
 
     // Residue density matrix
-    let dmat_b = density_matrix.differentiate(&pert_b)?;
-    let residue_dmat_b =
-        ResidueParameter::builder(vec![pert_b.clone()], excited_state.clone(), dmat_b)
+    let density_b = density_matrix.differentiate(&pert_b)?;
+    let res_density_b =
+        ResidueParameter::builder(vec![pert_b.clone()], excited_state, density_b.clone())
             .positive_frequency(true)
             .build()?;
+    let density_b_set: HashSet<Arc<dyn Expr>> = [density_b.clone()].into_iter().collect();
+    let res_density_b_map: HashMap<Arc<dyn Expr>, Arc<dyn Expr>> =
+        HashMap::from([(density_b.clone(), res_density_b.clone())]);
 
-    // Reference residue
+    // Reference residue, equation (286)
+    let generalized_energy_ab = lag.generalized_energy_a().differentiate(&pert_b)?;
     let overlap_a = overlap_matrix.differentiate(&pert_a)?;
-    let fock_matrix = MatrixAdd::new(vec![
-        one_elec_hamiltonian.clone(),
-        two_elec_operator.clone(),
-        perturbing_oper.clone(),
-        t_matrix.clone(),
-    ])?;
-    let two_elec_op = downcast_from_arc::<AoTwoElecMatrix>(&two_elec_operator)
-        .expect("Invalid two-electron operator");
-    // Equation (286)
+    let general_ew_density =
+        lag.general_ew_density().expect("Expect generalized energy-weighted density matrix");
+    let general_ew_density_b = general_ew_density.differentiate(&pert_b)?;
     let expected_residue = subtract_exprs(
-        Add::new(vec![
-            Trace::new(MatrixMul::new(vec![
-                one_elec_hamiltonian.differentiate(&pert_a)?,
-                residue_dmat_b.clone(),
-            ])?)?,
-            Trace::new(MatrixMul::new(vec![
-                two_elec_op
-                    .with_derivative(PertMultichain::from_map(BTreeMap::from([(
-                        pert_a.clone(),
-                        1,
-                    )])))
-                    .build()?,
-                residue_dmat_b.clone(),
-            ])?)?,
-            Trace::new(MatrixMul::new(vec![
-                perturbing_oper.differentiate(&pert_a)?,
-                residue_dmat_b.clone(),
-            ])?)?,
-            Trace::new(MatrixMul::new(vec![
-                t_matrix.differentiate(&pert_a)?,
-                residue_dmat_b.clone(),
-            ])?)?,
-        ])?,
-        Trace::new(MatrixMul::new(vec![
-            overlap_a,
-            MatrixAdd::new(vec![
-                s_anticommutator(
-                    residue_dmat_b.clone(),
-                    density_matrix.clone(),
-                    fock_matrix.clone(),
-                )?,
-                MatrixMul::new(vec![
-                    density_matrix.clone(),
-                    two_elec_op.with_density(residue_dmat_b.clone()).build()?,
-                    density_matrix.clone(),
-                ])?,
-                MatrixMul::new(vec![
-                    Number::one_half(),
-                    freq_b.clone(),
-                    s_commutator(
-                        residue_dmat_b.clone(),
-                        density_matrix.clone(),
-                        overlap_matrix.clone(),
-                    )?,
-                ])?,
-            ])?,
-        ])?)?,
+        generalized_energy_ab,
+        Trace::new(MatrixMul::new(vec![overlap_a, general_ew_density_b])?)?,
     )?
-    .apply_zero_rules(None)?;
+    .eliminate(&density_matrix, &exten_perturbations, 2)?
+    .substitute_zero_perturbations(None)?
+    .retain(&density_b_set, true)?
+    .replace(&res_density_b_map, true)?;
 
-    let json_residue = serde_json::to_string(&residue).unwrap();
-    println!("reside: {}", json_residue);
+    //let json_residue = serde_json::to_string(&residue).unwrap();
+    //println!("Reside = {}", json_residue);
 
     //let json_expected_residue = serde_json::to_string(&expected_residue).unwrap();
-    //println!("expected_residue: {}", json_expected_residue);
+    //println!("Expected residue = {}", json_expected_residue);
 
-    //assert_eq!(&residue, &expected_residue);
+    assert_eq!(&residue, &expected_residue);
 
-    //// Check the right-hand side of the linear response equation (289), J. Chem. Phys. 129, 214108 (2008)
-    //let density_part = WfnParameter::builder("D_P").build()?;
-    //let rhs = lag.linear_response_rhs(residue_dmat_b, density_part, None)?;
-    //
-    //// Reference RHS
-    //let expected_rhs: Arc<dyn Expr> = serde_json::from_str(rhs_json)
-    //    .expect("Failed to deserialize the right-hand side of the linear response equation");
-    //
-    //assert_eq!(&rhs, &expected_rhs);
+    // Get the right-hand side of the linear response equation
+    let density_part = WfnParameter::builder("D_P").build()?;
+    let rhs = lag.linear_response_rhs(res_density_b, density_part.clone(), None)?;
+
+    //let json_rhs = serde_json::to_string(&rhs).unwrap();
+    //println!("RHS = {}", json_rhs);
+
+    // Reference RHS, equation (289), J. Chem. Phys. 129, 214108 (2008)
+    let density_b_map: HashMap<Arc<dyn Expr>, Arc<dyn Expr>> =
+        HashMap::from([(density_b, density_part)]);
+    let expected_rhs = lag
+        .tdscf_equation()
+        .differentiate(&pert_b)?
+        .substitute_zero_perturbations(None)?
+        .replace(&density_b_map, true)?;
+
+    //let json_expected_rhs = serde_json::to_string(&expected_rhs).unwrap();
+    //println!("Expected RHS = {}", json_expected_rhs);
+
+    assert_eq!(&rhs, &expected_rhs);
 
     Ok(())
 }
@@ -156,44 +120,51 @@ fn dao_first_order_lr_residue() -> Result<(), TinnedError> {
 // J. Chem. Phys. 135, 024112 (2011)
 #[test]
 fn lao_mcd() -> Result<(), TinnedError> {
-    // `a` and `c` are electric perturbations while `b` is the magnetic one
-    let freq_a = Symbol::new("omega_a");
-    let pert_a = Perturbation::new("a", freq_a);
-    let freq_b = Symbol::new("omega_b");
-    let pert_b = Perturbation::new("b", freq_b);
-    let freq_c = Symbol::new("omega_c");
-    let pert_c = Perturbation::new("c", freq_c);
+    // `a` and `c` are electric perturbations with frequency as -omega and +omega
+    let freq_el = Symbol::new("omega");
+    let pert_a = Perturbation::new("a", Mul::new(vec![Number::minus_one(), freq_el.clone()])?);
+    let pert_c = Perturbation::new("c", freq_el);
+    // `b` is a magnetic perturbation with frequency as zero
+    let pert_b = Perturbation::new("b", Number::zero());
 
     let density_matrix = WfnParameter::builder("D").build()?;
 
     // Since we use London atomic orbitals, all operators depend on the
-    // magnetic perturbation
-    let magnectic_deps = PertMultichain::from_map(BTreeMap::from([(pert_b.clone(), 9)]));
+    // magnetic perturbation and can be differentiated infinitely
+    let perturbing_b_deps = PertMultichain::from_map(BTreeMap::from([(pert_b.clone(), 99)]));
 
     let overlap_matrix =
-        OneElecMatrix::builder("S").dependencies(magnectic_deps.clone()).build()?;
+        OneElecMatrix::builder("S").dependencies(perturbing_b_deps.clone()).build()?;
     let one_elec_hamiltonian =
-        OneElecMatrix::builder("h").dependencies(magnectic_deps.clone()).build()?;
-    let t_matrix = TemporumOverlap::builder(magnectic_deps.clone()).build()?;
+        OneElecMatrix::builder("h").dependencies(perturbing_b_deps.clone()).build()?;
+    let t_matrix = BasisTimeEvolution::builder(perturbing_b_deps.clone()).build()?;
 
-    // The perturbing operator should depend on all perturbations
+    // Perturbing operator of Equation (B2), which can be differentiated with
+    // respect to electric perturbations only once
     let perturbing_deps = PertMultichain::from_map(BTreeMap::from([
-        (pert_a.clone(), 9),
-        (pert_b.clone(), 9),
-        (pert_c.clone(), 9),
+        (pert_a.clone(), 1),
+        (pert_b.clone(), 99),
+        (pert_c.clone(), 1),
     ]));
-    let perturbing_oper = OneElecMatrix::builder("V").dependencies(perturbing_deps).build()?;
+    let perturbing_indep_perts = BTreeSet::from([pert_a.clone(), pert_c.clone()]);
+    let perturbing_oper = OneElecMatrix::builder("V")
+        .is_perturbing(true)
+        .dependencies(perturbing_deps)
+        .independent_perturbations(perturbing_indep_perts)
+        .build()?;
 
     let one_elec_opers = vec![one_elec_hamiltonian, perturbing_oper, t_matrix];
 
     let two_elec_operator = AoTwoElecMatrix::builder("G", density_matrix.clone())
-        .dependencies(magnectic_deps)
+        .dependencies(perturbing_b_deps)
         .build()?;
 
+    // We ignore exchange-correlation functional in this simple example.
+    // Equation (B1) is obtained by symmetrization so we set `symmetrized_mode` as `Always`.
     let lag = LagrangianDao::new(
         pert_a.clone(),
         density_matrix.clone(),
-        Some(overlap_matrix.clone()),
+        Some(overlap_matrix),
         &one_elec_opers,
         Some(two_elec_operator),
         None,
@@ -203,6 +174,7 @@ fn lao_mcd() -> Result<(), TinnedError> {
         None,
     )?;
 
+    // We treat all perturbations as externsive ones
     let exten_perturbations = vec![pert_b.clone(), pert_c.clone()];
     let inten_perturbations = Vec::new();
 
@@ -217,27 +189,140 @@ fn lao_mcd() -> Result<(), TinnedError> {
     // the next integer of the floor function of the half number of extensive
     // perturbations
     let residue =
-        //lag.residue(&exten_perturbations, &inten_perturbations, 0, &residue_info, false, None)?;
-        lag.response_function(&exten_perturbations, &inten_perturbations, 0, false, None)?;
+        lag.residue(&exten_perturbations, &inten_perturbations, 0, &residue_info, false, None)?;
 
-    let json_residue = serde_json::to_string(&residue).unwrap();
-    println!("reside: {}", json_residue);
+    //let json_residue = serde_json::to_string(&residue).unwrap();
+    //println!("Reside = {}", json_residue);
+
+    // F^{bc}
+    let fock_matrix_bc = differentiate_expr(lag.fock_matrix(), &exten_perturbations)?;
+    let max_fock_derivs: HashSet<Arc<dyn Expr>> = [fock_matrix_bc.clone()].into_iter().collect();
+
+    // Residue density matrices
+    let density_a = density_matrix.differentiate(&pert_a)?;
+    let density_c = density_matrix.differentiate(&pert_c)?;
+    let res_density_a =
+        ResidueParameter::builder(vec![pert_a.clone()], excited_state_a, density_a.clone())
+            .positive_frequency(false)
+            .build()?;
+    let res_density_c =
+        ResidueParameter::builder(vec![pert_c.clone()], excited_state_c, density_c.clone())
+            .positive_frequency(true)
+            .build()?;
+    let density_ac_set: HashSet<Arc<dyn Expr>> =
+        [density_a.clone(), density_c.clone()].into_iter().collect();
+    let res_density_ac_map: HashMap<Arc<dyn Expr>, Arc<dyn Expr>> =
+        HashMap::from([(density_a, res_density_a), (density_c, res_density_c)]);
+
+    // Reference double residue, equation (B27)
+    let generalized_energy_abc =
+        differentiate_expr(lag.generalized_energy_a(), &exten_perturbations)?
+            .remove(&max_fock_derivs)?;
+    let tdscf_equation_bc =
+        differentiate_expr(lag.tdscf_equation(), &exten_perturbations)?.remove(&max_fock_derivs)?;
+    let idempotency_bc =
+        differentiate_expr(lag.idempotency(), &exten_perturbations)?.remove(&max_fock_derivs)?;
+    let expected_residue = Add::new(vec![
+        generalized_energy_abc,
+        //  F^{bc} * D^{a}
+        Trace::new(MatrixMul::new(vec![fock_matrix_bc, density_matrix.differentiate(&pert_a)?])?)?,
+        Mul::new(vec![
+            Number::minus_one(),
+            Add::new(vec![
+                Trace::new(MatrixMul::new(vec![
+                    lag.tdscf_multiplier().clone(),
+                    tdscf_equation_bc,
+                ])?)?,
+                Trace::new(MatrixMul::new(vec![lag.idemp_multiplier().clone(), idempotency_bc])?)?,
+            ])?,
+        ])?,
+    ])?
+    .eliminate(&density_matrix, &exten_perturbations, 2)?
+    .substitute_zero_perturbations(None)?
+    .retain(&density_ac_set, true)?
+    .replace(&res_density_ac_map, true)?;
+
+    //let json_expected_residue = serde_json::to_string(&expected_residue).unwrap();
+    //println!("Expected residue = {}", json_expected_residue);
+
+    assert_eq!(&residue, &expected_residue);
 
     Ok(())
 }
 
-// Three-photon transition matrix element between the ground state and the excited state
-//#[test]
-//fn test_3p_tme() {
-//    LagrangianDao::new(
-//        perturbation_a,
-//        density_matrix,
-//        overlap_matrix,
-//        one_elec_operators,
-//        two_elec_operator,
-//        xc_energy,
-//        xc_potential,
-//        h_nuc,
-//        num_tol,
-//    )
-//}
+// Two-photon transition matrix element between the ground state and the excited state
+// Equation (63), J. Chem. Phys. 134, 214104 (2011)
+#[test]
+fn dao_2p_tme() -> Result<(), TinnedError> {
+    let freq_a = Symbol::new("omega_a");
+    let pert_a = Perturbation::new("a", freq_a);
+    let freq_b = Symbol::new("omega_b");
+    let pert_b: Arc<Perturbation> = Perturbation::new("b", freq_b.clone());
+    let freq_c = Symbol::new("omega_c");
+    let pert_c: Arc<Perturbation> = Perturbation::new("c", freq_c.clone());
+    let freq_d = Symbol::new("omega_d");
+    let pert_d: Arc<Perturbation> = Perturbation::new("d", freq_d.clone());
+
+    let density_matrix = WfnParameter::builder("D").build()?;
+
+    let overlap_matrix = OneElecMatrix::builder("S").build()?;
+    let one_elec_hamiltonian = OneElecMatrix::builder("h").build()?;
+
+    let mu_a_deps = PertMultichain::from_map(BTreeMap::from([(pert_a.clone(), 1)]));
+    let mu_a =
+        OneElecMatrix::builder("mu_a").is_perturbing(true).dependencies(mu_a_deps).build()?;
+    let mu_b_deps = PertMultichain::from_map(BTreeMap::from([(pert_b.clone(), 1)]));
+    let mu_b =
+        OneElecMatrix::builder("mu_b").is_perturbing(true).dependencies(mu_b_deps).build()?;
+    let mu_c_deps = PertMultichain::from_map(BTreeMap::from([(pert_c.clone(), 1)]));
+    let mu_c =
+        OneElecMatrix::builder("mu_c").is_perturbing(true).dependencies(mu_c_deps).build()?;
+    let mu_d_deps = PertMultichain::from_map(BTreeMap::from([(pert_d.clone(), 1)]));
+    let mu_d =
+        OneElecMatrix::builder("mu_d").is_perturbing(true).dependencies(mu_d_deps).build()?;
+
+    let one_elec_opers = vec![one_elec_hamiltonian, mu_a, mu_b, mu_c, mu_d];
+
+    let two_elec_operator = AoTwoElecMatrix::builder("G", density_matrix.clone()).build()?;
+
+    let lag = LagrangianDao::new(
+        pert_a.clone(),
+        density_matrix.clone(),
+        Some(overlap_matrix),
+        &one_elec_opers,
+        Some(two_elec_operator),
+        None,
+        None,
+        None,
+        Some(SymmetrizeMode::Never),
+        None,
+    )?;
+
+    // Perturbation `a` is a bit special: it was already set in Lagrangian and
+    // we should not specify it in external or internal perturbations here
+    let exten_perturbations = vec![pert_b.clone(), pert_c.clone(), pert_d.clone()];
+    let inten_perturbations: Vec<Arc<Perturbation>> = Vec::new();
+
+    let excited_state = WfnParameter::builder("Xn").build()?;
+    let residue_info: HashMap<Arc<dyn Expr>, (bool, Vec<Arc<Perturbation>>)> =
+        HashMap::from([(excited_state, (true, vec![pert_c.clone(), pert_d.clone()]))]);
+    // The following is TPA between excited states, or excited state absorption
+    //
+    //let excited_state_f = WfnParameter::builder("Xf").build()?;
+    //let excited_state_g = WfnParameter::builder("Xg").build()?;
+    //let residue_info: HashMap<Arc<dyn Expr>, (bool, Vec<Arc<Perturbation>>)> = HashMap::from([
+    //    (excited_state_f, (false, vec![pert_c.clone()])),
+    //    (excited_state_g, (true, vec![pert_d.clone()])),
+    //]);
+
+    // Equation (63) is the trace of product between the right-hand side of
+    // X^{ab} and X^{cd}. The only possible response function expression is
+    // equation (240) in J. Chem. Phys. 129, 214108 (2008).
+    let residue =
+        lag.residue(&exten_perturbations, &inten_perturbations, 3, &residue_info, false, None)?;
+
+    let json_residue = serde_json::to_string(&residue).unwrap();
+    println!("Reside = {}", json_residue);
+
+    Ok(())
+}

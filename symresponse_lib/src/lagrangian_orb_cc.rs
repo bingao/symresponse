@@ -149,6 +149,8 @@ impl LagrangianOrbCc {
             Some(false),
         )?;
 
+        let cc_max_fold: u32 = 4;
+
         // Similarity-transformed single excitation operator, e^{kappa} * E_{pq} * e^{-kappa}
         let kappa_single_exc =
             ExpAdjointMap::builder(kappa_operator.clone(), single_excitation_operator, Some(false))
@@ -157,7 +159,7 @@ impl LagrangianOrbCc {
         let st_single_exc =
             ExpAdjointMap::builder(cluster_operator.clone(), kappa_single_exc, Some(true))
                 .left_action(false)
-                .max_fold(4) //FIXME: or 2, or infinite?
+                .max_fold(cc_max_fold)
                 .build()?;
         // Set one-electron density matrix
         let one_density_expr = MatrixAdd::new(vec![
@@ -175,7 +177,7 @@ impl LagrangianOrbCc {
         let st_double_exc =
             ExpAdjointMap::builder(cluster_operator.clone(), kappa_double_exc, Some(true))
                 .left_action(false)
-                .max_fold(4) //FIXME: or 2, or infinite?
+                .max_fold(cc_max_fold)
                 .build()?;
         // Set two-electron density matrix
         let two_density_expr = MatrixAdd::new(vec![
@@ -190,20 +192,22 @@ impl LagrangianOrbCc {
             ExpAdjointMap::builder(kappa_operator.clone(), one_elec_matrix.clone(), Some(false))
                 .left_action(true)
                 .build()?,
-            ExpAdjointMap::builder(kappa_operator, two_elec_matrix.clone(), Some(false))
+            ExpAdjointMap::builder(kappa_operator.clone(), two_elec_matrix.clone(), Some(false))
                 .left_action(true)
                 .build()?,
         ])?;
 
-        // [E_{pq}-E_{qp}, e^{kappa} * H * e^{-kappa}]
+        // [E_{pq}-E_{qp}, e^{kappa} * H * e^{-kappa}], equation (41), J. Chem.
+        // Phys. 92, 4924-4940 (1990)
         let brillouin_equation = AdjointMap::new(
-            vec![orb_rot_generator],
+            vec![orb_rot_generator.clone()],
             kappa_transformed_hamiltonian.clone(),
             Some(true),
             Some(AdjointMode::Symmetric),
         )?;
 
-        // Response equation for coupled-cluster amplitude
+        // Response equation for coupled-cluster amplitude, equation (42), J.
+        // Chem. Phys. 92, 4924-4940 (1990)
         let cc_amplitude_equation = MatrixMul::new(vec![
             HermitianTranspose::new(cc_excitation_operator.clone())?,
             ExpAdjointMap::builder(
@@ -212,7 +216,7 @@ impl LagrangianOrbCc {
                 Some(true),
             )
             .left_action(false)
-            .max_fold(4) //FIXME: or 2, or infinite?
+            .max_fold(cc_max_fold)
             .build()?,
         ])?;
 
@@ -228,17 +232,61 @@ impl LagrangianOrbCc {
             Some(true),
         )
         .left_action(false)
-        .max_fold(4) //FIXME: or 2, or infinite?
+        .max_fold(cc_max_fold)
         .build()?;
 
-        // Response equation for coupled-cluster Lagrangian multiplier
+        // Response equation for coupled-cluster Lagrangian multiplier,
+        // equation (43), J. Chem. Phys. 92, 4924-4940 (1990)
         let cc_multiplier_equation = MatrixAdd::new(vec![
             eadj_cc_hamiltonian.clone(),
             MatrixMul::new(vec![cc_lambda_oper.clone(), eadj_cc_hamiltonian])?,
         ])?;
 
-        // Response equation for Brillouin condition multiplier
-        let brillouin_multiplier_equation = cc_multiplier_equation.clone();
+        // Derivative of e^{kappa} * H * e^{-kappa} with respect to kappa,
+        // which can be written as e^{\tilde{kappa}} [E_{pq}-E_{qp}, H],
+        // but which is not a regular exponential adjoint map, or its expansion
+        // should use symmetrized nested commutators
+        let diff_kappa_transformed_hamiltonian = ExpAdjointMap::builder(
+            kappa_operator.clone(),
+            AdjointMap::new(
+                vec![orb_rot_generator.clone()],
+                MatrixAdd::new(vec![one_elec_matrix.clone(), two_elec_matrix.clone()])?,
+                Some(true),
+                Some(AdjointMode::Symmetric),
+            )?,
+            Some(false),
+        )
+        .left_action(true)
+        .build()?;
+
+        // e^{kappa} * (e^{\tilde{kappa}} [E_{pq}-E_{qp}, H]) * e^{-kappa}
+        let eadj_cc_diff_hamiltonian = ExpAdjointMap::builder(
+            cluster_operator.clone(),
+            diff_kappa_transformed_hamiltonian.clone(),
+            Some(true),
+        )
+        .left_action(false)
+        .max_fold(cc_max_fold)
+        .build()?;
+
+        // Response equation for Brillouin condition multiplier, equation (44),
+        // J. Chem. Phys. 92, 4924-4940 (1990)
+        let brillouin_multiplier_equation = MatrixAdd::new(vec![
+            eadj_cc_diff_hamiltonian.clone(),
+            MatrixMul::new(vec![cc_lambda_oper.clone(), eadj_cc_diff_hamiltonian])?,
+            DotProduct::new(
+                AdjointMap::new(
+                    vec![orb_rot_generator],
+                    diff_kappa_transformed_hamiltonian,
+                    Some(true),
+                    Some(AdjointMode::Symmetric),
+                )?,
+                true,
+                brillouin_multiplier.clone(),
+                false,
+                Some(true),
+            )?,
+        ])?;
 
         // Set up the Lagrangian
         let lagrangian_expr = Add::new(vec![

@@ -143,6 +143,7 @@ pub(crate) mod sealed {
                     )
                     .positive_frequency(*positive_frequency)
                     .build()?;
+
                     residue_set.insert(param_deriv.clone());
                     residue_map.insert(param_deriv, residue_param);
                 }
@@ -188,7 +189,7 @@ pub(crate) mod sealed {
             // Replace those with non-zero sum of frequencies by corresponding
             // derivatives in the frequency domain multiplied by the sum of
             // frequencies.
-            lagrangian.apply_zero_rules(num_tol)
+            lagrangian.substitute_zero_perturbations(num_tol)
         }
     }
 }

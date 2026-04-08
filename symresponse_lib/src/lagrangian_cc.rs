@@ -3,8 +3,8 @@ use std::sync::Arc;
 
 use tinned::{
     AdjointMap, AdjointMode, DotProduct, ExpAdjointMap, Expr, LagMultiplier, MatrixAdd, MatrixMul,
-    Perturbation, ResidueParameter, TemporumOperator, TinnedError, WfnParameter,
-    differentiate_expr, downcast_from_arc, expression_error, is_expr_type,
+    Perturbation, ResidueParameter, TimeEvolution, TinnedError, WfnParameter, differentiate_expr,
+    downcast_from_arc, expression_error, is_expr_type,
 };
 
 use crate::lagrangian::Lagrangian;
@@ -143,7 +143,7 @@ impl LagrangianCc {
 
         // Perform -i*d/dt (backward) on coupled-cluster amplitudes
         let dt_cc_amplitude =
-            TemporumOperator::builder(cc_amplitude.clone()).is_forward(false).build()?;
+            TimeEvolution::builder(cc_amplitude.clone()).is_forward(false).build()?;
 
         // Here, we should have an inner product (`DotProduct`) between
         // Lagrangian multipliers and the time-differentiated coupled-cluster

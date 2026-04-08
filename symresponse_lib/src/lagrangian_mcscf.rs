@@ -84,7 +84,7 @@ impl LagrangianMcscf {
             )?);
         }
 
-        term = ExpAdjointMap::builder_temporum(lambda_operator, false, Some(false))
+        term = ExpAdjointMap::builder_time_evolution(lambda_operator, false, Some(false))
             .left_action(false)
             .build()?;
         lag_terms.push(term.clone());
@@ -216,7 +216,7 @@ impl LagrangianInternal for LagrangianMcscf {
     ) -> Result<Arc<dyn Expr>, TinnedError> {
         // Remove undifferentiated perturbation operators and unperturbed
         // time-differentiated quantities
-        lagrangian.remove(&self.perturbing_operators)?.apply_zero_rules(num_tol)
+        lagrangian.remove(&self.perturbing_operators)?.substitute_zero_perturbations(num_tol)
     }
 }
 
