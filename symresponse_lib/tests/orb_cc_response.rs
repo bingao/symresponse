@@ -127,7 +127,7 @@ fn orb_cc_quadratic() -> Result<(), TinnedError> {
                     eprintln!("Serialization of orbital rotation parameter failed: {err}");
                 },
             }
-            let rhs_parameter = lag.linear_response_rhs(parameter.clone())?;
+            let rhs_parameter = lag.linear_response_rhs(parameter.clone(), None)?;
             match serde_json::to_string(&rhs_parameter) {
                 Ok(json) => println!("RHS of orbital rotation parameter = {}\n", json),
                 Err(err) => {
@@ -149,7 +149,7 @@ fn orb_cc_quadratic() -> Result<(), TinnedError> {
                     eprintln!("Serialization of cluster amplitude failed: {err}");
                 },
             }
-            let rhs_amplitude = lag.linear_response_rhs(amplitude.clone())?;
+            let rhs_amplitude = lag.linear_response_rhs(amplitude.clone(), None)?;
             match serde_json::to_string(&rhs_amplitude) {
                 Ok(json) => println!("RHS of cluster amplitude = {}\n", json),
                 Err(err) => {
@@ -171,7 +171,7 @@ fn orb_cc_quadratic() -> Result<(), TinnedError> {
                     eprintln!("Serialization of cluster multiplier failed: {err}");
                 },
             }
-            let rhs_multiplier = lag.linear_response_rhs(multiplier.clone())?;
+            let rhs_multiplier = lag.linear_response_rhs(multiplier.clone(), None)?;
             match serde_json::to_string(&rhs_multiplier) {
                 Ok(json) => println!("RHS of cluster multiplier = {}\n", json),
                 Err(err) => {
@@ -193,7 +193,7 @@ fn orb_cc_quadratic() -> Result<(), TinnedError> {
                     eprintln!("Serialization of Brillouin condition multiplier failed: {err}");
                 },
             }
-            let rhs_multiplier = lag.linear_response_rhs(multiplier.clone())?;
+            let rhs_multiplier = lag.linear_response_rhs(multiplier.clone(), None)?;
             match serde_json::to_string(&rhs_multiplier) {
                 Ok(json) => println!("RHS of Brillouin condition multiplier = {}\n", json),
                 Err(err) => {

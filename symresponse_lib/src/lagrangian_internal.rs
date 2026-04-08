@@ -175,21 +175,5 @@ pub(crate) mod sealed {
             exten_perturbations: &[Arc<Perturbation>],
             min_multiplier_order: u32,
         ) -> Result<Arc<dyn Expr>, TinnedError>;
-
-        // Evaluation at zero perturbation strength
-        #[inline]
-        fn at_zero_strength(
-            &self,
-            lagrangian: &Arc<dyn Expr>,
-            num_tol: Option<NumberTolerance>,
-        ) -> Result<Arc<dyn Expr>, TinnedError> {
-            // Remove unperturbed time-differentiated quantities (and unperturbed T
-            // matrix for the AO density matrix-based response theory) as well as
-            // their perturbed ones but with zero sum of perturbation frequencies.
-            // Replace those with non-zero sum of frequencies by corresponding
-            // derivatives in the frequency domain multiplied by the sum of
-            // frequencies.
-            lagrangian.substitute_zero_perturbations(num_tol)
-        }
     }
 }

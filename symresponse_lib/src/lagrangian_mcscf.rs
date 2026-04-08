@@ -2,8 +2,8 @@ use std::collections::{HashMap, HashSet};
 use std::sync::Arc;
 
 use tinned::{
-    AdjointMap, AdjointMode, DotProduct, ExpAdjointMap, Expr, MatrixAdd, NumberTolerance,
-    Perturbation, ResidueParameter, TinnedError, WfnParameter, differentiate_expr,
+    AdjointMap, AdjointMode, DotProduct, ExcitationOperator, ExpAdjointMap, Expr, MatrixAdd,
+    NumberTolerance, Perturbation, ResidueParameter, TinnedError, WfnParameter, differentiate_expr,
     downcast_from_arc, expression_error, is_expr_type,
 };
 
@@ -12,8 +12,6 @@ use crate::lagrangian_internal::sealed::LagrangianInternal;
 
 #[derive(Clone, Debug, serde::Serialize, serde::Deserialize)]
 pub struct LagrangianMcscf {
-    // Perturbing operators
-    perturbing_operators: HashSet<Arc<dyn Expr>>,
     // Orbital- and state-rotation parameters
     rotation_parameters: Arc<dyn Expr>,
     // To compute the right-hand side of the response equation of orbital- and
@@ -30,11 +28,26 @@ impl LagrangianMcscf {
         rotation_operators: Arc<dyn Expr>,
         rotation_parameters: Arc<dyn Expr>,
     ) -> Result<Self, TinnedError> {
-        // Check the type of orbital- and state-rotation parameters
-        if !is_expr_type::<WfnParameter>(&rotation_parameters) {
+        // Check types of orbital- and state-rotation parameters
+        if let Some(parameter) = downcast_from_arc::<WfnParameter>(&rotation_parameters) {
+            if !parameter.is_perturbing() {
+                return Err(expression_error(
+                    "Non-perturbing rotation parameters",
+                    &rotation_parameters,
+                    None,
+                ));
+            }
+        } else {
             return Err(expression_error(
-                "Invalid type of orbital- and state-rotation parameters",
+                "Invalid type of rotation parameters",
                 &rotation_parameters,
+                None,
+            ));
+        }
+        if !is_expr_type::<ExcitationOperator>(&rotation_operators) {
+            return Err(expression_error(
+                "Invalid type of rotation generators",
+                &rotation_operators,
                 None,
             ));
         }
@@ -98,12 +111,7 @@ impl LagrangianMcscf {
         let lagrangian_expr = MatrixAdd::new(lag_terms)?;
         let rhs_parameters = MatrixAdd::new(rhs_terms)?;
 
-        // Users may accidentally provide duplicated perturbation operators,
-        // but it does not matter for the field `perturbing_operators`
-        // because we use the field only for removing undifferentiated
-        // perturbation operators.
         Ok(Self {
-            perturbing_operators: perturbing_operators.iter().cloned().collect(),
             rotation_parameters,
             rhs_parameters,
             lagrangian_expr,
@@ -136,16 +144,17 @@ impl LagrangianMcscf {
     pub fn linear_response_rhs(
         &self,
         rsp_parameter: Arc<dyn Expr>,
+        num_tol: Option<NumberTolerance>,
     ) -> Result<Arc<dyn Expr>, TinnedError> {
-        // Undifferentiated perturbation operators and the perturbed
-        // `rsp_parameter` itself will be removed from RHS
-        let mut rhs_set = self.perturbing_operators.clone();
-        rhs_set.insert(rsp_parameter.clone());
+        // The perturbed `rsp_parameter` should be removed from RHS
+        let rhs_set: HashSet<Arc<dyn Expr>> = [rsp_parameter.clone()].into_iter().collect();
 
-        if let Some(rot_param) = downcast_from_arc::<WfnParameter>(&rsp_parameter) {
+        let general_rhs: Arc<dyn Expr> = if let Some(rot_param) =
+            downcast_from_arc::<WfnParameter>(&rsp_parameter)
+        {
             let result = differentiate_expr(&self.rhs_parameters, rot_param.derivative())?;
 
-            result.remove(&rhs_set)
+            result.remove(&rhs_set)?
         } else if let Some(res_param) = downcast_from_arc::<ResidueParameter>(&rsp_parameter) {
             if let Some(rot_param) = downcast_from_arc::<WfnParameter>(res_param.parameter()) {
                 // `ResidueParameter` ensures that `res_param.perturbations()`
@@ -173,17 +182,23 @@ impl LagrangianMcscf {
                     &residue_info,
                 )?;
 
-                rhs_deriv.retain(&residue_set, true)?.replace(&residue_map, true)
+                rhs_deriv.retain(&residue_set, true)?.replace(&residue_map, true)?
             } else {
-                Err(expression_error(
+                return Err(expression_error(
                     "Invalid parameter type of residue parameter",
                     &rsp_parameter,
                     None,
-                ))
+                ));
             }
         } else {
-            Err(expression_error("Invalid type of response parameter", &rsp_parameter, None))
-        }
+            return Err(expression_error(
+                "Invalid type of response parameter",
+                &rsp_parameter,
+                None,
+            ));
+        };
+
+        general_rhs.substitute_zero_perturbations(num_tol)
     }
 }
 
@@ -206,17 +221,6 @@ impl LagrangianInternal for LagrangianMcscf {
         _min_multiplier_order: u32,
     ) -> Result<Arc<dyn Expr>, TinnedError> {
         Ok(lagrangian.clone())
-    }
-
-    #[inline]
-    fn at_zero_strength(
-        &self,
-        lagrangian: &Arc<dyn Expr>,
-        num_tol: Option<NumberTolerance>,
-    ) -> Result<Arc<dyn Expr>, TinnedError> {
-        // Remove undifferentiated perturbation operators and unperturbed
-        // time-differentiated quantities
-        lagrangian.remove(&self.perturbing_operators)?.substitute_zero_perturbations(num_tol)
     }
 }
 

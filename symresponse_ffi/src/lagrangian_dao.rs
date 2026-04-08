@@ -122,13 +122,15 @@ pub extern "C" fn symresponse_lagrangian_dao_linear_response_rhs(
 pub extern "C" fn symresponse_lagrangian_dao_particular_density_solution(
     h: Option<&LagrangianHandle>,
     density_freq: &ExprHandle,
+    num_tol: Option<&NumberToleranceHandle>,
     out_err: Option<Out<'_, TinnedErrorBox>>,
 ) -> Option<ExprBox> {
     try_with_handle(h, "symresponse_lagrangian_dao_particular_density_solution", "LagrangianHandle", |lh| {
         let lag_ref = lh.as_ref();
         if let Some(lag) = lag_ref.as_any().downcast_ref::<LagrangianDao>() {
             let dens_freq_arc: Arc<dyn Expr> = density_freq.clone_arc();
-            lag.particular_density_solution(dens_freq_arc)
+            let num_tolerance: Option<NumberTolerance> = num_tol.map(|h| h.as_ref().clone());
+            lag.particular_density_solution(dens_freq_arc, num_tolerance)
                 .map(|arc| ExprBox::new(ExprHandle::new(arc)))
         } else {
             Err(generic_error(

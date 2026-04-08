@@ -2,9 +2,9 @@ use std::sync::Arc;
 
 use tinned::{
     Add, AdjointMap, AdjointMode, DotProduct, ExcitationOperator, ExpAdjointMap, Expr,
-    HermitianTranspose, LagMultiplier, MatrixAdd, MatrixMul, Perturbation, SubExpr, TinnedError,
-    Trace, WfnParameter, differentiate_expr, downcast_from_arc, expression_error, is_expr_type,
-    unreachable_error,
+    HermitianTranspose, LagMultiplier, MatrixAdd, MatrixMul, NumberTolerance, Perturbation,
+    SubExpr, TinnedError, Trace, WfnParameter, differentiate_expr, downcast_from_arc,
+    expression_error, is_expr_type, unreachable_error,
 };
 
 use crate::lagrangian::Lagrangian;
@@ -221,7 +221,7 @@ impl LagrangianOrbCc {
         ])?;
 
         // [e^{kappa} * H * e^{-kappa}, tau]
-        let eadj_cc_hamiltonian = ExpAdjointMap::builder(
+        let cc_transformed_hamiltonian = ExpAdjointMap::builder(
             cluster_operator.clone(),
             AdjointMap::new(
                 vec![cc_excitation_operator.clone()],
@@ -238,8 +238,8 @@ impl LagrangianOrbCc {
         // Response equation for coupled-cluster Lagrangian multiplier,
         // equation (43), J. Chem. Phys. 92, 4924-4940 (1990)
         let cc_multiplier_equation = MatrixAdd::new(vec![
-            eadj_cc_hamiltonian.clone(),
-            MatrixMul::new(vec![cc_lambda_oper.clone(), eadj_cc_hamiltonian])?,
+            cc_transformed_hamiltonian.clone(),
+            MatrixMul::new(vec![cc_lambda_oper.clone(), cc_transformed_hamiltonian])?,
         ])?;
 
         // Derivative of e^{kappa} * H * e^{-kappa} with respect to kappa,
@@ -260,7 +260,7 @@ impl LagrangianOrbCc {
         .build()?;
 
         // e^{kappa} * (e^{\tilde{kappa}} [E_{pq}-E_{qp}, H]) * e^{-kappa}
-        let eadj_cc_diff_hamiltonian = ExpAdjointMap::builder(
+        let cc_transformed_diff_hamiltonian = ExpAdjointMap::builder(
             cluster_operator.clone(),
             diff_kappa_transformed_hamiltonian.clone(),
             Some(true),
@@ -272,8 +272,8 @@ impl LagrangianOrbCc {
         // Response equation for Brillouin condition multiplier, equation (44),
         // J. Chem. Phys. 92, 4924-4940 (1990)
         let brillouin_multiplier_equation = MatrixAdd::new(vec![
-            eadj_cc_diff_hamiltonian.clone(),
-            MatrixMul::new(vec![cc_lambda_oper.clone(), eadj_cc_diff_hamiltonian])?,
+            cc_transformed_diff_hamiltonian.clone(),
+            MatrixMul::new(vec![cc_lambda_oper.clone(), cc_transformed_diff_hamiltonian])?,
             DotProduct::new(
                 AdjointMap::new(
                     vec![orb_rot_generator],
@@ -350,8 +350,11 @@ impl LagrangianOrbCc {
     pub fn linear_response_rhs(
         &self,
         rsp_parameter: Arc<dyn Expr>,
+        num_tol: Option<NumberTolerance>,
     ) -> Result<Arc<dyn Expr>, TinnedError> {
-        if let Some(parameter) = downcast_from_arc::<WfnParameter>(&rsp_parameter) {
+        let general_rhs: Arc<dyn Expr> = if let Some(parameter) =
+            downcast_from_arc::<WfnParameter>(&rsp_parameter)
+        {
             let cc_amplitude =
                 downcast_from_arc::<WfnParameter>(&self.cc_amplitude).ok_or_else(|| {
                     unreachable_error(
@@ -361,9 +364,7 @@ impl LagrangianOrbCc {
                     )
                 })?;
             if parameter.name() == cc_amplitude.name() {
-                let result =
-                    differentiate_expr(&self.cc_amplitude_equation, parameter.derivative())?;
-                Ok(result)
+                differentiate_expr(&self.cc_amplitude_equation, parameter.derivative())?
             } else {
                 let orb_rot_parameter = downcast_from_arc::<WfnParameter>(&self.orb_rot_parameter)
                     .ok_or_else(|| {
@@ -374,9 +375,7 @@ impl LagrangianOrbCc {
                         )
                     })?;
                 if parameter.name() == orb_rot_parameter.name() {
-                    let result =
-                        differentiate_expr(&self.brillouin_equation, parameter.derivative())?;
-                    Ok(result)
+                    differentiate_expr(&self.brillouin_equation, parameter.derivative())?
                 } else {
                     return Err(expression_error(
                         "Invalid wave function parameter",
@@ -395,9 +394,7 @@ impl LagrangianOrbCc {
                     )
                 })?;
             if multiplier.name() == cc_multiplier.name() {
-                let result =
-                    differentiate_expr(&self.cc_multiplier_equation, multiplier.derivative())?;
-                Ok(result)
+                differentiate_expr(&self.cc_multiplier_equation, multiplier.derivative())?
             } else {
                 let brillouin_multiplier = downcast_from_arc::<LagMultiplier>(
                     &self.brillouin_multiplier,
@@ -410,11 +407,10 @@ impl LagrangianOrbCc {
                     )
                 })?;
                 if multiplier.name() == brillouin_multiplier.name() {
-                    let result = differentiate_expr(
+                    differentiate_expr(
                         &self.brillouin_multiplier_equation,
                         multiplier.derivative(),
-                    )?;
-                    Ok(result)
+                    )?
                 } else {
                     return Err(expression_error(
                         "Invalid Lagrangian multiplier",
@@ -429,7 +425,9 @@ impl LagrangianOrbCc {
                 &rsp_parameter,
                 None,
             ));
-        }
+        };
+
+        general_rhs.substitute_zero_perturbations(num_tol)
     }
 
     #[inline]

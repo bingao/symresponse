@@ -1,10 +1,10 @@
 use safer_ffi::prelude::*;
 use std::sync::Arc;
 
-use tinned::{Expr, generic_error};
+use tinned::{Expr, NumberTolerance, generic_error};
 use tinned_ffi::{
-    ExprBox, ExprHandle, ExprSlice, TinnedErrorBox, expr_vec_from_slice, tinned_error_new,
-    try_with_handle,
+    ExprBox, ExprHandle, ExprSlice, NumberToleranceHandle, TinnedErrorBox, expr_vec_from_slice,
+    tinned_error_new, try_with_handle,
 };
 
 use symresponse::LagrangianCc;
@@ -16,8 +16,8 @@ pub fn symresponse_lagrangian_cc_new(
     unperturbed_hamiltonian: &ExprHandle,
     perturbing_operators: Option<&ExprSlice>,
     cc_amplitude: &ExprHandle,
-    excitation_operators: &ExprHandle,
-    multipliers: &ExprHandle,
+    cc_excitation_operator: &ExprHandle,
+    cc_multiplier: &ExprHandle,
     out_err: Option<Out<'_, TinnedErrorBox>>,
 ) -> Option<LagrangianBox> {
     let unperturbed_hamiltonian_arc: Arc<dyn Expr> = unperturbed_hamiltonian.clone_arc();
@@ -34,15 +34,15 @@ pub fn symresponse_lagrangian_cc_new(
     };
 
     let cc_amplitude_arc: Arc<dyn Expr> = cc_amplitude.clone_arc();
-    let excitation_operators_arc: Arc<dyn Expr> = excitation_operators.clone_arc();
-    let multipliers_arc: Arc<dyn Expr> = multipliers.clone_arc();
+    let cc_excitation_operator_arc: Arc<dyn Expr> = cc_excitation_operator.clone_arc();
+    let cc_multiplier_arc: Arc<dyn Expr> = cc_multiplier.clone_arc();
 
     match LagrangianCc::new(
         unperturbed_hamiltonian_arc,
         &perturbing_ops,
         cc_amplitude_arc,
-        excitation_operators_arc,
-        multipliers_arc,
+        cc_excitation_operator_arc,
+        cc_multiplier_arc,
     ) {
         Ok(lag) => Some(LagrangianBox::new(LagrangianHandle::new(Arc::new(lag)))),
         Err(e) => {
@@ -56,13 +56,16 @@ pub fn symresponse_lagrangian_cc_new(
 pub extern "C" fn symresponse_lagrangian_cc_linear_response_rhs(
     h: Option<&LagrangianHandle>,
     rsp_parameter: &ExprHandle,
+    num_tol: Option<&NumberToleranceHandle>,
     out_err: Option<Out<'_, TinnedErrorBox>>,
 ) -> Option<ExprBox> {
     try_with_handle(h, "symresponse_lagrangian_cc_linear_response_rhs", "LagrangianHandle", |lh| {
         let lag_ref = lh.as_ref();
         if let Some(lag) = lag_ref.as_any().downcast_ref::<LagrangianCc>() {
             let rsp_parameter_arc: Arc<dyn Expr> = rsp_parameter.clone_arc();
-            lag.linear_response_rhs(rsp_parameter_arc).map(|arc| ExprBox::new(ExprHandle::new(arc)))
+            let num_tolerance: Option<NumberTolerance> = num_tol.map(|h| h.as_ref().clone());
+            lag.linear_response_rhs(rsp_parameter_arc, num_tolerance)
+                .map(|arc| ExprBox::new(ExprHandle::new(arc)))
         } else {
             Err(generic_error(
                 "Invalid Lagrangian type in symresponse_lagrangian_cc_linear_response_rhs",

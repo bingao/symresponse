@@ -132,7 +132,7 @@ pub trait Lagrangian: std::fmt::Debug + Send + Sync + LagrangianInternal {
         }
 
         // Evaluation at zero perturbation strength
-        self.at_zero_strength(&result, num_tol)
+        result.substitute_zero_perturbations(num_tol)
     }
 
     // Returns residue according to given extensive and intensive

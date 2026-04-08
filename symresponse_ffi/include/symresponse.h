@@ -35,10 +35,14 @@ symresponse_get_lagrangian (
     TinnedErrorHandle_t * * out_err);
 
 /** <No documentation available> */
+typedef struct NumberToleranceHandle NumberToleranceHandle_t;
+
+/** <No documentation available> */
 ExprHandle_t *
 symresponse_lagrangian_cc_linear_response_rhs (
     LagrangianHandle_t const * h,
     ExprHandle_t const * rsp_parameter,
+    NumberToleranceHandle_t const * num_tol,
     TinnedErrorHandle_t * * out_err);
 
 
@@ -62,12 +66,9 @@ symresponse_lagrangian_cc_new (
     ExprHandle_t const * unperturbed_hamiltonian,
     ExprSlice_t const * perturbing_operators,
     ExprHandle_t const * cc_amplitude,
-    ExprHandle_t const * excitation_operators,
-    ExprHandle_t const * multipliers,
+    ExprHandle_t const * cc_excitation_operator,
+    ExprHandle_t const * cc_multiplier,
     TinnedErrorHandle_t * * out_err);
-
-/** <No documentation available> */
-typedef struct NumberToleranceHandle NumberToleranceHandle_t;
 
 /** <No documentation available> */
 ExprHandle_t *
@@ -121,6 +122,7 @@ ExprHandle_t *
 symresponse_lagrangian_dao_particular_density_solution (
     LagrangianHandle_t const * h,
     ExprHandle_t const * density_freq,
+    NumberToleranceHandle_t const * num_tol,
     TinnedErrorHandle_t * * out_err);
 
 /** <No documentation available> */

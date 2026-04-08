@@ -159,12 +159,6 @@ impl LagrangianDao {
         // The first term in Equation (98), J. Chem. Phys. 129, 214108 (2008)
         let density_a = density_matrix.differentiate(&perturbation_a)?;
         let dens_a_set: HashSet<Arc<dyn Expr>> = [density_a].into_iter().collect();
-        // Note that we differentiate the energy with respect to perturbation
-        // `a`. We expect that users provide us a list of reasonable
-        // `one_elec_operators` for the computation of response
-        // functions and residues. We therefore do not need to remove
-        // undifferentiated `one_elec_operators` in the method
-        // `at_zero_strength()` as that of `LagrangianCc`.
         let generalized_energy_a = SubExpr::builder(
             "generalized-energy-a",
             generalized_energy.differentiate(&perturbation_a)?.remove(&dens_a_set)?,
@@ -520,6 +514,7 @@ impl LagrangianDao {
     pub fn particular_density_solution(
         &self,
         density_freq: Arc<dyn Expr>,
+        num_tol: Option<NumberTolerance>,
     ) -> Result<Arc<dyn Expr>, TinnedError> {
         let idemp_deriv: Arc<dyn Expr> = if let Some(wfn_param) =
             downcast_from_arc::<WfnParameter>(&density_freq)
@@ -566,7 +561,7 @@ impl LagrangianDao {
             anticommutator(idemp_deriv.clone(), self.density_matrix.clone())?
         };
 
-        subtract_exprs(anticomm_idemp_dm, idemp_deriv)
+        subtract_exprs(anticomm_idemp_dm, idemp_deriv)?.substitute_zero_perturbations(num_tol)
     }
 
     // Returns right-hand side (RHS) of the (linear) response equation.
@@ -620,10 +615,10 @@ impl LagrangianDao {
                     let result = differentiate_expr(&self.tdscf_equation, wfn.derivative())?;
                     let dens_map: HashMap<Arc<dyn Expr>, Arc<dyn Expr>> =
                         std::iter::once((res_param.parameter().clone(), density_part)).collect();
-                    // Clean `TemporumOperator` and unperturbed
-                    // `TemporumOverlap` objects first, then replace the
+                    // Clean `TimeEvolution` and unperturbed
+                    // `BasisTimeEvolution` objects first, then replace the
                     // differentiated density by `density_part`; otherwise a
-                    // differentiated `TemporumOperator` (reflected by its
+                    // differentiated `TimeEvolution` (reflected by its
                     // differentiated argument) will be incorrectly replaced by
                     // an undifferentiated one and cleaned.
                     return result
