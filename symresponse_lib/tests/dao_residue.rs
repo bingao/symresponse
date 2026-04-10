@@ -14,7 +14,7 @@ fn dao_first_order_lr_residue() -> Result<(), TinnedError> {
     let freq_a = Symbol::new("omega_a");
     let pert_a = Perturbation::new("a", freq_a);
     let freq_b = Symbol::new("omega_b");
-    let pert_b: Arc<Perturbation> = Perturbation::new("b", freq_b.clone());
+    let pert_b = Perturbation::new("b", freq_b.clone());
 
     let density_matrix = WfnParameter::builder("D").build()?;
 
@@ -257,11 +257,11 @@ fn dao_2p_tme() -> Result<(), TinnedError> {
     let freq_a = Symbol::new("omega_a");
     let pert_a = Perturbation::new("a", freq_a);
     let freq_b = Symbol::new("omega_b");
-    let pert_b: Arc<Perturbation> = Perturbation::new("b", freq_b.clone());
+    let pert_b = Perturbation::new("b", freq_b.clone());
     let freq_c = Symbol::new("omega_c");
-    let pert_c: Arc<Perturbation> = Perturbation::new("c", freq_c.clone());
+    let pert_c = Perturbation::new("c", freq_c.clone());
     let freq_d = Symbol::new("omega_d");
-    let pert_d: Arc<Perturbation> = Perturbation::new("d", freq_d.clone());
+    let pert_d = Perturbation::new("d", freq_d.clone());
 
     let density_matrix = WfnParameter::builder("D").build()?;
 

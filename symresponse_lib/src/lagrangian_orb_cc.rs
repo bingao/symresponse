@@ -40,6 +40,12 @@ pub struct LagrangianOrbCc {
 }
 
 impl LagrangianOrbCc {
+    // Maximum commutator order
+    #[inline]
+    pub fn max_commutator_order() -> u32 {
+        4
+    }
+
     // Builds orbital-relaxed coupled-cluster Lagrangian
     pub fn new(
         one_elec_matrix: Arc<dyn Expr>,
@@ -149,7 +155,7 @@ impl LagrangianOrbCc {
             Some(false),
         )?;
 
-        let cc_max_fold: u32 = 4;
+        let max_commutator_order: u32 = 4;
 
         // Similarity-transformed single excitation operator, e^{kappa} * E_{pq} * e^{-kappa}
         let kappa_single_exc =
@@ -159,7 +165,7 @@ impl LagrangianOrbCc {
         let st_single_exc =
             ExpAdjointMap::builder(cluster_operator.clone(), kappa_single_exc, Some(true))
                 .left_action(false)
-                .max_fold(cc_max_fold)
+                .max_commutator_order(max_commutator_order)
                 .build()?;
         // Set one-electron density matrix
         let one_density_expr = MatrixAdd::new(vec![
@@ -177,7 +183,7 @@ impl LagrangianOrbCc {
         let st_double_exc =
             ExpAdjointMap::builder(cluster_operator.clone(), kappa_double_exc, Some(true))
                 .left_action(false)
-                .max_fold(cc_max_fold)
+                .max_commutator_order(max_commutator_order)
                 .build()?;
         // Set two-electron density matrix
         let two_density_expr = MatrixAdd::new(vec![
@@ -216,7 +222,7 @@ impl LagrangianOrbCc {
                 Some(true),
             )
             .left_action(false)
-            .max_fold(cc_max_fold)
+            .max_commutator_order(max_commutator_order)
             .build()?,
         ])?;
 
@@ -232,7 +238,7 @@ impl LagrangianOrbCc {
             Some(true),
         )
         .left_action(false)
-        .max_fold(cc_max_fold)
+        .max_commutator_order(max_commutator_order)
         .build()?;
 
         // Response equation for coupled-cluster Lagrangian multiplier,
@@ -266,7 +272,7 @@ impl LagrangianOrbCc {
             Some(true),
         )
         .left_action(false)
-        .max_fold(cc_max_fold)
+        .max_commutator_order(max_commutator_order)
         .build()?;
 
         // Response equation for Brillouin condition multiplier, equation (44),

@@ -28,6 +28,16 @@ impl LagrangianMcscf {
         rotation_operators: Arc<dyn Expr>,
         rotation_parameters: Arc<dyn Expr>,
     ) -> Result<Self, TinnedError> {
+        // We require perturbing operators do not have zeroth-order/unperturbed term
+        for op in perturbing_operators.iter() {
+            if op.has_unperturbed_term() {
+                return Err(expression_error(
+                    "Perturbing operator should not have zeroth-order term",
+                    op,
+                    None,
+                ));
+            }
+        }
         // Check types of orbital- and state-rotation parameters
         if let Some(parameter) = downcast_from_arc::<WfnParameter>(&rotation_parameters) {
             if !parameter.is_perturbing() {

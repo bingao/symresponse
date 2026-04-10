@@ -17,16 +17,26 @@ pub struct LagrangianCc {
     cc_amplitude: Arc<dyn Expr>,
     // Lagrangian multipliers
     cc_multiplier: Arc<dyn Expr>,
-    // Similarity-transformed Hamiltonian, or exponential map. To compute
-    // Equation (28), J. Phys. Chem. A 2025, 129, 3709-3721.
-    cc_hamiltonian: Arc<dyn Expr>,
+    // Time-dependent cluster operator
+    cluster_operator: Arc<dyn Expr>,
+    // Lambda operator or de-excitation operator
+    de_excitation_operator: Arc<dyn Expr>,
+    // Similarity-transformed Hamiltonian, or coupled-cluster quasi-energy. To
+    // compute Equation (28), J. Phys. Chem. A 2025, 129, 3709-3721.
+    cc_quasi_energy: Arc<dyn Expr>,
     // To compute the right-hand side of the response equation of Lagrangian
     // multipliers, ses Equation (29), J. Phys. Chem. A 2025, 129, 3709-3721.
-    rhs_multiplier: Arc<dyn Expr>,
+    cc_multiplier_equation: Arc<dyn Expr>,
     lagrangian_expr: Arc<dyn Expr>,
 }
 
 impl LagrangianCc {
+    // Maximum commutator order
+    #[inline]
+    pub fn max_commutator_order() -> u32 {
+        4
+    }
+
     // Builds time-averaged quasi-energy Lagrangian for coupled-cluster models
     // without orbital relaxation.
     pub fn new(
@@ -36,6 +46,16 @@ impl LagrangianCc {
         cc_excitation_operator: Arc<dyn Expr>,
         cc_multiplier: Arc<dyn Expr>,
     ) -> Result<Self, TinnedError> {
+        // We require perturbing operators do not have zeroth-order/unperturbed term
+        for op in perturbing_operators.iter() {
+            if op.has_unperturbed_term() {
+                return Err(expression_error(
+                    "Perturbing operator should not have zeroth-order term",
+                    op,
+                    None,
+                ));
+            }
+        }
         // Check types of coupled-cluster amplitudes and Lagrangian multipliers
         if !is_expr_type::<WfnParameter>(&cc_amplitude) {
             return Err(expression_error(
@@ -70,7 +90,7 @@ impl LagrangianCc {
             false,
             Some(false),
         )?;
-        let cc_lambda_oper = DotProduct::new(
+        let de_excitation_operator = DotProduct::new(
             cc_excitation_operator.clone(),
             true,
             cc_multiplier.clone(),
@@ -80,29 +100,30 @@ impl LagrangianCc {
 
         // Unperturbed Hamiltonian and perturbation operators, see Equations
         // (2) and (5), J. Phys. Chem. A 2025, 129, 3709-3721.
-        let len_hamiltonian_terms = perturbing_operators.len() + 1;
+        let num_elec_operators = perturbing_operators.len() + 1;
 
         // Terms to construct Equation (28), J. Phys. Chem. A 2025, 129, 3709-3721.
-        let mut cc_hamiltonian_terms = Vec::with_capacity(len_hamiltonian_terms);
+        let mut quasi_energy_terms = Vec::with_capacity(num_elec_operators);
         // Terms to construct Equation (29), J. Phys. Chem. A 2025, 129, 3709-3721.
-        let mut multiplier_terms = Vec::with_capacity(2 * len_hamiltonian_terms);
+        let mut multiplier_terms = Vec::with_capacity(2 * num_elec_operators);
         // Terms to construct coupled-cluster quasi-energy Lagrangian, Equation
         // (20), J. Phys. Chem. A 2025, 129, 3709-3721.
-        let mut lag_terms = Vec::with_capacity(multiplier_terms.capacity() + 1);
+        let mut lagrangian_terms = Vec::with_capacity(multiplier_terms.capacity() + 1);
 
-        let cc_max_fold: u32 = 4;
+        let max_commutator_order = LagrangianCc::max_commutator_order();
 
-        let mut hamiltonian_term = ExpAdjointMap::builder(
+        let mut quasi_energy_term = ExpAdjointMap::builder(
             cluster_operator.clone(),
             unperturbed_hamiltonian.clone(),
             Some(true),
         )
         .left_action(false)
-        .max_fold(cc_max_fold)
+        .max_commutator_order(max_commutator_order)
         .build()?;
-        cc_hamiltonian_terms.push(hamiltonian_term.clone());
-        lag_terms.push(hamiltonian_term.clone());
-        lag_terms.push(MatrixMul::new(vec![cc_lambda_oper.clone(), hamiltonian_term])?);
+        quasi_energy_terms.push(quasi_energy_term.clone());
+        lagrangian_terms.push(quasi_energy_term.clone());
+        lagrangian_terms
+            .push(MatrixMul::new(vec![de_excitation_operator.clone(), quasi_energy_term])?);
 
         let mut multiplier_term = ExpAdjointMap::builder(
             cluster_operator.clone(),
@@ -115,20 +136,22 @@ impl LagrangianCc {
             Some(true),
         )
         .left_action(false)
-        .max_fold(cc_max_fold)
+        .max_commutator_order(max_commutator_order)
         .build()?;
         multiplier_terms.push(multiplier_term.clone());
-        multiplier_terms.push(MatrixMul::new(vec![cc_lambda_oper.clone(), multiplier_term])?);
+        multiplier_terms
+            .push(MatrixMul::new(vec![de_excitation_operator.clone(), multiplier_term])?);
 
         for oper in perturbing_operators {
-            hamiltonian_term =
+            quasi_energy_term =
                 ExpAdjointMap::builder(cluster_operator.clone(), oper.clone(), Some(true))
                     .left_action(false)
-                    .max_fold(cc_max_fold)
+                    .max_commutator_order(max_commutator_order)
                     .build()?;
-            cc_hamiltonian_terms.push(hamiltonian_term.clone());
-            lag_terms.push(hamiltonian_term.clone());
-            lag_terms.push(MatrixMul::new(vec![cc_lambda_oper.clone(), hamiltonian_term])?);
+            quasi_energy_terms.push(quasi_energy_term.clone());
+            lagrangian_terms.push(quasi_energy_term.clone());
+            lagrangian_terms
+                .push(MatrixMul::new(vec![de_excitation_operator.clone(), quasi_energy_term])?);
 
             multiplier_term = ExpAdjointMap::builder(
                 cluster_operator.clone(),
@@ -141,14 +164,15 @@ impl LagrangianCc {
                 Some(true),
             )
             .left_action(false)
-            .max_fold(cc_max_fold)
+            .max_commutator_order(max_commutator_order)
             .build()?;
             multiplier_terms.push(multiplier_term.clone());
-            multiplier_terms.push(MatrixMul::new(vec![cc_lambda_oper.clone(), multiplier_term])?);
+            multiplier_terms
+                .push(MatrixMul::new(vec![de_excitation_operator.clone(), multiplier_term])?);
         }
 
-        let cc_hamiltonian = MatrixAdd::new(cc_hamiltonian_terms)?;
-        let rhs_multiplier = MatrixAdd::new(multiplier_terms)?;
+        let cc_quasi_energy = MatrixAdd::new(quasi_energy_terms)?;
+        let cc_multiplier_equation = MatrixAdd::new(multiplier_terms)?;
 
         // Perform -i*d/dt (backward) on coupled-cluster amplitudes
         let dt_cc_amplitude =
@@ -157,17 +181,19 @@ impl LagrangianCc {
         // Here, we should have an inner product (`DotProduct`) between
         // Lagrangian multipliers and the time-differentiated coupled-cluster
         // amplitudes instead of `MatrixMul`. But it will be problematic for
-        // the sum of `lag_terms` unless we make both `ExpAdjointMap` and
+        // the sum of `lagrangian_terms` unless we make both `ExpAdjointMap` and
         // `AdjointMap` be scalar (a bit weird too) or wrapped in another
         // scalar `Expr` like `ExpectationValue` (unnecessary layer for users).
-        lag_terms.push(MatrixMul::new(vec![cc_multiplier.clone(), dt_cc_amplitude])?);
-        let lagrangian_expr = MatrixAdd::new(lag_terms)?;
+        lagrangian_terms.push(MatrixMul::new(vec![cc_multiplier.clone(), dt_cc_amplitude])?);
+        let lagrangian_expr = MatrixAdd::new(lagrangian_terms)?;
 
         Ok(Self {
             cc_amplitude,
             cc_multiplier,
-            cc_hamiltonian,
-            rhs_multiplier,
+            cluster_operator,
+            de_excitation_operator,
+            cc_quasi_energy,
+            cc_multiplier_equation,
             lagrangian_expr,
         })
     }
@@ -210,11 +236,11 @@ impl LagrangianCc {
         let general_rhs: Arc<dyn Expr> = if let Some(cc_amplitude) =
             downcast_from_arc::<WfnParameter>(&rsp_parameter)
         {
-            let result = differentiate_expr(&self.cc_hamiltonian, cc_amplitude.derivative())?;
+            let result = differentiate_expr(&self.cc_quasi_energy, cc_amplitude.derivative())?;
 
             result.remove(&rhs_set)?
         } else if let Some(multiplier) = downcast_from_arc::<LagMultiplier>(&rsp_parameter) {
-            let result = differentiate_expr(&self.rhs_multiplier, multiplier.derivative())?;
+            let result = differentiate_expr(&self.cc_multiplier_equation, multiplier.derivative())?;
 
             result.remove(&rhs_set)?
         } else if let Some(res_param) = downcast_from_arc::<ResidueParameter>(&rsp_parameter) {
@@ -232,7 +258,7 @@ impl LagrangianCc {
                     ));
                 }
 
-                let result = differentiate_expr(&self.cc_hamiltonian, cc_amplitude.derivative())?;
+                let result = differentiate_expr(&self.cc_quasi_energy, cc_amplitude.derivative())?;
 
                 (result.remove(&rhs_set)?, self.cc_amplitude.clone())
             } else if let Some(multiplier) =
@@ -246,7 +272,8 @@ impl LagrangianCc {
                     ));
                 }
 
-                let result = differentiate_expr(&self.rhs_multiplier, multiplier.derivative())?;
+                let result =
+                    differentiate_expr(&self.cc_multiplier_equation, multiplier.derivative())?;
 
                 (result.remove(&rhs_set)?, self.cc_multiplier.clone())
             } else {
@@ -277,6 +304,16 @@ impl LagrangianCc {
         };
 
         general_rhs.substitute_zero_perturbations(num_tol)
+    }
+
+    #[inline]
+    pub fn cluster_operator(&self) -> &Arc<dyn Expr> {
+        &self.cluster_operator
+    }
+
+    #[inline]
+    pub fn de_excitation_operator(&self) -> &Arc<dyn Expr> {
+        &self.de_excitation_operator
     }
 }
 
