@@ -3,7 +3,7 @@ use std::sync::Arc;
 
 use tinned::{
     AdjointMap, AdjointMode, DotProduct, ExcitationOperator, ExpAdjointMap, Expr, LagMultiplier,
-    MatrixAdd, MatrixMul, NumberTolerance, Perturbation, ResidueParameter, TimeEvolution,
+    MatrixAdd, MatrixMul, Number, NumberTolerance, Perturbation, ResidueParameter, TimeEvolution,
     TinnedError, WfnParameter, differentiate_expr, downcast_from_arc, expression_error,
     is_expr_type,
 };
@@ -303,7 +303,10 @@ impl LagrangianCc {
             ));
         };
 
-        general_rhs.substitute_zero_perturbations(num_tol)
+        MatrixMul::new(vec![
+            Number::minus_one(),
+            general_rhs.substitute_zero_perturbations(num_tol)?,
+        ])
     }
 
     #[inline]
