@@ -287,10 +287,10 @@ impl LagrangianOrbCc {
                     Some(true),
                     Some(AdjointMode::Symmetric),
                 )?,
-                true,
+                false,
                 brillouin_multiplier.clone(),
                 false,
-                Some(true),
+                Some(false),
             )?,
         ])?;
 
@@ -300,7 +300,7 @@ impl LagrangianOrbCc {
             Trace::new(MatrixMul::new(vec![two_elec_density.clone(), two_elec_matrix.clone()])?)?,
             DotProduct::new(
                 brillouin_equation.clone(),
-                true,
+                false,
                 brillouin_multiplier.clone(),
                 false,
                 Some(true),
@@ -437,13 +437,18 @@ impl LagrangianOrbCc {
     }
 
     #[inline]
-    pub fn one_electron_density(&self) -> &Arc<dyn Expr> {
+    pub fn one_elec_density(&self) -> &Arc<dyn Expr> {
         &self.one_elec_density
     }
 
     #[inline]
-    pub fn two_electron_density(&self) -> &Arc<dyn Expr> {
+    pub fn two_elec_density(&self) -> &Arc<dyn Expr> {
         &self.two_elec_density
+    }
+
+    #[inline]
+    pub fn brillouin_equation(&self) -> &Arc<dyn Expr> {
+        &self.brillouin_equation
     }
 }
 
