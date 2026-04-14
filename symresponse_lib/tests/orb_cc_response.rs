@@ -1,10 +1,10 @@
-use std::collections::{BTreeMap, HashMap};
+use std::collections::BTreeMap;
 use std::sync::Arc;
 use symresponse::{Lagrangian, LagrangianOrbCc};
 use tinned::{
-    Add, DotProduct, ExcitationOperator, LagMultiplier, MatrixMul, Mul, Number, OneElecMatrix,
-    PertMultichain, Perturbation, Symbol, TinnedError, Trace, TwoElecMatrix, WfnParameter,
-    differentiate_expr,
+    Add, DotProduct, ExcitationOperator, LagMultiplier, MatrixMul, OneElecMatrix, PertMultichain,
+    Perturbation, SubExpr, Symbol, TinnedError, Trace, TwoElecMatrix, WfnParameter,
+    differentiate_expr, downcast_from_arc, is_expr_type,
 };
 
 #[test]
@@ -66,7 +66,8 @@ fn orb_cc_linear_response() -> Result<(), TinnedError> {
     //    },
     //}
 
-    // Get one- and two-electron density matrices
+    // Get one- and two-electron density matrices. Note that they are not
+    // evaluated at zero perturbation strength
     let one_elec_density = lag.one_elec_density().clone();
     let two_elec_density = lag.two_elec_density().clone();
 
@@ -140,34 +141,88 @@ fn orb_cc_linear_response() -> Result<(), TinnedError> {
 
     assert_eq!(&linear_response, &expected_linear_response);
 
-    //    // Find all (un)perturbed one- and two-electron density matrices
-    //    let one_electron_densities = linear_response.find_superchains(one_elec_density);
-    //    let two_electron_densities = linear_response.find_superchains(two_elec_density);
-    //
-    //    for (order, densities) in &one_electron_densities {
-    //        println!("\norder = {}", order);
-    //        for density in densities {
-    //            match serde_json::to_string(density) {
-    //                Ok(json) => println!("One-electron density matrix = {}\n", json),
-    //                Err(err) => {
-    //                    eprintln!("Serialization of one-electron density matrix failed: {err}");
-    //                },
-    //            }
-    //        }
-    //    }
-    //
-    //    for (order, densities) in &two_electron_densities {
-    //        println!("\norder = {}", order);
-    //        for density in densities {
-    //            match serde_json::to_string(density) {
-    //                Ok(json) => println!("Two-electron density matrix = {}\n", json),
-    //                Err(err) => {
-    //                    eprintln!("Serialization of two-electron density matrix failed: {err}");
-    //                },
-    //            }
-    //        }
-    //    }
-    //
+    // Find all (un)perturbed one-electron density matrices
+    let one_elec_densities = linear_response.find_superchains(&one_elec_density);
+
+    assert_eq!(one_elec_densities.len(), 3);
+
+    // Check all (un)perturbed one-electron density matrices
+    for (order, densities) in &one_elec_densities {
+        assert!(*order <= 2);
+        match *order {
+            0 => {
+                assert_eq!(densities.len(), 1);
+                assert_eq!(
+                    &one_elec_density.substitute_zero_perturbations(None)?,
+                    densities.iter().next().unwrap()
+                );
+            },
+            _ => {
+                for density in densities {
+                    assert!(is_expr_type::<SubExpr>(density));
+                    let perturbations = downcast_from_arc::<SubExpr>(density).unwrap().derivative();
+                    let one_density_deriv = differentiate_expr(&one_elec_density, perturbations)?;
+                    assert_eq!(
+                        &one_density_deriv
+                            .eliminate(&orb_rot_parameter, &exten_perturbations, 2)?
+                            .eliminate(&cc_amplitude, &exten_perturbations, 2)?
+                            .eliminate(&brillouin_multiplier, &exten_perturbations, 1)?
+                            .eliminate(&cc_multiplier, &exten_perturbations, 1)?
+                            .substitute_zero_perturbations(None)?,
+                        density
+                    );
+                    //match serde_json::to_string(density) {
+                    //    Ok(json) => println!("One-electron density matrix = {}\n", json),
+                    //    Err(err) => {
+                    //        eprintln!("Serialization of one-electron density matrix failed: {err}");
+                    //    },
+                    //}
+                }
+            },
+        }
+    }
+
+    // Find all (un)perturbed two-electron density matrices
+    let two_elec_densities = linear_response.find_superchains(&two_elec_density);
+
+    assert_eq!(two_elec_densities.len(), 3);
+
+    // Check all (un)perturbed two-electron density matrices
+    for (order, densities) in &two_elec_densities {
+        assert!(*order <= 2);
+        match *order {
+            0 => {
+                assert_eq!(densities.len(), 1);
+                assert_eq!(
+                    &two_elec_density.substitute_zero_perturbations(None)?,
+                    densities.iter().next().unwrap()
+                );
+            },
+            _ => {
+                for density in densities {
+                    assert!(is_expr_type::<SubExpr>(density));
+                    let perturbations = downcast_from_arc::<SubExpr>(density).unwrap().derivative();
+                    let two_density_deriv = differentiate_expr(&two_elec_density, perturbations)?;
+                    assert_eq!(
+                        &two_density_deriv
+                            .eliminate(&orb_rot_parameter, &exten_perturbations, 2)?
+                            .eliminate(&cc_amplitude, &exten_perturbations, 2)?
+                            .eliminate(&brillouin_multiplier, &exten_perturbations, 1)?
+                            .eliminate(&cc_multiplier, &exten_perturbations, 1)?
+                            .substitute_zero_perturbations(None)?,
+                        density
+                    );
+                    //match serde_json::to_string(density) {
+                    //    Ok(json) => println!("Two-electron density matrix = {}\n", json),
+                    //    Err(err) => {
+                    //        eprintln!("Serialization of two-electron density matrix failed: {err}");
+                    //    },
+                    //}
+                }
+            },
+        }
+    }
+
     //    // Find all perturbed orbital rotation parameters
     //    let orb_rot_parameters = linear_response.find_superchains(&orb_rot_parameter);
     //
