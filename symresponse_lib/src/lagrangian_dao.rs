@@ -158,7 +158,7 @@ impl LagrangianDao {
 
         // The first term in Equation (98), J. Chem. Phys. 129, 214108 (2008)
         let density_a = density_matrix.differentiate(&perturbation_a)?;
-        let dens_a_set: HashSet<Arc<dyn Expr>> = [density_a].into_iter().collect();
+        let dens_a_set = HashSet::from([density_a]);
         let generalized_energy_a = SubExpr::builder(
             "generalized-energy-a",
             generalized_energy.differentiate(&perturbation_a)?.remove(&dens_a_set)?,
@@ -488,7 +488,7 @@ impl LagrangianDao {
     }
 
     // Returns the particular solution of a perturbed density matrix
-    // `density_freq`, which can be the type of `WfnParameter` or
+    // `freq_pert_density`, which can be the type of `WfnParameter` or
     // `ResidueParameter`.
     //
     // (1) For the type `WfnParameter`, we simply follow, for example,
@@ -508,52 +508,62 @@ impl LagrangianDao {
     //     ones, and replace retained (un)differentiated `parameter`'s with
     //     corresponding residue density matrices.
     //
-    // Note that `density_freq` should be a differentiated
+    // Note that `freq_pert_density` should be a differentiated
     // `self.density_matrix`, otherwise the result will be incorrect.
+    //
+    //FIXME: add unit test for this function
     #[inline]
     pub fn particular_density_solution(
         &self,
-        density_freq: Arc<dyn Expr>,
+        freq_pert_density: &Arc<dyn Expr>,
         num_tol: Option<NumberTolerance>,
     ) -> Result<Arc<dyn Expr>, TinnedError> {
-        let idemp_deriv: Arc<dyn Expr> = if let Some(wfn_param) =
-            downcast_from_arc::<WfnParameter>(&density_freq)
-        {
-            let set: HashSet<Arc<dyn Expr>> = [density_freq.clone()].into_iter().collect();
-            differentiate_expr(&self.idempotency, wfn_param.derivative())?.remove(&set)?
-        } else if let Some(res_param) = downcast_from_arc::<ResidueParameter>(&density_freq) {
-            if let Some(wfn) = downcast_from_arc::<WfnParameter>(res_param.parameter()) {
-                // `ResidueParameter` ensures that `res_param.perturbations()`
-                // is a subchain of `wfn.derivative()`, so we check if the
-                // former is also a superchain of the latter.
-                if wfn.derivative().is_superchain_vec(res_param.perturbations()) {
-                    return Ok(ZeroOperator::new());
-                }
+        let (idemp_deriv, diff_parameter, residue_info): (
+            Arc<dyn Expr>,
+            &Arc<dyn Expr>,
+            Option<(&ResidueParameter, Arc<dyn Expr>)>,
+        ) = if let Some(wfn_param) = downcast_from_arc::<WfnParameter>(freq_pert_density) {
+            (
+                differentiate_expr(&self.idempotency, wfn_param.derivative())?,
+                freq_pert_density,
+                None,
+            )
+        } else if let Some(res_param) = downcast_from_arc::<ResidueParameter>(freq_pert_density) {
+            let wfn =
+                downcast_from_arc::<WfnParameter>(res_param.parameter()).ok_or_else(|| {
+                    expression_error(
+                        "Invalid parameter type of residue density matrix",
+                        freq_pert_density,
+                        None,
+                    )
+                })?;
 
-                let set: HashSet<Arc<dyn Expr>> = [wfn.clone_expr()].into_iter().collect();
-                let result =
-                    differentiate_expr(&self.idempotency, wfn.derivative())?.remove(&set)?;
-
-                let residue_info: HashMap<Arc<dyn Expr>, (bool, Vec<Arc<Perturbation>>)> =
-                    std::iter::once((
-                        res_param.excited_state().clone(),
-                        (res_param.positive_frequency(), res_param.perturbations().to_vec()),
-                    ))
-                    .collect();
-                let (residue_set, residue_map) = self
-                    .build_residue_parameters(&vec![self.density_matrix.clone()], &residue_info)?;
-
-                result.retain(&residue_set, true)?.replace(&residue_map, true)?
-            } else {
-                return Err(expression_error(
-                    "Invalid parameter type of residue density matrix",
-                    &density_freq,
-                    None,
-                ));
+            // `ResidueParameter` ensures that `res_param.perturbations()`
+            // is a subchain of `wfn.derivative()`, so we check if the
+            // former is also a superchain of the latter.
+            if wfn.derivative().is_superchain_vec(res_param.perturbations()) {
+                return Ok(ZeroOperator::new());
             }
+
+            (
+                differentiate_expr(&self.idempotency, wfn.derivative())?,
+                res_param.parameter(),
+                Some((res_param, self.density_matrix.clone())),
+            )
         } else {
-            return Err(expression_error("Invalid type of density matrix", &density_freq, None));
+            return Err(expression_error(
+                "Invalid type of density matrix",
+                freq_pert_density,
+                None,
+            ));
         };
+
+        let idemp_deriv = self.finalize_response_rhs(
+            &idemp_deriv,
+            diff_parameter,
+            residue_info,
+            num_tol.clone(),
+        )?;
 
         let anticomm_idemp_dm = if let Some(overlap) = &self.overlap_matrix {
             s_anticommutator(idemp_deriv.clone(), self.density_matrix.clone(), overlap.clone())?
@@ -561,13 +571,13 @@ impl LagrangianDao {
             anticommutator(idemp_deriv.clone(), self.density_matrix.clone())?
         };
 
-        subtract_exprs(anticomm_idemp_dm, idemp_deriv)?.substitute_zero_perturbations(num_tol)
+        subtract_exprs(anticomm_idemp_dm, idemp_deriv)
     }
 
     // Returns right-hand side (RHS) of the (linear) response equation.
-    // `density_freq`, which can be the type of `WfnParameter` or
-    // `ResidueParameter`. `density_part` is the particular solution from the
-    // method `particular_density_solution()`.
+    // `freq_pert_density`, which can be the type of `WfnParameter` or
+    // `ResidueParameter`. `particular_solution` is the particular solution
+    // from the method `particular_density_solution()`.
     //
     // (1) For the type `WfnParameter`, we simply follow, for example, Equation
     //     (19), J. Phys. Chem. A 2025, 129, 3709-3721.
@@ -586,75 +596,81 @@ impl LagrangianDao {
     //     have a higher-order residue density matrix. We need to remove all
     //     terms not containing `parameter` or its higher-order differentiated
     //     ones, and replace retained (un)differentiated `parameter`'s with
-    //     corresponding residue density matrices. Note that `density_part`
-    //     should not be removed or replaced, and it is actually particular
-    //     solution for the higher-order residue density matrix.
+    //     corresponding residue density matrices. Note that
+    //     `particular_solution` should not be removed or replaced, and it is
+    //     actually particular solution for the higher-order residue density
+    //     matrix.
     //
-    // Note that `density_freq` should be a differentiated
+    // Note that `freq_pert_density` should be a differentiated
     // `self.density_matrix`, otherwise the result will be incorrect.
     #[inline]
     pub fn linear_response_rhs(
         &self,
-        density_freq: Arc<dyn Expr>,
-        density_part: Arc<dyn Expr>,
+        freq_pert_density: &Arc<dyn Expr>,
+        particular_solution: &Arc<dyn Expr>,
         num_tol: Option<NumberTolerance>,
     ) -> Result<Arc<dyn Expr>, TinnedError> {
-        let tdscf_deriv: Arc<dyn Expr> = if let Some(wfn_param) =
-            downcast_from_arc::<WfnParameter>(&density_freq)
+        let (tdscf_deriv, replacement_target) = if let Some(wfn_param) =
+            downcast_from_arc::<WfnParameter>(freq_pert_density)
         {
-            differentiate_expr(&self.tdscf_equation, wfn_param.derivative())?
-        } else if let Some(res_param) = downcast_from_arc::<ResidueParameter>(&density_freq) {
-            if let Some(wfn) = downcast_from_arc::<WfnParameter>(res_param.parameter()) {
-                // `ResidueParameter` ensures that `res_param.perturbations()`
-                // is a subchain of `wfn.derivative()`, so we check if the
-                // former is also a superchain of the latter. Since we do not
-                // replace the sum of frequencies of perturbations by the
-                // excitation energy, nothing is different for the right-hand
-                // side of the residue.
-                if wfn.derivative().is_superchain_vec(res_param.perturbations()) {
-                    let result = differentiate_expr(&self.tdscf_equation, wfn.derivative())?;
-                    let dens_map: HashMap<Arc<dyn Expr>, Arc<dyn Expr>> =
-                        std::iter::once((res_param.parameter().clone(), density_part)).collect();
-                    // Clean `TimeEvolution` and unperturbed
-                    // `BasisTimeEvolution` objects first, then replace the
-                    // differentiated density by `density_part`; otherwise a
-                    // differentiated `TimeEvolution` (reflected by its
-                    // differentiated argument) will be incorrectly replaced by
-                    // an undifferentiated one and cleaned.
-                    return result
-                        .substitute_zero_perturbations(num_tol)?
-                        .replace(&dens_map, false);
-                } else {
-                    let result = differentiate_expr(&self.tdscf_equation, wfn.derivative())?;
+            (
+                differentiate_expr(&self.tdscf_equation, wfn_param.derivative())?
+                    .substitute_zero_perturbations(num_tol)?,
+                freq_pert_density.clone(),
+            )
+        } else if let Some(res_param) = downcast_from_arc::<ResidueParameter>(freq_pert_density) {
+            let wfn =
+                downcast_from_arc::<WfnParameter>(res_param.parameter()).ok_or_else(|| {
+                    expression_error(
+                        "Invalid parameter type of residue density matrix",
+                        freq_pert_density,
+                        None,
+                    )
+                })?;
 
-                    let residue_info: HashMap<Arc<dyn Expr>, (bool, Vec<Arc<Perturbation>>)> =
-                        std::iter::once((
-                            res_param.excited_state().clone(),
-                            (res_param.positive_frequency(), res_param.perturbations().to_vec()),
-                        ))
-                        .collect();
-                    let (residue_set, residue_map) = self.build_residue_parameters(
-                        &vec![self.density_matrix.clone()],
-                        &residue_info,
-                    )?;
+            // Clean `TimeEvolution` and unperturbed
+            // `BasisTimeEvolution` objects first, then replace the
+            // differentiated density by `particular_solution`; otherwise a
+            // differentiated `TimeEvolution` (reflected by its
+            // differentiated argument) will be incorrectly replaced by
+            // an undifferentiated one and cleaned.
+            let result = differentiate_expr(&self.tdscf_equation, wfn.derivative())?
+                .substitute_zero_perturbations(num_tol)?;
 
-                    result.retain(&residue_set, true)?.replace(&residue_map, true)?
-                }
+            // `ResidueParameter` ensures that `res_param.perturbations()`
+            // is a subchain of `wfn.derivative()`, so we check if the
+            // former is also a superchain of the latter. Since we do not
+            // replace the sum of frequencies of perturbations by the
+            // excitation energy, nothing is different for the right-hand
+            // side of the residue.
+            if wfn.derivative().is_superchain_vec(res_param.perturbations()) {
+                (result, res_param.parameter().clone())
             } else {
-                return Err(expression_error(
-                    "Invalid parameter type of residue density matrix",
-                    &density_freq,
-                    None,
-                ));
+                let residue_relations = HashMap::from([(
+                    res_param.excited_state().clone(),
+                    (res_param.positive_frequency(), res_param.perturbations().to_vec()),
+                )]);
+
+                let (diff_params, residue_map) = self
+                    .build_residue_parameters(&[self.density_matrix.clone()], &residue_relations)?;
+
+                (
+                    result.retain(&diff_params, true)?.replace(&residue_map, true)?,
+                    freq_pert_density.clone(),
+                )
             }
         } else {
-            return Err(expression_error("Invalid type of density matrix", &density_freq, None));
+            return Err(expression_error(
+                "Invalid type of density matrix",
+                freq_pert_density,
+                None,
+            ));
         };
 
-        let dens_map: HashMap<Arc<dyn Expr>, Arc<dyn Expr>> =
-            std::iter::once((density_freq, density_part)).collect();
+        let density_particular_map =
+            HashMap::from([(replacement_target, particular_solution.clone())]);
 
-        tdscf_deriv.substitute_zero_perturbations(num_tol)?.replace(&dens_map, false)
+        tdscf_deriv.replace(&density_particular_map, false)
     }
 
     #[inline]
@@ -753,7 +769,7 @@ impl LagrangianInternal for LagrangianDao {
 
         let fock_deriv =
             self.do_differentiation(&self.fock_matrix, exten_perturbations, inten_perturbations)?;
-        let mut max_fs_derivs: HashSet<Arc<dyn Expr>> = [fock_deriv.clone()].into_iter().collect();
+        let mut max_fs_derivs = HashSet::from([fock_deriv.clone()]);
 
         let dens_deriv = self.density_matrix.differentiate(&self.perturbation_a)?;
         let mut simplified_terms = vec![Trace::new(MatrixMul::new(vec![fock_deriv, dens_deriv])?)?];
@@ -779,11 +795,11 @@ impl LagrangianInternal for LagrangianDao {
     }
 
     #[inline]
-    fn validate_residue_info(
+    fn validate_residue_relations(
         &self,
         exten_perturbations: &[Arc<Perturbation>],
         inten_perturbations: &[Arc<Perturbation>],
-        residue_info: &HashMap<Arc<dyn Expr>, (bool, Vec<Arc<Perturbation>>)>,
+        residue_relations: &HashMap<Arc<dyn Expr>, (bool, Vec<Arc<Perturbation>>)>,
     ) -> bool {
         let mut all_perturbations: Vec<Arc<Perturbation>> = exten_perturbations.to_vec();
         all_perturbations.extend(inten_perturbations.to_vec());
@@ -791,7 +807,7 @@ impl LagrangianInternal for LagrangianDao {
 
         let all_pert_chain = PertMultichain::from_slice(&all_perturbations);
 
-        for (_excited_state, (_positive_frequency, perturbations)) in residue_info {
+        for (_excited_state, (_positive_frequency, perturbations)) in residue_relations {
             if !all_pert_chain.is_subchain_vec(perturbations) {
                 return false;
             }

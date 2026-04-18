@@ -81,28 +81,29 @@ pub(crate) mod sealed {
             Ok(lagrangian.clone())
         }
 
-        // For each element of `residue_info`, its perturbations
+        // For each element of `residue_relations`, its perturbations
         // (`Vec<Arc<Perturbation>>`) must be a proper subchain of the union of
         // extensive and intensive perturbations.
         //
-        // Should perturbations (`Vec<Arc<Perturbation>>`) of `residue_info` be
-        // unique? I am not sure, so I skip such a check.
+        // I am not sure if perturbations (`Vec<Arc<Perturbation>>`) of
+        // `residue_relations` should be unique, so I skip such a check.
         //
-        // Should all perturbations from values of `residue_info` must be a proper
-        // subchain of the union of extensive and intensive perturbations? I do not
-        // find a proof for now, so I skip this check as well.
+        // I am not sure if all perturbations from values of
+        // `residue_relations` must be a proper subchain of the union of
+        // extensive and intensive perturbations. I do not find a proof for
+        // now, so I skip this check as well.
         #[inline]
-        fn validate_residue_info(
+        fn validate_residue_relations(
             &self,
             exten_perturbations: &[Arc<Perturbation>],
             inten_perturbations: &[Arc<Perturbation>],
-            residue_info: &HashMap<Arc<dyn Expr>, (bool, Vec<Arc<Perturbation>>)>,
+            residue_relations: &HashMap<Arc<dyn Expr>, (bool, Vec<Arc<Perturbation>>)>,
         ) -> bool {
             let mut all_perturbations: Vec<Arc<Perturbation>> = exten_perturbations.to_vec();
             all_perturbations.extend(inten_perturbations.to_vec());
             let all_pert_chain = PertMultichain::from_slice(&all_perturbations);
 
-            for (_excited_state, (_positive_frequency, perturbations)) in residue_info {
+            for (_excited_state, (_positive_frequency, perturbations)) in residue_relations {
                 if !all_pert_chain.is_subchain_vec(perturbations) {
                     return false;
                 }
@@ -112,10 +113,10 @@ pub(crate) mod sealed {
         }
 
         // For each parameter, compute its differentiated one with respect to
-        // perturbations given in `residue_info`. A set `residue_set` returns
-        // with all these differentiated parameters, which can be used to
-        // retain differentiated parameters and their higher-order ones in an
-        // expression.
+        // perturbations given in `residue_relations`. A set `diff_params`
+        // returns with all these differentiated parameters, which can be used
+        // to retain differentiated parameters and their higher-order ones in
+        // an expression.
         //
         // For each differentiated parameter, the corresponding residue
         // parameter is also computed. A map `residue_map` returns, which
@@ -125,16 +126,16 @@ pub(crate) mod sealed {
         fn build_residue_parameters(
             &self,
             parameters: &[Arc<dyn Expr>],
-            residue_info: &HashMap<Arc<dyn Expr>, (bool, Vec<Arc<Perturbation>>)>,
+            residue_relations: &HashMap<Arc<dyn Expr>, (bool, Vec<Arc<Perturbation>>)>,
         ) -> Result<(HashSet<Arc<dyn Expr>>, HashMap<Arc<dyn Expr>, Arc<dyn Expr>>), TinnedError>
         {
-            let mut residue_set: HashSet<Arc<dyn Expr>> =
-                HashSet::with_capacity(parameters.len() * residue_info.len());
+            let mut diff_params: HashSet<Arc<dyn Expr>> =
+                HashSet::with_capacity(parameters.len() * residue_relations.len());
             let mut residue_map: HashMap<Arc<dyn Expr>, Arc<dyn Expr>> =
-                HashMap::with_capacity(residue_set.capacity());
+                HashMap::with_capacity(diff_params.capacity());
 
             for param in parameters {
-                for (excited_state, (positive_frequency, perturbations)) in residue_info {
+                for (excited_state, (positive_frequency, perturbations)) in residue_relations {
                     let param_deriv = differentiate_expr(param, perturbations)?;
                     let residue_param = ResidueParameter::builder(
                         perturbations.clone(),
@@ -144,12 +145,12 @@ pub(crate) mod sealed {
                     .positive_frequency(*positive_frequency)
                     .build()?;
 
-                    residue_set.insert(param_deriv.clone());
+                    diff_params.insert(param_deriv.clone());
                     residue_map.insert(param_deriv, residue_param);
                 }
             }
 
-            Ok((residue_set, residue_map))
+            Ok((diff_params, residue_map))
         }
 
         // Eliminate differentiated wave function parameter with respect to
@@ -175,5 +176,37 @@ pub(crate) mod sealed {
             exten_perturbations: &[Arc<Perturbation>],
             min_multiplier_order: u32,
         ) -> Result<Arc<dyn Expr>, TinnedError>;
+
+        // Finalizes the right-hand side of (linear) response equation
+        fn finalize_response_rhs(
+            &self,
+            general_rhs: &Arc<dyn Expr>,
+            diff_parameter: &Arc<dyn Expr>,
+            residue_info: Option<(&ResidueParameter, Arc<dyn Expr>)>,
+            num_tol: Option<NumberTolerance>,
+        ) -> Result<Arc<dyn Expr>, TinnedError> {
+            let params_to_remove = HashSet::from([diff_parameter.clone()]);
+
+            let result =
+                general_rhs.substitute_zero_perturbations(num_tol)?.remove(&params_to_remove)?;
+
+            let Some((residue_parameter, unperturbed_parameter)) = residue_info else {
+                return Ok(result);
+            };
+
+            let residue_relations: HashMap<Arc<dyn Expr>, (bool, Vec<Arc<Perturbation>>)> =
+                HashMap::from([(
+                    residue_parameter.excited_state().clone(),
+                    (
+                        residue_parameter.positive_frequency(),
+                        residue_parameter.perturbations().to_vec(),
+                    ),
+                )]);
+
+            let (diff_params, residue_map) =
+                self.build_residue_parameters(&[unperturbed_parameter], &residue_relations)?;
+
+            result.retain(&diff_params, true)?.replace(&residue_map, true)
+        }
     }
 }

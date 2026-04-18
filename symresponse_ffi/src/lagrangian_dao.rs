@@ -100,7 +100,7 @@ pub extern "C" fn symresponse_lagrangian_dao_linear_response_rhs(
             let dens_freq_arc: Arc<dyn Expr> = density_freq.clone_arc();
             let dens_part_arc: Arc<dyn Expr> = density_part.clone_arc();
             let num_tolerance: Option<NumberTolerance> = num_tol.map(|h| h.as_ref().clone());
-            lag.linear_response_rhs(dens_freq_arc, dens_part_arc, num_tolerance)
+            lag.linear_response_rhs(&dens_freq_arc, &dens_part_arc, num_tolerance)
                 .map(|arc| ExprBox::new(ExprHandle::new(arc)))
         } else {
             Err(generic_error(
@@ -130,7 +130,7 @@ pub extern "C" fn symresponse_lagrangian_dao_particular_density_solution(
         if let Some(lag) = lag_ref.as_any().downcast_ref::<LagrangianDao>() {
             let dens_freq_arc: Arc<dyn Expr> = density_freq.clone_arc();
             let num_tolerance: Option<NumberTolerance> = num_tol.map(|h| h.as_ref().clone());
-            lag.particular_density_solution(dens_freq_arc, num_tolerance)
+            lag.particular_density_solution(&dens_freq_arc, num_tolerance)
                 .map(|arc| ExprBox::new(ExprHandle::new(arc)))
         } else {
             Err(generic_error(

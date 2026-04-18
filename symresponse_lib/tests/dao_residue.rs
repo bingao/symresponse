@@ -65,7 +65,7 @@ fn dao_first_order_lr_residue() -> Result<(), TinnedError> {
         ResidueParameter::builder(vec![pert_b.clone()], excited_state, density_b.clone())
             .positive_frequency(true)
             .build()?;
-    let density_b_set: HashSet<Arc<dyn Expr>> = [density_b.clone()].into_iter().collect();
+    let density_b_set = HashSet::from([density_b.clone()]);
     let res_density_b_map: HashMap<Arc<dyn Expr>, Arc<dyn Expr>> =
         HashMap::from([(density_b.clone(), res_density_b.clone())]);
 
@@ -94,7 +94,7 @@ fn dao_first_order_lr_residue() -> Result<(), TinnedError> {
 
     // Get the right-hand side of the linear response equation
     let density_part = WfnParameter::builder("D_P").build()?;
-    let rhs = lag.linear_response_rhs(res_density_b, density_part.clone(), None)?;
+    let rhs = lag.linear_response_rhs(&res_density_b, &density_part, None)?;
 
     //let json_rhs = serde_json::to_string(&rhs).unwrap();
     //println!("RHS = {}", json_rhs);
@@ -196,7 +196,7 @@ fn lao_mcd() -> Result<(), TinnedError> {
 
     // F^{bc}
     let fock_matrix_bc = differentiate_expr(lag.fock_matrix(), &exten_perturbations)?;
-    let max_fock_derivs: HashSet<Arc<dyn Expr>> = [fock_matrix_bc.clone()].into_iter().collect();
+    let max_fock_derivs = HashSet::from([fock_matrix_bc.clone()]);
 
     // Residue density matrices
     let density_a = density_matrix.differentiate(&pert_a)?;
@@ -209,8 +209,8 @@ fn lao_mcd() -> Result<(), TinnedError> {
         ResidueParameter::builder(vec![pert_c.clone()], excited_state_c, density_c.clone())
             .positive_frequency(true)
             .build()?;
-    let density_ac_set: HashSet<Arc<dyn Expr>> =
-        [density_a.clone(), density_c.clone()].into_iter().collect();
+    let density_ac_set = HashSet::from([density_a.clone(), density_c.clone()]);
+
     let res_density_ac_map: HashMap<Arc<dyn Expr>, Arc<dyn Expr>> =
         HashMap::from([(density_a, res_density_a), (density_c, res_density_c)]);
 

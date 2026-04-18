@@ -139,8 +139,8 @@ pub trait Lagrangian: std::fmt::Debug + Send + Sync + LagrangianInternal {
     // perturbations, and minimum order of differentiated wave function
     // parameters to be eliminated, with respect to extensive perturbations.
     //
-    // `residue_info` contains excited state as the key `Arc<dyn Expr>`, and
-    // the value informs in which direction perturbations approach the
+    // `residue_relations` contains excited state as the key `Arc<dyn Expr>`,
+    // and the value informs in which direction perturbations approach the
     // excitation energy.
     #[inline]
     fn residue(
@@ -148,13 +148,17 @@ pub trait Lagrangian: std::fmt::Debug + Send + Sync + LagrangianInternal {
         exten_perturbations: &[Arc<Perturbation>],
         inten_perturbations: &[Arc<Perturbation>],
         min_wfn_exten: u32,
-        residue_info: &HashMap<Arc<dyn Expr>, (bool, Vec<Arc<Perturbation>>)>,
+        residue_relations: &HashMap<Arc<dyn Expr>, (bool, Vec<Arc<Perturbation>>)>,
         validate_frequencies: bool,
         num_tol: Option<NumberTolerance>,
     ) -> Result<Arc<dyn Expr>, TinnedError> {
-        if !self.validate_residue_info(exten_perturbations, inten_perturbations, residue_info) {
+        if !self.validate_residue_relations(
+            exten_perturbations,
+            inten_perturbations,
+            residue_relations,
+        ) {
             return Err(generic_error(
-                "Invalid residue information for given (extensive and intensive) perturbations.",
+                "Invalid given relation between excited states and perturbations.",
                 None,
             ));
         }
@@ -170,17 +174,17 @@ pub trait Lagrangian: std::fmt::Debug + Send + Sync + LagrangianInternal {
             num_tol,
         )?;
 
-        // Sets up `residue_set` and `residue_map` for retaining and replacing
+        // Sets up `diff_params` and `residue_map` for retaining and replacing
         // differentiated parameters and their higher-order ones.
         let mut parameters: Vec<Arc<dyn Expr>> = self.get_wfn_parameter();
         parameters.extend(self.get_lag_multiplier());
-        let (residue_set, residue_map) =
-            self.build_residue_parameters(&parameters, residue_info)?;
+        let (diff_params, residue_map) =
+            self.build_residue_parameters(&parameters, residue_relations)?;
 
-        // Retains differentiated parameters specified by `residue_info`, as
-        // well as their higher-order ones while removes other
+        // Retains differentiated parameters specified by `residue_relations`,
+        // as well as their higher-order ones while removes other
         // (un)differentiated parameters.
-        result = result.retain(&residue_set, true)?;
+        result = result.retain(&diff_params, true)?;
 
         //FIXME: `result` may become zero after `retain()`, we could consider the "complementary" residue parameters
 

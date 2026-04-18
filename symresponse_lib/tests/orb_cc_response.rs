@@ -2,7 +2,8 @@ use std::collections::BTreeMap;
 use std::sync::Arc;
 use symresponse::{Lagrangian, LagrangianOrbCc};
 use tinned::{
-    Add, DotProduct, ExcitationOperator, LagMultiplier, MatrixMul, OneElecMatrix, PertMultichain,
+    Add, AdjointMap, AdjointMode, DotProduct, ExcitationOperator, ExpAdjointMap,
+    HermitianTranspose, LagMultiplier, MatrixAdd, MatrixMul, Number, OneElecMatrix, PertMultichain,
     Perturbation, SubExpr, Symbol, TinnedError, Trace, TwoElecMatrix, WfnParameter,
     differentiate_expr, downcast_from_arc, is_expr_type,
 };
@@ -71,14 +72,14 @@ fn orb_cc_linear_response() -> Result<(), TinnedError> {
     let one_elec_density = lag.one_elec_density().clone();
     let two_elec_density = lag.two_elec_density().clone();
 
-    //match serde_json::to_string(one_elec_density) {
+    //match serde_json::to_string(&one_elec_density) {
     //    Ok(json) => println!("Unperturbed one-electron density matrix = {}\n", json),
     //    Err(err) => {
     //        eprintln!("Serialization of unperturbed one-electron density matrix failed: {err}");
     //    },
     //}
 
-    //match serde_json::to_string(two_elec_density) {
+    //match serde_json::to_string(&two_elec_density) {
     //    Ok(json) => println!("Unperturbed two-electron density matrix = {}\n", json),
     //    Err(err) => {
     //        eprintln!("Serialization of unperturbed two-electron density matrix failed: {err}");
@@ -144,14 +145,14 @@ fn orb_cc_linear_response() -> Result<(), TinnedError> {
     // Find all (un)perturbed one-electron density matrices
     let one_elec_densities = linear_response.find_superchains(&one_elec_density);
 
-    assert_eq!(one_elec_densities.len(), 3);
+    assert!(one_elec_densities.len() == 3);
 
     // Check all (un)perturbed one-electron density matrices
     for (order, densities) in &one_elec_densities {
         assert!(*order <= 2);
         match *order {
             0 => {
-                assert_eq!(densities.len(), 1);
+                assert!(densities.len() == 1);
                 assert_eq!(
                     &one_elec_density.substitute_zero_perturbations(None)?,
                     densities.iter().next().unwrap()
@@ -185,14 +186,14 @@ fn orb_cc_linear_response() -> Result<(), TinnedError> {
     // Find all (un)perturbed two-electron density matrices
     let two_elec_densities = linear_response.find_superchains(&two_elec_density);
 
-    assert_eq!(two_elec_densities.len(), 3);
+    assert!(two_elec_densities.len() == 3);
 
     // Check all (un)perturbed two-electron density matrices
     for (order, densities) in &two_elec_densities {
         assert!(*order <= 2);
         match *order {
             0 => {
-                assert_eq!(densities.len(), 1);
+                assert!(densities.len() == 1);
                 assert_eq!(
                     &two_elec_density.substitute_zero_perturbations(None)?,
                     densities.iter().next().unwrap()
@@ -223,50 +224,120 @@ fn orb_cc_linear_response() -> Result<(), TinnedError> {
         }
     }
 
-    //    // Find all perturbed orbital rotation parameters
-    //    let orb_rot_parameters = linear_response.find_superchains(&orb_rot_parameter);
-    //
-    //    for (order, parameters) in &orb_rot_parameters {
-    //        println!("\norder = {}", order);
-    //        for parameter in parameters {
-    //            match serde_json::to_string(parameter) {
-    //                Ok(json) => println!("Orbital rotation parameter = {}\n", json),
-    //                Err(err) => {
-    //                    eprintln!("Serialization of orbital rotation parameter failed: {err}");
-    //                },
-    //            }
-    //            let rhs_parameter = lag.linear_response_rhs(parameter.clone(), None)?;
-    //            match serde_json::to_string(&rhs_parameter) {
-    //                Ok(json) => println!("RHS of orbital rotation parameter = {}\n", json),
-    //                Err(err) => {
-    //                    eprintln!("Serialization of RHS of orbital rotation parameter failed: {err}");
-    //                },
-    //            }
-    //        }
-    //    }
-    //
-    //    // Find all (un)perturbed coupled-cluster amplitudes
-    //    let cc_amplitudes = linear_response.find_superchains(&cc_amplitude);
-    //
-    //    for (order, amplitudes) in &cc_amplitudes {
-    //        println!("\norder = {}", order);
-    //        for amplitude in amplitudes {
-    //            match serde_json::to_string(amplitude) {
-    //                Ok(json) => println!("Cluster amplitude = {}\n", json),
-    //                Err(err) => {
-    //                    eprintln!("Serialization of cluster amplitude failed: {err}");
-    //                },
-    //            }
-    //            let rhs_amplitude = lag.linear_response_rhs(amplitude.clone(), None)?;
-    //            match serde_json::to_string(&rhs_amplitude) {
-    //                Ok(json) => println!("RHS of cluster amplitude = {}\n", json),
-    //                Err(err) => {
-    //                    eprintln!("Serialization of RHS of cluster amplitude failed: {err}");
-    //                },
-    //            }
-    //        }
-    //    }
-    //
+    // Find all perturbed orbital rotation parameters, unperturbed one is zero
+    let orb_rot_parameters = linear_response.find_superchains(&orb_rot_parameter);
+
+    assert!(orb_rot_parameters.len() == 1);
+
+    for (order, parameters) in &orb_rot_parameters {
+        assert!(*order == 1);
+        assert!(parameters.len() == 2);
+
+        let orb_rot_parameter_x = orb_rot_parameter.differentiate(&pert_x)?;
+        let orb_rot_parameter_y = orb_rot_parameter.differentiate(&pert_y)?;
+
+        for parameter in parameters {
+            assert!(
+                parameter.clone() == orb_rot_parameter_x.clone()
+                    || parameter.clone() == orb_rot_parameter_y.clone()
+            );
+        }
+
+        // Check the right-hand side of the response equation of perturbed
+        // orbital rotation parameters
+        let rhs_parameter_x = lag.linear_response_rhs(&orb_rot_parameter_x, None)?;
+        assert_eq!(
+            &rhs_parameter_x,
+            &MatrixMul::new(vec![
+                Number::minus_one(),
+                AdjointMap::new(
+                    vec![orb_rot_generator.clone()],
+                    MatrixAdd::new(vec![one_elec_matrix.clone(), two_elec_matrix.clone()])?
+                        .differentiate(&pert_x)?,
+                    Some(true),
+                    Some(AdjointMode::Symmetrized)
+                )?
+            ])?
+        );
+    }
+
+    // Find all (un)perturbed coupled-cluster amplitudes
+    let cc_amplitudes = linear_response.find_superchains(&cc_amplitude);
+
+    assert!(cc_amplitudes.len() == 2);
+
+    for (order, amplitudes) in &cc_amplitudes {
+        assert!(*order == 0 || *order == 1);
+
+        if *order == 0 {
+            assert!(amplitudes.len() == 1);
+            assert_eq!(
+                amplitudes.iter().next().expect("Unperturbed coupled-cluster amplitudes"),
+                &cc_amplitude
+            );
+        } else {
+            assert!(amplitudes.len() == 2);
+
+            let cc_amplitude_x = cc_amplitude.differentiate(&pert_x)?;
+            let cc_amplitude_y = cc_amplitude.differentiate(&pert_y)?;
+
+            for amplitude in amplitudes {
+                assert!(
+                    amplitude.clone() == cc_amplitude_x.clone()
+                        || amplitude.clone() == cc_amplitude_y.clone()
+                );
+            }
+
+            // Check the right-hand side of the response equation of perturbed
+            // coupled-cluster amplitude
+            let rhs_amplitude_x = lag.linear_response_rhs(&cc_amplitude_x, None)?;
+            assert!(is_expr_type::<MatrixMul>(&rhs_amplitude_x));
+
+            let rhs = downcast_from_arc::<MatrixMul>(&rhs_amplitude_x).unwrap();
+            let rhs_coefficient = rhs.coefficient();
+
+            assert_eq!(rhs_coefficient, &Number::one());
+
+            let rhs_factors = rhs.factors();
+            assert!(rhs_factors.len() == 2);
+
+            let (tau_dagger, kappa_transformed_hamiltonian_x) =
+                if is_expr_type::<HermitianTranspose>(&rhs_factors[0]) {
+                    (&rhs_factors[0], &rhs_factors[1])
+                } else {
+                    (&rhs_factors[1], &rhs_factors[0])
+                };
+
+            assert_eq!(tau_dagger, &HermitianTranspose::new(cc_excitation_operator.clone())?);
+            assert!(is_expr_type::<ExpAdjointMap>(kappa_transformed_hamiltonian_x));
+
+            let exp_ad_map =
+                downcast_from_arc::<ExpAdjointMap>(kappa_transformed_hamiltonian_x).unwrap();
+            assert_eq!(exp_ad_map.generator(), lag.cluster_operator());
+
+            let kappa_operator_x = lag.kappa_operator().differentiate(&pert_x)?;
+            assert_eq!(
+                exp_ad_map.result(),
+                &MatrixAdd::new(vec![
+                    one_elec_matrix.differentiate(&pert_x)?,
+                    two_elec_matrix.differentiate(&pert_x)?,
+                    AdjointMap::new(
+                        vec![kappa_operator_x.clone()],
+                        one_elec_matrix.clone(),
+                        Some(true),
+                        Some(AdjointMode::Symmetrized)
+                    )?,
+                    AdjointMap::new(
+                        vec![kappa_operator_x],
+                        two_elec_matrix.clone(),
+                        Some(true),
+                        Some(AdjointMode::Symmetrized)
+                    )?,
+                ])?
+            );
+        }
+    }
+
     //    // Find all (un)perturbed coupled-cluster multipliers
     //    let cc_multipliers = linear_response.find_superchains(&cc_multiplier);
     //

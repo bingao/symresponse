@@ -64,7 +64,7 @@ pub extern "C" fn symresponse_lagrangian_cc_linear_response_rhs(
         if let Some(lag) = lag_ref.as_any().downcast_ref::<LagrangianCc>() {
             let rsp_parameter_arc: Arc<dyn Expr> = rsp_parameter.clone_arc();
             let num_tolerance: Option<NumberTolerance> = num_tol.map(|h| h.as_ref().clone());
-            lag.linear_response_rhs(rsp_parameter_arc, num_tolerance)
+            lag.linear_response_rhs(&rsp_parameter_arc, num_tolerance)
                 .map(|arc| ExprBox::new(ExprHandle::new(arc)))
         } else {
             Err(generic_error(

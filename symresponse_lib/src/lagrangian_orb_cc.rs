@@ -1,8 +1,9 @@
+use std::collections::HashSet;
 use std::sync::Arc;
 
 use tinned::{
     Add, AdjointMap, AdjointMode, DotProduct, ExcitationOperator, ExpAdjointMap, Expr,
-    HermitianTranspose, LagMultiplier, MatrixAdd, MatrixMul, NumberTolerance, Perturbation,
+    HermitianTranspose, LagMultiplier, MatrixAdd, MatrixMul, Number, NumberTolerance, Perturbation,
     SubExpr, TinnedError, Trace, WfnParameter, differentiate_expr, downcast_from_arc,
     expression_error, is_expr_type, unreachable_error,
 };
@@ -18,6 +19,8 @@ pub struct LagrangianOrbCc {
     two_elec_matrix: Arc<dyn Expr>,
     // Coupled-cluster amplitude
     cc_amplitude: Arc<dyn Expr>,
+    // Coupled-cluster operator
+    cluster_operator: Arc<dyn Expr>,
     // Response equation for coupled-cluster amplitude
     cc_amplitude_equation: Arc<dyn Expr>,
     // Coupled-cluster Lagrangian multiplier
@@ -26,6 +29,8 @@ pub struct LagrangianOrbCc {
     cc_multiplier_equation: Arc<dyn Expr>,
     // Orbital rotation parameter (amplitude)
     orb_rot_parameter: Arc<dyn Expr>,
+    // Orbital rotation operator
+    kappa_operator: Arc<dyn Expr>,
     // Brillouin equation,
     brillouin_equation: Arc<dyn Expr>,
     // Brillouin condition multiplier
@@ -209,7 +214,7 @@ impl LagrangianOrbCc {
             vec![orb_rot_generator.clone()],
             kappa_transformed_hamiltonian.clone(),
             Some(true),
-            Some(AdjointMode::Symmetric),
+            Some(AdjointMode::Symmetrized),
         )?;
 
         // Response equation for coupled-cluster amplitude, equation (42), J.
@@ -258,7 +263,7 @@ impl LagrangianOrbCc {
                 vec![orb_rot_generator.clone()],
                 MatrixAdd::new(vec![one_elec_matrix.clone(), two_elec_matrix.clone()])?,
                 Some(true),
-                Some(AdjointMode::Symmetric),
+                Some(AdjointMode::Symmetrized),
             )?,
             Some(false),
         )
@@ -285,7 +290,7 @@ impl LagrangianOrbCc {
                     vec![orb_rot_generator],
                     diff_kappa_transformed_hamiltonian,
                     Some(true),
-                    Some(AdjointMode::Symmetric),
+                    Some(AdjointMode::Symmetrized),
                 )?,
                 false,
                 brillouin_multiplier.clone(),
@@ -311,10 +316,12 @@ impl LagrangianOrbCc {
             one_elec_matrix,
             two_elec_matrix,
             cc_amplitude,
+            cluster_operator,
             cc_amplitude_equation,
             cc_multiplier,
             cc_multiplier_equation,
             orb_rot_parameter,
+            kappa_operator,
             brillouin_equation,
             brillouin_multiplier,
             brillouin_multiplier_equation,
@@ -355,11 +362,11 @@ impl LagrangianOrbCc {
     #[inline]
     pub fn linear_response_rhs(
         &self,
-        rsp_parameter: Arc<dyn Expr>,
+        rsp_parameter: &Arc<dyn Expr>,
         num_tol: Option<NumberTolerance>,
     ) -> Result<Arc<dyn Expr>, TinnedError> {
-        let general_rhs: Arc<dyn Expr> = if let Some(parameter) =
-            downcast_from_arc::<WfnParameter>(&rsp_parameter)
+        let (general_rhs, is_negative) = if let Some(parameter) =
+            downcast_from_arc::<WfnParameter>(rsp_parameter)
         {
             let cc_amplitude =
                 downcast_from_arc::<WfnParameter>(&self.cc_amplitude).ok_or_else(|| {
@@ -369,28 +376,28 @@ impl LagrangianOrbCc {
                         None,
                     )
                 })?;
-            if parameter.name() == cc_amplitude.name() {
-                differentiate_expr(&self.cc_amplitude_equation, parameter.derivative())?
-            } else {
-                let orb_rot_parameter = downcast_from_arc::<WfnParameter>(&self.orb_rot_parameter)
-                    .ok_or_else(|| {
-                        unreachable_error(
-                            "Unexpected type of orbital rotation parameter",
-                            &self.orb_rot_parameter,
-                            None,
-                        )
-                    })?;
-                if parameter.name() == orb_rot_parameter.name() {
-                    differentiate_expr(&self.brillouin_equation, parameter.derivative())?
-                } else {
-                    return Err(expression_error(
-                        "Invalid wave function parameter",
-                        &rsp_parameter,
+
+            let orb_rot_parameter = downcast_from_arc::<WfnParameter>(&self.orb_rot_parameter)
+                .ok_or_else(|| {
+                    unreachable_error(
+                        "Unexpected type of orbital rotation parameter",
+                        &self.orb_rot_parameter,
                         None,
-                    ));
-                }
+                    )
+                })?;
+
+            if parameter.name() == cc_amplitude.name() {
+                (differentiate_expr(&self.cc_amplitude_equation, parameter.derivative())?, false)
+            } else if parameter.name() == orb_rot_parameter.name() {
+                (differentiate_expr(&self.brillouin_equation, parameter.derivative())?, true)
+            } else {
+                return Err(expression_error(
+                    "Invalid wave function parameter",
+                    rsp_parameter,
+                    None,
+                ));
             }
-        } else if let Some(multiplier) = downcast_from_arc::<LagMultiplier>(&rsp_parameter) {
+        } else if let Some(multiplier) = downcast_from_arc::<LagMultiplier>(rsp_parameter) {
             let cc_multiplier = downcast_from_arc::<LagMultiplier>(&self.cc_multiplier)
                 .ok_or_else(|| {
                     unreachable_error(
@@ -399,41 +406,62 @@ impl LagrangianOrbCc {
                         None,
                     )
                 })?;
-            if multiplier.name() == cc_multiplier.name() {
-                differentiate_expr(&self.cc_multiplier_equation, multiplier.derivative())?
-            } else {
-                let brillouin_multiplier = downcast_from_arc::<LagMultiplier>(
+
+            let brillouin_multiplier = downcast_from_arc::<LagMultiplier>(
+                &self.brillouin_multiplier,
+            )
+            .ok_or_else(|| {
+                unreachable_error(
+                    "Unexpected type of Brillouin condition multiplier",
                     &self.brillouin_multiplier,
+                    None,
                 )
-                .ok_or_else(|| {
-                    unreachable_error(
-                        "Unexpected type of Brillouin condition multiplier",
-                        &self.brillouin_multiplier,
-                        None,
-                    )
-                })?;
-                if multiplier.name() == brillouin_multiplier.name() {
+            })?;
+
+            if multiplier.name() == cc_multiplier.name() {
+                (differentiate_expr(&self.cc_multiplier_equation, multiplier.derivative())?, false)
+            } else if multiplier.name() == brillouin_multiplier.name() {
+                (
                     differentiate_expr(
                         &self.brillouin_multiplier_equation,
                         multiplier.derivative(),
-                    )?
-                } else {
-                    return Err(expression_error(
-                        "Invalid Lagrangian multiplier",
-                        &rsp_parameter,
-                        None,
-                    ));
-                }
+                    )?,
+                    false,
+                )
+            } else {
+                return Err(expression_error("Invalid Lagrangian multiplier", rsp_parameter, None));
             }
         } else {
             return Err(expression_error(
                 "Invalid type of response parameter",
-                &rsp_parameter,
+                rsp_parameter,
                 None,
             ));
         };
 
-        general_rhs.substitute_zero_perturbations(num_tol)
+        let params_to_remove = HashSet::from([rsp_parameter.clone()]);
+        let rhs = general_rhs.substitute_zero_perturbations(num_tol)?.remove(&params_to_remove)?;
+
+        if is_negative {
+            MatrixMul::new(vec![Number::minus_one(), rhs])
+        } else {
+            Ok(rhs)
+        }
+    }
+
+    #[inline]
+    pub fn cluster_operator(&self) -> &Arc<dyn Expr> {
+        &self.cluster_operator
+    }
+
+    #[inline]
+    pub fn kappa_operator(&self) -> &Arc<dyn Expr> {
+        &self.kappa_operator
+    }
+
+    #[inline]
+    pub fn brillouin_equation(&self) -> &Arc<dyn Expr> {
+        &self.brillouin_equation
     }
 
     #[inline]
@@ -444,11 +472,6 @@ impl LagrangianOrbCc {
     #[inline]
     pub fn two_elec_density(&self) -> &Arc<dyn Expr> {
         &self.two_elec_density
-    }
-
-    #[inline]
-    pub fn brillouin_equation(&self) -> &Arc<dyn Expr> {
-        &self.brillouin_equation
     }
 }
 

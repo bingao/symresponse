@@ -112,7 +112,8 @@ fn cc_linear_quadratic_response() -> Result<(), TinnedError> {
     assert_eq!(&linear_response, &expected_linear_response);
 
     // Check the right-hand side of first-order differentiated coupled-cluster amplitude
-    let rhs_cc_amplitude = lag.linear_response_rhs(cc_amplitude.differentiate(&pert_a)?, None)?;
+    let cc_amplitude_a = cc_amplitude.differentiate(&pert_a)?;
+    let rhs_cc_amplitude = lag.linear_response_rhs(&cc_amplitude_a, None)?;
     let expected_rhs_cc_amplitude = MatrixMul::new(vec![
         Number::minus_one(),
         st_perturbing_oper_a
@@ -151,7 +152,8 @@ fn cc_linear_quadratic_response() -> Result<(), TinnedError> {
     assert_eq!(&quadratic_response, &expected_quadratic_response);
 
     // Get the right-hand side of first-order differentiated Lagrangian multiplier
-    let rhs_cc_multiplier = lag.linear_response_rhs(cc_multiplier.differentiate(&pert_a)?, None)?;
+    let cc_multiplier_a = cc_multiplier.differentiate(&pert_a)?;
+    let rhs_cc_multiplier = lag.linear_response_rhs(&cc_multiplier_a, None)?;
 
     //match serde_json::to_string(&rhs_cc_multiplier) {
     //    Ok(json) => println!("RHS of lambda^{{a}} = {}", json),

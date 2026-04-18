@@ -1,9 +1,8 @@
 use std::collections::{BTreeMap, BTreeSet, HashSet};
-use std::sync::Arc;
 use symresponse::{Lagrangian, LagrangianDao, SymmetrizeMode};
 use tinned::{
-    Add, AoTwoElecMatrix, BasisTimeEvolution, ExchCorrEnergy, ExchCorrPotential, Expr, MatrixMul,
-    Mul, NonElecFunction, Number, OneElecMatrix, PertMultichain, Perturbation, Symbol, TinnedError,
+    Add, AoTwoElecMatrix, BasisTimeEvolution, ExchCorrEnergy, ExchCorrPotential, MatrixMul, Mul,
+    NonElecFunction, Number, OneElecMatrix, PertMultichain, Perturbation, Symbol, TinnedError,
     Trace, WfnParameter, differentiate_expr,
 };
 
@@ -94,7 +93,7 @@ fn lao_quadratic_response() -> Result<(), TinnedError> {
 
     // F^{bc}
     let fock_matrix_bc = differentiate_expr(lag.fock_matrix(), &exten_perturbations)?;
-    let max_fock_derivs: HashSet<Arc<dyn Expr>> = [fock_matrix_bc.clone()].into_iter().collect();
+    let max_fock_derivs = HashSet::from([fock_matrix_bc.clone()]);
 
     // Differentiated generalized energy of Equation (B1)
     //let generalized_energy_abc = Trace::new(MatrixMul::new(vec![

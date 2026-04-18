@@ -1,4 +1,3 @@
-use std::collections::{HashMap, HashSet};
 use std::sync::Arc;
 
 use tinned::{
@@ -91,7 +90,7 @@ impl LagrangianMcscf {
             vec![rotation_operators.clone()],
             term,
             Some(true),
-            Some(AdjointMode::Symmetric),
+            Some(AdjointMode::Symmetrized),
         )?);
 
         for oper in perturbing_operators {
@@ -103,7 +102,7 @@ impl LagrangianMcscf {
                 vec![rotation_operators.clone()],
                 term,
                 Some(true),
-                Some(AdjointMode::Symmetric),
+                Some(AdjointMode::Symmetrized),
             )?);
         }
 
@@ -115,7 +114,7 @@ impl LagrangianMcscf {
             vec![rotation_operators.clone()],
             term,
             Some(true),
-            Some(AdjointMode::Symmetric),
+            Some(AdjointMode::Symmetrized),
         )?);
 
         let lagrangian_expr = MatrixAdd::new(lag_terms)?;
@@ -153,19 +152,16 @@ impl LagrangianMcscf {
     #[inline]
     pub fn linear_response_rhs(
         &self,
-        rsp_parameter: Arc<dyn Expr>,
+        rsp_parameter: &Arc<dyn Expr>,
         num_tol: Option<NumberTolerance>,
     ) -> Result<Arc<dyn Expr>, TinnedError> {
-        // The perturbed `rsp_parameter` should be removed from RHS
-        let rhs_set: HashSet<Arc<dyn Expr>> = [rsp_parameter.clone()].into_iter().collect();
-
-        let general_rhs: Arc<dyn Expr> = if let Some(rot_param) =
-            downcast_from_arc::<WfnParameter>(&rsp_parameter)
-        {
-            let result = differentiate_expr(&self.rhs_parameters, rot_param.derivative())?;
-
-            result.remove(&rhs_set)?
-        } else if let Some(res_param) = downcast_from_arc::<ResidueParameter>(&rsp_parameter) {
+        let (general_rhs, diff_parameter, residue_info): (
+            Arc<dyn Expr>,
+            &Arc<dyn Expr>,
+            Option<(&ResidueParameter, Arc<dyn Expr>)>,
+        ) = if let Some(rot_param) = downcast_from_arc::<WfnParameter>(rsp_parameter) {
+            (differentiate_expr(&self.rhs_parameters, rot_param.derivative())?, rsp_parameter, None)
+        } else if let Some(res_param) = downcast_from_arc::<ResidueParameter>(rsp_parameter) {
             if let Some(rot_param) = downcast_from_arc::<WfnParameter>(res_param.parameter()) {
                 // `ResidueParameter` ensures that `res_param.perturbations()`
                 // is a subchain of `rot_param.derivative()`, so we check if
@@ -173,42 +169,32 @@ impl LagrangianMcscf {
                 if rot_param.derivative().is_superchain_vec(res_param.perturbations()) {
                     return Err(expression_error(
                         "linear_response_rhs() should not be called for residue rotation parameters",
-                        &rsp_parameter,
+                        rsp_parameter,
                         None,
                     ));
                 }
 
-                let rhs_deriv = differentiate_expr(&self.rhs_parameters, rot_param.derivative())?;
-
-                let residue_info: HashMap<Arc<dyn Expr>, (bool, Vec<Arc<Perturbation>>)> =
-                    std::iter::once((
-                        res_param.excited_state().clone(),
-                        (res_param.positive_frequency(), res_param.perturbations().to_vec()),
-                    ))
-                    .collect();
-
-                let (residue_set, residue_map) = self.build_residue_parameters(
-                    &vec![self.rotation_parameters.clone()],
-                    &residue_info,
-                )?;
-
-                rhs_deriv.retain(&residue_set, true)?.replace(&residue_map, true)?
+                (
+                    differentiate_expr(&self.rhs_parameters, rot_param.derivative())?,
+                    res_param.parameter(),
+                    Some((res_param, self.rotation_parameters.clone())),
+                )
             } else {
                 return Err(expression_error(
                     "Invalid parameter type of residue parameter",
-                    &rsp_parameter,
+                    rsp_parameter,
                     None,
                 ));
             }
         } else {
             return Err(expression_error(
                 "Invalid type of response parameter",
-                &rsp_parameter,
+                rsp_parameter,
                 None,
             ));
         };
 
-        general_rhs.substitute_zero_perturbations(num_tol)
+        self.finalize_response_rhs(&general_rhs, diff_parameter, residue_info, num_tol)
     }
 }
 

@@ -1,4 +1,3 @@
-use std::collections::{HashMap, HashSet};
 use std::sync::Arc;
 
 use tinned::{
@@ -227,86 +226,78 @@ impl LagrangianCc {
     #[inline]
     pub fn linear_response_rhs(
         &self,
-        rsp_parameter: Arc<dyn Expr>,
+        rsp_parameter: &Arc<dyn Expr>,
         num_tol: Option<NumberTolerance>,
     ) -> Result<Arc<dyn Expr>, TinnedError> {
-        // The perturbed `rsp_parameter` should be removed from RHS
-        let rhs_set: HashSet<Arc<dyn Expr>> = [rsp_parameter.clone()].into_iter().collect();
+        let (general_rhs, diff_parameter, residue_info): (
+            Arc<dyn Expr>,
+            &Arc<dyn Expr>,
+            Option<(&ResidueParameter, Arc<dyn Expr>)>,
+        ) = if let Some(cc_amplitude) = downcast_from_arc::<WfnParameter>(rsp_parameter) {
+            (
+                differentiate_expr(&self.cc_quasi_energy, cc_amplitude.derivative())?,
+                rsp_parameter,
+                None,
+            )
+        } else if let Some(multiplier) = downcast_from_arc::<LagMultiplier>(rsp_parameter) {
+            (
+                differentiate_expr(&self.cc_multiplier_equation, multiplier.derivative())?,
+                rsp_parameter,
+                None,
+            )
+        } else if let Some(res_param) = downcast_from_arc::<ResidueParameter>(rsp_parameter) {
+            let parameter = res_param.parameter();
 
-        let general_rhs: Arc<dyn Expr> = if let Some(cc_amplitude) =
-            downcast_from_arc::<WfnParameter>(&rsp_parameter)
-        {
-            let result = differentiate_expr(&self.cc_quasi_energy, cc_amplitude.derivative())?;
-
-            result.remove(&rhs_set)?
-        } else if let Some(multiplier) = downcast_from_arc::<LagMultiplier>(&rsp_parameter) {
-            let result = differentiate_expr(&self.cc_multiplier_equation, multiplier.derivative())?;
-
-            result.remove(&rhs_set)?
-        } else if let Some(res_param) = downcast_from_arc::<ResidueParameter>(&rsp_parameter) {
-            let (rhs_deriv, unperturbed_param) = if let Some(cc_amplitude) =
-                downcast_from_arc::<WfnParameter>(res_param.parameter())
-            {
+            if let Some(cc_amplitude) = downcast_from_arc::<WfnParameter>(parameter) {
                 // `ResidueParameter` ensures that `res_param.perturbations()`
                 // is a subchain of `cc_amplitude.derivative()`, so we check if
                 // the former is also a superchain of the latter.
                 if cc_amplitude.derivative().is_superchain_vec(res_param.perturbations()) {
                     return Err(expression_error(
                         "linear_response_rhs() should not be called for a residue CC amplitude",
-                        &rsp_parameter,
+                        rsp_parameter,
                         None,
                     ));
                 }
 
-                let result = differentiate_expr(&self.cc_quasi_energy, cc_amplitude.derivative())?;
-
-                (result.remove(&rhs_set)?, self.cc_amplitude.clone())
-            } else if let Some(multiplier) =
-                downcast_from_arc::<LagMultiplier>(&res_param.parameter())
-            {
+                (
+                    differentiate_expr(&self.cc_quasi_energy, cc_amplitude.derivative())?,
+                    parameter,
+                    Some((res_param, self.cc_amplitude.clone())),
+                )
+            } else if let Some(multiplier) = downcast_from_arc::<LagMultiplier>(parameter) {
                 if multiplier.derivative().is_superchain_vec(res_param.perturbations()) {
                     return Err(expression_error(
                         "linear_response_rhs() should not be called for a residue Lagrangian multiplier",
-                        &rsp_parameter,
+                        rsp_parameter,
                         None,
                     ));
                 }
 
-                let result =
-                    differentiate_expr(&self.cc_multiplier_equation, multiplier.derivative())?;
-
-                (result.remove(&rhs_set)?, self.cc_multiplier.clone())
+                (
+                    differentiate_expr(&self.cc_multiplier_equation, multiplier.derivative())?,
+                    parameter,
+                    Some((res_param, self.cc_multiplier.clone())),
+                )
             } else {
                 return Err(expression_error(
                     "Invalid parameter type of residue parameter",
-                    &rsp_parameter,
+                    rsp_parameter,
                     None,
                 ));
-            };
-
-            let residue_info: HashMap<Arc<dyn Expr>, (bool, Vec<Arc<Perturbation>>)> =
-                std::iter::once((
-                    res_param.excited_state().clone(),
-                    (res_param.positive_frequency(), res_param.perturbations().to_vec()),
-                ))
-                .collect();
-
-            let (residue_set, residue_map) =
-                self.build_residue_parameters(&vec![unperturbed_param], &residue_info)?;
-
-            rhs_deriv.retain(&residue_set, true)?.replace(&residue_map, true)?
+            }
         } else {
             return Err(expression_error(
                 "Invalid type of response parameter",
-                &rsp_parameter,
+                rsp_parameter,
                 None,
             ));
         };
 
-        MatrixMul::new(vec![
-            Number::minus_one(),
-            general_rhs.substitute_zero_perturbations(num_tol)?,
-        ])
+        let rhs =
+            self.finalize_response_rhs(&general_rhs, diff_parameter, residue_info, num_tol)?;
+
+        MatrixMul::new(vec![Number::minus_one(), rhs])
     }
 
     #[inline]
