@@ -21,6 +21,8 @@ pub struct LagrangianOrbCc {
     cc_amplitude: Arc<dyn Expr>,
     // Coupled-cluster operator
     cluster_operator: Arc<dyn Expr>,
+    // Lambda operator or de-excitation operator
+    de_excitation_operator: Arc<dyn Expr>,
     // Response equation for coupled-cluster amplitude
     cc_amplitude_equation: Arc<dyn Expr>,
     // Coupled-cluster Lagrangian multiplier
@@ -144,7 +146,7 @@ impl LagrangianOrbCc {
             false,
             Some(false),
         )?;
-        let cc_lambda_oper = DotProduct::new(
+        let de_excitation_operator = DotProduct::new(
             cc_excitation_operator.clone(),
             true,
             cc_multiplier.clone(),
@@ -175,7 +177,7 @@ impl LagrangianOrbCc {
         // Set one-electron density matrix
         let one_density_expr = MatrixAdd::new(vec![
             st_single_exc.clone(),
-            MatrixMul::new(vec![cc_lambda_oper.clone(), st_single_exc])?,
+            MatrixMul::new(vec![de_excitation_operator.clone(), st_single_exc])?,
         ])?;
         let one_elec_density =
             SubExpr::builder("one-electron-density", one_density_expr).build()?;
@@ -193,7 +195,7 @@ impl LagrangianOrbCc {
         // Set two-electron density matrix
         let two_density_expr = MatrixAdd::new(vec![
             st_double_exc.clone(),
-            MatrixMul::new(vec![cc_lambda_oper.clone(), st_double_exc])?,
+            MatrixMul::new(vec![de_excitation_operator.clone(), st_double_exc])?,
         ])?;
         let two_elec_density =
             SubExpr::builder("two-electron-density", two_density_expr).build()?;
@@ -250,7 +252,7 @@ impl LagrangianOrbCc {
         // equation (43), J. Chem. Phys. 92, 4924-4940 (1990)
         let cc_multiplier_equation = MatrixAdd::new(vec![
             cc_transformed_hamiltonian.clone(),
-            MatrixMul::new(vec![cc_lambda_oper.clone(), cc_transformed_hamiltonian])?,
+            MatrixMul::new(vec![de_excitation_operator.clone(), cc_transformed_hamiltonian])?,
         ])?;
 
         // Derivative of e^{kappa} * H * e^{-kappa} with respect to kappa,
@@ -284,7 +286,7 @@ impl LagrangianOrbCc {
         // J. Chem. Phys. 92, 4924-4940 (1990)
         let brillouin_multiplier_equation = MatrixAdd::new(vec![
             cc_transformed_diff_hamiltonian.clone(),
-            MatrixMul::new(vec![cc_lambda_oper.clone(), cc_transformed_diff_hamiltonian])?,
+            MatrixMul::new(vec![de_excitation_operator.clone(), cc_transformed_diff_hamiltonian])?,
             DotProduct::new(
                 AdjointMap::new(
                     vec![orb_rot_generator],
@@ -317,6 +319,7 @@ impl LagrangianOrbCc {
             two_elec_matrix,
             cc_amplitude,
             cluster_operator,
+            de_excitation_operator,
             cc_amplitude_equation,
             cc_multiplier,
             cc_multiplier_equation,
@@ -419,7 +422,7 @@ impl LagrangianOrbCc {
             })?;
 
             if multiplier.name() == cc_multiplier.name() {
-                (differentiate_expr(&self.cc_multiplier_equation, multiplier.derivative())?, false)
+                (differentiate_expr(&self.cc_multiplier_equation, multiplier.derivative())?, true)
             } else if multiplier.name() == brillouin_multiplier.name() {
                 (
                     differentiate_expr(
@@ -452,6 +455,11 @@ impl LagrangianOrbCc {
     #[inline]
     pub fn cluster_operator(&self) -> &Arc<dyn Expr> {
         &self.cluster_operator
+    }
+
+    #[inline]
+    pub fn de_excitation_operator(&self) -> &Arc<dyn Expr> {
+        &self.de_excitation_operator
     }
 
     #[inline]

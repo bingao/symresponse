@@ -246,6 +246,7 @@ fn orb_cc_linear_response() -> Result<(), TinnedError> {
         // Check the right-hand side of the response equation of perturbed
         // orbital rotation parameters
         let rhs_parameter_x = lag.linear_response_rhs(&orb_rot_parameter_x, None)?;
+        // Equation (51), J. Chem. Phys. 92, 4924-4940 (1990)
         assert_eq!(
             &rhs_parameter_x,
             &MatrixMul::new(vec![
@@ -265,6 +266,25 @@ fn orb_cc_linear_response() -> Result<(), TinnedError> {
     let cc_amplitudes = linear_response.find_superchains(&cc_amplitude);
 
     assert!(cc_amplitudes.len() == 2);
+
+    let kappa_operator_x = lag.kappa_operator().differentiate(&pert_x)?;
+    // Equation (35), J. Chem. Phys. 92, 4924-4940 (1990)
+    let j_operator_x = MatrixAdd::new(vec![
+        one_elec_matrix.differentiate(&pert_x)?,
+        two_elec_matrix.differentiate(&pert_x)?,
+        AdjointMap::new(
+            vec![kappa_operator_x.clone()],
+            one_elec_matrix.clone(),
+            Some(true),
+            Some(AdjointMode::Symmetrized),
+        )?,
+        AdjointMap::new(
+            vec![kappa_operator_x.clone()],
+            two_elec_matrix.clone(),
+            Some(true),
+            Some(AdjointMode::Symmetrized),
+        )?,
+    ])?;
 
     for (order, amplitudes) in &cc_amplitudes {
         assert!(*order == 0 || *order == 1);
@@ -315,74 +335,136 @@ fn orb_cc_linear_response() -> Result<(), TinnedError> {
                 downcast_from_arc::<ExpAdjointMap>(kappa_transformed_hamiltonian_x).unwrap();
             assert_eq!(exp_ad_map.generator(), lag.cluster_operator());
 
-            let kappa_operator_x = lag.kappa_operator().differentiate(&pert_x)?;
+            assert_eq!(exp_ad_map.result(), &j_operator_x);
+        }
+    }
+
+    // Find all (un)perturbed coupled-cluster multipliers
+    let cc_multipliers = linear_response.find_superchains(&cc_multiplier);
+
+    assert!(cc_multipliers.len() == 1);
+
+    for (order, multipliers) in &cc_multipliers {
+        assert_eq!(*order, 0);
+        for multiplier in multipliers {
+            assert_eq!(multiplier, &cc_multiplier);
+
+            let rhs_multiplier = lag.linear_response_rhs(multiplier, None)?;
+            assert!(is_expr_type::<MatrixMul>(&rhs_multiplier));
+
+            let rhs = downcast_from_arc::<MatrixMul>(&rhs_multiplier).unwrap();
+            assert_eq!(rhs.coefficient(), &Number::minus_one());
+            assert!(rhs.factors().len() == 1);
+            assert!(is_expr_type::<ExpAdjointMap>(&rhs.factors()[0]));
+
+            let exp_ad_map = downcast_from_arc::<ExpAdjointMap>(&rhs.factors()[0]).unwrap();
+            assert_eq!(exp_ad_map.generator(), lag.cluster_operator());
             assert_eq!(
                 exp_ad_map.result(),
-                &MatrixAdd::new(vec![
-                    one_elec_matrix.differentiate(&pert_x)?,
-                    two_elec_matrix.differentiate(&pert_x)?,
-                    AdjointMap::new(
-                        vec![kappa_operator_x.clone()],
-                        one_elec_matrix.clone(),
-                        Some(true),
-                        Some(AdjointMode::Symmetrized)
-                    )?,
-                    AdjointMap::new(
-                        vec![kappa_operator_x],
-                        two_elec_matrix.clone(),
-                        Some(true),
-                        Some(AdjointMode::Symmetrized)
-                    )?,
-                ])?
+                // Equation (49), J. Chem. Phys. 92, 4924-4940 (1990)
+                &AdjointMap::new(
+                    vec![cc_excitation_operator.clone()],
+                    MatrixAdd::new(vec![one_elec_matrix.clone(), two_elec_matrix.clone()])?,
+                    Some(false),
+                    Some(AdjointMode::Commutative)
+                )?,
             );
         }
     }
 
-    //    // Find all (un)perturbed coupled-cluster multipliers
-    //    let cc_multipliers = linear_response.find_superchains(&cc_multiplier);
-    //
-    //    for (order, multipliers) in &cc_multipliers {
-    //        println!("\norder = {}", order);
-    //        for multiplier in multipliers {
-    //            match serde_json::to_string(multiplier) {
-    //                Ok(json) => println!("Cluster multiplier = {}\n", json),
-    //                Err(err) => {
-    //                    eprintln!("Serialization of cluster multiplier failed: {err}");
-    //                },
-    //            }
-    //            let rhs_multiplier = lag.linear_response_rhs(multiplier.clone(), None)?;
-    //            match serde_json::to_string(&rhs_multiplier) {
-    //                Ok(json) => println!("RHS of cluster multiplier = {}\n", json),
-    //                Err(err) => {
-    //                    eprintln!("Serialization of RHS of cluster multiplier failed: {err}");
-    //                },
-    //            }
-    //        }
-    //    }
-    //
-    //    // Find all (un)perturbed Brillouin condition multipliers
-    //    let brillouin_multipliers = linear_response.find_superchains(&brillouin_multiplier);
-    //
-    //    for (order, multipliers) in &brillouin_multipliers {
-    //        println!("\norder = {}", order);
-    //        for multiplier in multipliers {
-    //            match serde_json::to_string(multiplier) {
-    //                Ok(json) => println!("Brillouin condition multiplier = {}\n", json),
-    //                Err(err) => {
-    //                    eprintln!("Serialization of Brillouin condition multiplier failed: {err}");
-    //                },
-    //            }
-    //            let rhs_multiplier = lag.linear_response_rhs(multiplier.clone(), None)?;
-    //            match serde_json::to_string(&rhs_multiplier) {
-    //                Ok(json) => println!("RHS of Brillouin condition multiplier = {}\n", json),
-    //                Err(err) => {
-    //                    eprintln!(
-    //                        "Serialization of RHS of Brillouin condition multiplier failed: {err}"
-    //                    );
-    //                },
-    //            }
-    //        }
-    //    }
+    // Test RHS of the first order coupled-cluster multiplier
+    let cc_multiplier_x = cc_multiplier.differentiate(&pert_x)?;
+    {
+        let rhs_multiplier_x = lag.linear_response_rhs(&cc_multiplier_x, None)?;
+        assert!(is_expr_type::<MatrixMul>(&rhs_multiplier_x));
+
+        let rhs = downcast_from_arc::<MatrixMul>(&rhs_multiplier_x).unwrap();
+        assert_eq!(rhs.coefficient(), &Number::minus_one());
+        assert!(rhs.factors().len() == 1);
+        assert!(is_expr_type::<MatrixAdd>(&rhs.factors()[0]));
+
+        let terms = downcast_from_arc::<MatrixAdd>(&rhs.factors()[0]).unwrap().terms();
+        assert!(terms.len() == 2);
+        // Equation (53), J. Chem. Phys. 92, 4924-4940 (1990)
+        let (exp_ad_map, matrix_mul) = if is_expr_type::<ExpAdjointMap>(&terms[0]) {
+            assert!(is_expr_type::<MatrixMul>(&terms[1]));
+            (
+                downcast_from_arc::<ExpAdjointMap>(&terms[0]).unwrap(),
+                downcast_from_arc::<MatrixMul>(&terms[1]).unwrap(),
+            )
+        } else {
+            assert!(is_expr_type::<MatrixMul>(&terms[0]));
+            (
+                downcast_from_arc::<ExpAdjointMap>(&terms[1]).unwrap(),
+                downcast_from_arc::<MatrixMul>(&terms[2]).unwrap(),
+            )
+        };
+        assert_eq!(exp_ad_map.generator(), lag.cluster_operator());
+        assert_eq!(
+            exp_ad_map.result(),
+            &MatrixAdd::new(vec![
+                AdjointMap::new(
+                    vec![
+                        lag.cluster_operator().differentiate(&pert_x)?,
+                        cc_excitation_operator.clone()
+                    ],
+                    MatrixAdd::new(vec![one_elec_matrix.clone(), two_elec_matrix.clone()])?,
+                    Some(false),
+                    Some(AdjointMode::Commutative),
+                )?,
+                AdjointMap::new(
+                    vec![cc_excitation_operator.clone()],
+                    j_operator_x.clone(),
+                    Some(false),
+                    Some(AdjointMode::Commutative),
+                )?,
+            ])?
+        );
+        assert_eq!(matrix_mul.coefficient(), &Number::one());
+        assert!(matrix_mul.factors().len() == 2);
+        if is_expr_type::<DotProduct>(&matrix_mul.factors()[0]) {
+            assert!(is_expr_type::<ExpAdjointMap>(&matrix_mul.factors()[1]));
+            assert_eq!(&matrix_mul.factors()[0], lag.de_excitation_operator());
+            assert_eq!(
+                exp_ad_map,
+                downcast_from_arc::<ExpAdjointMap>(&matrix_mul.factors()[1]).unwrap()
+            );
+        } else {
+            assert!(is_expr_type::<ExpAdjointMap>(&matrix_mul.factors()[0]));
+            assert!(is_expr_type::<DotProduct>(&matrix_mul.factors()[1]));
+            assert_eq!(&matrix_mul.factors()[1], lag.de_excitation_operator());
+            assert_eq!(
+                exp_ad_map,
+                downcast_from_arc::<ExpAdjointMap>(&matrix_mul.factors()[0]).unwrap()
+            );
+        }
+    }
+
+    // Find all (un)perturbed Brillouin condition multipliers
+    let brillouin_multipliers = linear_response.find_superchains(&brillouin_multiplier);
+
+    assert!(brillouin_multipliers.len() == 1);
+
+    for (order, multipliers) in &brillouin_multipliers {
+        assert_eq!(*order, 0);
+        for multiplier in multipliers {
+            assert_eq!(multiplier, &brillouin_multiplier);
+
+            let rhs_multiplier = lag.linear_response_rhs(multiplier, None)?;
+            // Equation (50), J. Chem. Phys. 92, 4924-4940 (1990)
+            match serde_json::to_string(&rhs_multiplier) {
+                Ok(json) => println!("RHS of Brillouin condition multiplier = {}\n", json),
+                Err(err) => {
+                    eprintln!(
+                        "Serialization of RHS of Brillouin condition multiplier failed: {err}"
+                    );
+                },
+            }
+        }
+    }
+
+    // Test RHS of the first order Brillouin condition multiplier
+    // Equation (54), J. Chem. Phys. 92, 4924-4940 (1990)
 
     Ok(())
 }
