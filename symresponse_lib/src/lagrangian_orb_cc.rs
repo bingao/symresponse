@@ -429,7 +429,7 @@ impl LagrangianOrbCc {
                         &self.brillouin_multiplier_equation,
                         multiplier.derivative(),
                     )?,
-                    false,
+                    true,
                 )
             } else {
                 return Err(expression_error("Invalid Lagrangian multiplier", rsp_parameter, None));
