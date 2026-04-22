@@ -78,8 +78,10 @@ fn orb_cc_linear_response() -> Result<(), TinnedError> {
     let freq_y = Symbol::new("omega_y");
     let pert_y = Perturbation::new("y", freq_y);
 
-    let oper_deps =
-        PertMultichain::from_map(BTreeMap::from([(pert_x.clone(), 99), (pert_y.clone(), 99)]));
+    let oper_deps = PertMultichain::from_map(BTreeMap::from([
+        (pert_x.clone(), u32::MAX),
+        (pert_y.clone(), u32::MAX),
+    ]));
 
     let one_elec_matrix = OneElecMatrix::builder("h").dependencies(oper_deps.clone()).build()?;
     let single_excitation_operator = ExcitationOperator::new("E_{pq}");
@@ -122,7 +124,7 @@ fn orb_cc_linear_response() -> Result<(), TinnedError> {
         )
     };
 
-    // Using `min_wfn_exten = 0` means 2n+1 and 2n+2 rules
+    // Using `min_wfn_exten_order = 0` means 2n+1 and 2n+2 rules
     let linear_response =
         lag.response_function(&exten_perturbations, &inten_perturbations, 0, false, None)?;
 

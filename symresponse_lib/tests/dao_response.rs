@@ -21,7 +21,7 @@ fn lao_quadratic_response() -> Result<(), TinnedError> {
 
     // Since we use London atomic orbitals, all operators depend on the
     // magnetic perturbation and can be differentiated infinitely
-    let perturbing_b_deps = PertMultichain::from_map(BTreeMap::from([(pert_b.clone(), 99)]));
+    let perturbing_b_deps = PertMultichain::from_map(BTreeMap::from([(pert_b.clone(), u32::MAX)]));
 
     let overlap_matrix =
         OneElecMatrix::builder("S").dependencies(perturbing_b_deps.clone()).build()?;
@@ -33,7 +33,7 @@ fn lao_quadratic_response() -> Result<(), TinnedError> {
     // respect to electric perturbations only once
     let perturbing_deps = PertMultichain::from_map(BTreeMap::from([
         (pert_a.clone(), 1),
-        (pert_b.clone(), 99),
+        (pert_b.clone(), u32::MAX),
         (pert_c.clone(), 1),
     ]));
     let perturbing_indep_perts = BTreeSet::from([pert_a.clone(), pert_c.clone()]);
@@ -131,9 +131,8 @@ fn lao_quadratic_response() -> Result<(), TinnedError> {
 
     //FIXME: is this elimination necessary?
     // Elimiate multipliers for TDSCF equation and idempotency constraints
-    let multipliers = lag.get_lag_multiplier();
-    for multiplier in &multipliers {
-        expected_response = expected_response.eliminate(multiplier, &exten_perturbations, 1)?;
+    for multiplier in lag.get_lagrangian_multipliers() {
+        expected_response = expected_response.eliminate(&multiplier, &exten_perturbations, 1)?;
     }
 
     // Final result of Equation (B1)

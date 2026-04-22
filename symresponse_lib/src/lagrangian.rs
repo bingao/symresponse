@@ -3,7 +3,7 @@ use std::sync::Arc;
 
 use rayon::prelude::*;
 
-use tinned::{Expr, NumberTolerance, Perturbation, TinnedError, generic_error, is_zero_expr};
+use tinned::{Expr, NumberTolerance, Perturbation, TinnedError, generic_error};
 
 use crate::lagrangian_internal::sealed::LagrangianInternal;
 use crate::types::ResponseDetail;
@@ -22,117 +22,28 @@ pub trait Lagrangian: std::fmt::Debug + Send + Sync + LagrangianInternal {
     // extensive and intensive perturbations. The former must contain at least
     // one extensive perturbation, while the latter can be empty.
     //
-    // `min_wfn_exten` as 0, means it will be automatically determined as the
+    // `min_wfn_exten_order` as 0, means it will be automatically determined as the
     // next integer of the floor function of the half number of extensive
-    // perturbations. For `min_wfn_exten` greater than the number of extensive
+    // perturbations. For `min_wfn_exten_order` greater than the number of extensive
     // perturbations, it means no elimination of wave function parameters so
     // that more Lagrangian multipliers can be eliminated.
     fn response_function(
         &self,
         exten_perturbations: &[Arc<Perturbation>],
         inten_perturbations: &[Arc<Perturbation>],
-        min_wfn_exten: u32,
+        min_wfn_exten_order: u32,
         validate_frequencies: bool,
         num_tol: Option<NumberTolerance>,
     ) -> Result<Arc<dyn Expr>, TinnedError> {
-        // Validate that: (i) at least one extensive perturbation, (ii) sum of
-        // all perturbations' frequencies is zero, and (iii) extensive and
-        // intensive perturbations are disjoint
-        if exten_perturbations.is_empty() {
-            return Err(generic_error(
-                "Lagrangian requires at least one extensive perturbation",
-                None,
-            ));
-        }
-        if validate_frequencies {
-            if self.is_non_zero_sum_freqs(
-                exten_perturbations,
-                inten_perturbations,
-                num_tol.clone(),
-            )? {
-                return Err(generic_error(
-                    "Lagrangian gets perturbations with non-zero sum frequencies",
-                    None,
-                ));
-            }
-        }
-        if self.has_common_perturbation(exten_perturbations, inten_perturbations) {
-            return Err(generic_error(
-                "Lagrangian gets same extensive and intensive perturbation(s)",
-                None,
-            ));
-        }
-
-        // Differentiate the quasi-energy (derivative) Lagrangian
-        let mut result = self.do_differentiation(
+        let diff_lagrangian = self.differentiate_lagrangian(
             self.get_lagrangian(),
             exten_perturbations,
             inten_perturbations,
+            validate_frequencies,
+            num_tol.clone(),
         )?;
-        // Usually the differentiated quasi-energy Lagrangian cannot be zero
-        if is_zero_expr(&result, num_tol.clone()) {
-            return Ok(result);
-        }
 
-        // Used, for example symmetrization in DAO response theory
-        result = self
-            .post_differentiation(&result, exten_perturbations, inten_perturbations)
-            .map_err(|e| {
-                generic_error(
-                    "Post operations after differentiating the Lagrangian failed",
-                    Some(Box::new(e)),
-                )
-            })?;
-
-        // Minimum order for the elimination of wave function parameters is the
-        // next integer of the floor function of the half number of
-        // perturbations, according to Table IV, J. Chem. Phys. 129, 214103 (2008)
-        let mut min_wfn_order: u32 = 1 + (exten_perturbations.len() / 2) as u32;
-        if min_wfn_exten > 0 {
-            if min_wfn_exten < min_wfn_order {
-                return Err(generic_error(
-                    &format!("Invalid minimum order {}", min_wfn_exten),
-                    None,
-                ));
-            } else {
-                min_wfn_order = min_wfn_exten;
-            }
-        }
-
-        // Eliminate wave function parameter
-        if min_wfn_exten <= exten_perturbations.len() as u32 {
-            result = self
-                .eliminate_wfn_parameter(&result, exten_perturbations, min_wfn_order)
-                .map_err(|e| {
-                    generic_error(
-                        "Elimination of wave function parameter failed",
-                        Some(Box::new(e)),
-                    )
-                })?;
-        }
-
-        // Minimum order for the elimination of Lagrangian multipliers,
-        // see Table V, J. Chem. Phys. 129, 214103 (2008)
-        let min_multiplier_order: u32 = if min_wfn_exten <= exten_perturbations.len() as u32 {
-            exten_perturbations.len() as u32 - min_wfn_order + 1
-        } else {
-            0
-        };
-
-        // Eliminate Lagrangian multipliers
-        result = self
-            .eliminate_lag_multipliers(&result, exten_perturbations, min_multiplier_order)
-            .map_err(|e| {
-                generic_error("Elimination of Lagrangian multipliers failed", Some(Box::new(e)))
-            })?;
-
-        // Usually `result` cannot be zero after elimination
-        if is_zero_expr(&result, num_tol.clone()) {
-            return Ok(result);
-        }
-
-        // Evaluation at zero perturbation strength
-        result.substitute_zero_perturbations(num_tol)
+        self.do_elimination(&diff_lagrangian, exten_perturbations, min_wfn_exten_order, num_tol)
     }
 
     // Returns residue according to given extensive and intensive
@@ -147,123 +58,40 @@ pub trait Lagrangian: std::fmt::Debug + Send + Sync + LagrangianInternal {
         &self,
         exten_perturbations: &[Arc<Perturbation>],
         inten_perturbations: &[Arc<Perturbation>],
-        min_wfn_exten: u32,
+        min_wfn_exten_order: u32,
         residue_relations: &HashMap<Arc<dyn Expr>, (bool, Vec<Arc<Perturbation>>)>,
         validate_frequencies: bool,
         num_tol: Option<NumberTolerance>,
     ) -> Result<Arc<dyn Expr>, TinnedError> {
-        if !self.validate_residue_relations(
+        let residue_setup = self.prepare_residue_analysis(
             exten_perturbations,
             inten_perturbations,
+            &self.get_wfn_parameters(),
+            &self.get_lagrangian_multipliers(),
             residue_relations,
-        ) {
-            return Err(generic_error(
-                "Invalid given relation between excited states and perturbations.",
-                None,
-            ));
-        }
+        )?;
 
         //FIXME: For the test dao_3p_tme, n+1 rule gives 0 response function, how to explain? Is it valid?
-
         // Computes response function.
-        let mut result = self.response_function(
+        let result = self.response_function(
             exten_perturbations,
             inten_perturbations,
-            min_wfn_exten,
+            min_wfn_exten_order,
             validate_frequencies,
             num_tol,
         )?;
 
-        // Sets up `diff_params` and `residue_map` for retaining and replacing
-        // differentiated parameters and their higher-order ones.
-        let mut parameters: Vec<Arc<dyn Expr>> = self.get_wfn_parameter();
-        parameters.extend(self.get_lag_multiplier());
-        let (diff_params, residue_map) =
-            self.build_residue_parameters(&parameters, residue_relations)?;
-
-        // Retains differentiated parameters specified by `residue_relations`,
-        // as well as their higher-order ones while removes other
-        // (un)differentiated parameters.
-        result = result.retain(&diff_params, true)?;
-
-        //FIXME: `result` may become zero after `retain()`, we could consider the "complementary" residue parameters
-
-        // Replaces differentiated parameters by their residue parameters.
-        result.replace(&residue_map, true)
+        self.do_residue_analysis(&result, &residue_setup)
     }
 
-    // Returns response function with its weight.
-    //
-    // The weight is computed by a user-defined weighting function, which takes
-    // (un)perturbed wave function parameters and Lagrangian multipliers as
-    // input.
-    //
-    // `excluded_operators` contains operators that should be excluded from the
-    // response function. For example, a perturbed operator can or should be
-    // removed if users are not able to evaluate it afterwards.
-    fn response_function_with_weight(
-        &self,
-        exten_perturbations: &[Arc<Perturbation>],
-        inten_perturbations: &[Arc<Perturbation>],
-        min_wfn_exten: u32,
-        num_tol: Option<NumberTolerance>,
-        excluded_operators: &HashSet<Arc<dyn Expr>>,
-        weight_fn: &(
-             dyn Fn(
-            &BTreeMap<u32, HashSet<Arc<dyn Expr>>>,
-            &BTreeMap<u32, HashSet<Arc<dyn Expr>>>,
-        ) -> i64
-                 + Send
-                 + Sync
-         ),
-        validate_frequencies: bool,
-    ) -> Result<Option<(i64, ResponseDetail)>, TinnedError> {
-        let expr = self.response_function(
-            exten_perturbations,
-            inten_perturbations,
-            min_wfn_exten,
-            validate_frequencies,
-            num_tol,
-        )?;
-
-        if expr.exist_any(excluded_operators, false) {
-            return Ok(None);
-        }
-
-        let mut wfn_map = BTreeMap::<u32, HashSet<Arc<dyn Expr>>>::new();
-        let mut lag_map = BTreeMap::<u32, HashSet<Arc<dyn Expr>>>::new();
-
-        for param in self.get_wfn_parameter() {
-            for (order, found) in expr.find_superchains(&param) {
-                wfn_map.entry(order).or_default().extend(found);
-            }
-        }
-
-        for param in self.get_lag_multiplier() {
-            for (order, found) in expr.find_superchains(&param) {
-                lag_map.entry(order).or_default().extend(found);
-            }
-        }
-
-        let weight = weight_fn(&wfn_map, &lag_map);
-        let rf = ResponseDetail {
-            expression: expr,
-            min_wfn_exten,
-            exten_perturbations: exten_perturbations.to_vec(),
-            inten_perturbations: inten_perturbations.to_vec(),
-        };
-
-        Ok(Some((weight, rf)))
-    }
-
-    // Return optimal response function(s) by performing different elimination
+    // Returns optimal response function(s) by performing different elimination
     // rules. Optimal response function(s) has a minimal weight as determined
     // by a user-defined weighting function. The weighting function takes
     // (un)perturbed wave function parameters and Lagrangian multipliers as
     // input.
     //
     // Otherwise, all possible extensive and intensive perturbations, and
-    // `min_wfn_exten` will be considered.
+    // `min_wfn_exten_order` will be considered.
     //
     // `exten_perturbations` and `inten_perturbations` contain, respectively,
     // extensive and intensive perturbations. The former must contain at least
@@ -272,6 +100,8 @@ pub trait Lagrangian: std::fmt::Debug + Send + Sync + LagrangianInternal {
     // `excluded_operators` contains operators that should be excluded from
     // response functions. For example, a perturbed operator can or should be
     // removed if users are not able to evaluate it afterwards.
+    //
+    // When a non-empty `residue_relations` is given, optimal residues will be found.
     //
     // Optimal response function(s) will be searched by varying the order of
     // differentiated wave function parameters to be eliminated with respect to
@@ -290,80 +120,40 @@ pub trait Lagrangian: std::fmt::Debug + Send + Sync + LagrangianInternal {
                  + Send
                  + Sync
          ),
+        residue_relations: Option<&HashMap<Arc<dyn Expr>, (bool, Vec<Arc<Perturbation>>)>>,
         validate_frequencies: bool,
         parallel: bool,
     ) -> Result<Option<(i64, Vec<ResponseDetail>)>, TinnedError> {
-        let min_wfn_order: u32 = 1 + (exten_perturbations.len() / 2) as u32;
-        let max_wfn_order: u32 = 1 + exten_perturbations.len() as u32;
-        let range_orders = min_wfn_order..=max_wfn_order;
-
-        // Iterates orders of differentiated wave function parameters with
-        // respect to extensive perturbations to be eliminated
-        let results: Vec<(i64, ResponseDetail)> = if parallel {
-            range_orders
-                .into_par_iter()
-                .map(|order| {
-                    self.response_function_with_weight(
-                        exten_perturbations,
-                        inten_perturbations,
-                        order,
-                        num_tol.clone(),
-                        excluded_operators,
-                        weight_fn,
-                        validate_frequencies,
-                    )
-                })
-                .collect::<Result<Vec<_>, TinnedError>>()?
-                .into_iter()
-                .flatten() // drop None entries (due to excluded operators)
-                .collect()
+        let residue_setup = if let Some(res_relations) =
+            residue_relations.filter(|relations| !relations.is_empty())
+        {
+            Some(self.prepare_residue_analysis(
+                exten_perturbations,
+                inten_perturbations,
+                &self.get_wfn_parameters(),
+                &self.get_lagrangian_multipliers(),
+                res_relations,
+            )?)
         } else {
-            range_orders
-                .into_iter()
-                .map(|order| {
-                    self.response_function_with_weight(
-                        exten_perturbations,
-                        inten_perturbations,
-                        order,
-                        num_tol.clone(),
-                        excluded_operators,
-                        weight_fn,
-                        validate_frequencies,
-                    )
-                })
-                .collect::<Result<Vec<_>, TinnedError>>()?
-                .into_iter()
-                .flatten()
-                .collect()
+            None
         };
 
-        if results.is_empty() {
-            return Ok(None);
-        }
-
-        // Find all response functions with minimal weight
-        let min_weight = results.iter().map(|(w, _)| *w).min().ok_or_else(|| {
-            generic_error(
-                "Unexpected: non-empty results but failed to compute minimum weight",
-                None,
-            )
-        })?;
-
-        let optimal = results
-            .into_iter()
-            .filter_map(|(w, r)| {
-                if w == min_weight {
-                    Some(r)
-                } else {
-                    None
-                }
-            })
-            .collect();
-
-        Ok(Some((min_weight, optimal)))
+        self.find_optimal_elimination_order_impl(
+            self.get_lagrangian(),
+            exten_perturbations,
+            inten_perturbations,
+            &self.get_wfn_parameters(),
+            &self.get_lagrangian_multipliers(),
+            num_tol.clone(),
+            excluded_operators,
+            weight_fn,
+            residue_setup,
+            validate_frequencies,
+            parallel,
+        )
     }
 
-    // Return optimal response function(s) by performing different elimination
+    // Returns optimal response function(s) by performing different elimination
     // rules. Optimal response function(s) has a minimal weight as determined
     // by a user-defined weighting function. The weighting function takes
     // (un)perturbed wave function parameters and Lagrangian multipliers as
@@ -373,7 +163,7 @@ pub trait Lagrangian: std::fmt::Debug + Send + Sync + LagrangianInternal {
     // extensive or intensive. When it is empty, optimal response function(s)
     // will be searched with fixed extensive and intensive perturbations.
     // Otherwise, all possible extensive and intensive perturbations, and
-    // `min_wfn_exten` will be considered.
+    // `min_wfn_exten_order` will be considered.
     //
     // `exten_perturbations` and `inten_perturbations` contain, respectively,
     // extensive and intensive perturbations. The former must contain at least
@@ -383,6 +173,8 @@ pub trait Lagrangian: std::fmt::Debug + Send + Sync + LagrangianInternal {
     // `excluded_operators` contains operators that should be excluded from
     // response functions. For example, a perturbed operator can or should be
     // removed if users are not able to evaluate it afterwards.
+    //
+    // When a non-empty `residue_relations` is given, optimal residues will be found.
     fn find_optimal_response_function(
         &self,
         avail_perturbations: &[Arc<Perturbation>],
@@ -398,6 +190,7 @@ pub trait Lagrangian: std::fmt::Debug + Send + Sync + LagrangianInternal {
                  + Send
                  + Sync
          ),
+        residue_relations: Option<&HashMap<Arc<dyn Expr>, (bool, Vec<Arc<Perturbation>>)>>,
         validate_frequencies: bool,
     ) -> Result<Option<(i64, Vec<ResponseDetail>)>, TinnedError> {
         if avail_perturbations.is_empty() {
@@ -407,6 +200,7 @@ pub trait Lagrangian: std::fmt::Debug + Send + Sync + LagrangianInternal {
                 num_tol.clone(),
                 excluded_operators,
                 weight_fn,
+                residue_relations,
                 validate_frequencies,
                 true,
             );
@@ -420,14 +214,40 @@ pub trait Lagrangian: std::fmt::Debug + Send + Sync + LagrangianInternal {
         }
 
         let num_perturbations = avail_map.len();
+
+        if num_perturbations >= usize::BITS as usize {
+            return Err(generic_error(
+                format!(
+                    "Too many unique perturbations {} in avail_perturbations",
+                    num_perturbations
+                ),
+                None,
+            ));
+        }
+
         let keys: Vec<_> = avail_map.keys().cloned().collect();
 
         // Make sure there is at least one extensive perturbation, so the first
         // subchain 0...0 is discarded for empty extensive perturbations
         let range_perturbations = if exten_perturbations.is_empty() {
-            1..(1 << num_perturbations)
+            1..(1usize << num_perturbations)
         } else {
-            0..(1 << num_perturbations)
+            0..(1usize << num_perturbations)
+        };
+
+        // We can reuse `residue_setup`
+        let residue_setup = if let Some(res_relations) =
+            residue_relations.filter(|relations| !relations.is_empty())
+        {
+            Some(self.prepare_residue_analysis(
+                exten_perturbations,
+                inten_perturbations,
+                &self.get_wfn_parameters(),
+                &self.get_lagrangian_multipliers(),
+                res_relations,
+            )?)
+        } else {
+            None
         };
 
         // We generate all subsets of the unique perturbations by following the
@@ -446,7 +266,7 @@ pub trait Lagrangian: std::fmt::Debug + Send + Sync + LagrangianInternal {
                     let count = *avail_map.get(pert).ok_or_else(|| {
                         generic_error("Unexpected: failed to get the key in avail_map", None)
                     })?;
-                    let target = if (mask & (1 << i)) != 0 {
+                    let target = if (mask & (1usize << i)) != 0 {
                         &mut new_exten
                     } else {
                         &mut new_inten
@@ -456,12 +276,16 @@ pub trait Lagrangian: std::fmt::Debug + Send + Sync + LagrangianInternal {
                     }
                 }
 
-                self.find_optimal_elimination_order(
+                self.find_optimal_elimination_order_impl(
+                    self.get_lagrangian(),
                     &new_exten,
                     &new_inten,
+                    &self.get_wfn_parameters(),
+                    &self.get_lagrangian_multipliers(),
                     num_tol.clone(),
                     excluded_operators,
                     weight_fn,
+                    residue_setup.clone(),
                     validate_frequencies,
                     false,
                 )
@@ -494,9 +318,8 @@ pub trait Lagrangian: std::fmt::Debug + Send + Sync + LagrangianInternal {
     fn get_lagrangian(&self) -> &Arc<dyn Expr>;
 
     // Returns unperturbed wave function parameters
-    fn get_wfn_parameter(&self) -> Vec<Arc<dyn Expr>>;
+    fn get_wfn_parameters(&self) -> Vec<Arc<dyn Expr>>;
 
-    // Returns unperturbed Lagrangian multipliers, currently used for functions
-    // `response_function_with_weight()` and `residue()`
-    fn get_lag_multiplier(&self) -> Vec<Arc<dyn Expr>>;
+    // Returns unperturbed Lagrangian multipliers
+    fn get_lagrangian_multipliers(&self) -> Vec<Arc<dyn Expr>>;
 }

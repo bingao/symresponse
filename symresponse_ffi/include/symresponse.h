@@ -150,7 +150,7 @@ symresponse_response_function (
     LagrangianHandle_t const * h,
     PerturbationSlice_t const * exten_slice,
     PerturbationSlice_t const * inten_slice,
-    uint32_t min_wfn_exten,
+    uint32_t min_wfn_exten_order,
     bool validate_frequencies,
     NumberToleranceHandle_t const * num_tol,
     TinnedErrorHandle_t * * out_err);
@@ -190,7 +190,7 @@ enum AdjointMode {
     /** <No documentation available> */
     ADJOINT_MODE_COMMUTATIVE,
     /** <No documentation available> */
-    ADJOINT_MODE_SYMMETRIC,
+    ADJOINT_MODE_SYMMETRIZED,
     /** <No documentation available> */
     ADJOINT_MODE_ORDERED,
 }
@@ -533,12 +533,6 @@ tinned_excitation_operator_name (
 ExprHandle_t *
 tinned_excitation_operator_new (
     char const * name,
-    TinnedErrorHandle_t * * out_err);
-
-/** <No documentation available> */
-bool
-tinned_exp_adjoint_map_at_zero_perturbations (
-    ExprHandle_t const * h,
     TinnedErrorHandle_t * * out_err);
 
 /** <No documentation available> */

@@ -66,7 +66,7 @@ pub fn symresponse_response_function(
     h: Option<&LagrangianHandle>,
     exten_slice: Option<&PerturbationSlice>,
     inten_slice: Option<&PerturbationSlice>,
-    min_wfn_exten: u32,
+    min_wfn_exten_order: u32,
     validate_frequencies: bool,
     num_tol: Option<&NumberToleranceHandle>,
     out_err: Option<Out<'_, TinnedErrorBox>>,
@@ -95,7 +95,7 @@ pub fn symresponse_response_function(
             .response_function(
                 &exten_perturbations,
                 &inten_perturbations,
-                min_wfn_exten,
+                min_wfn_exten_order,
                 validate_frequencies,
                 num_tolerance,
             )

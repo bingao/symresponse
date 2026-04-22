@@ -179,8 +179,8 @@ impl LagrangianOrbCc {
             st_single_exc.clone(),
             MatrixMul::new(vec![de_excitation_operator.clone(), st_single_exc])?,
         ])?;
-        let one_elec_density =
-            SubExpr::builder("one-electron-density", one_density_expr).build()?;
+        //FIXME: make a unique name for SubExpr!
+        let one_elec_density = SubExpr::new("one-electron-density", one_density_expr);
 
         // Similarity-transformed double excitation operator, e^{kappa} * e_{pqrs} * e^{-kappa}
         let kappa_double_exc =
@@ -197,8 +197,7 @@ impl LagrangianOrbCc {
             st_double_exc.clone(),
             MatrixMul::new(vec![de_excitation_operator.clone(), st_double_exc])?,
         ])?;
-        let two_elec_density =
-            SubExpr::builder("two-electron-density", two_density_expr).build()?;
+        let two_elec_density = SubExpr::new("two-electron-density", two_density_expr);
 
         // Similarity-transformed Hamiltonian, e^{kappa} * H * e^{-kappa}
         let kappa_transformed_hamiltonian = MatrixAdd::new(vec![
@@ -526,12 +525,12 @@ impl Lagrangian for LagrangianOrbCc {
     }
 
     #[inline]
-    fn get_wfn_parameter(&self) -> Vec<Arc<dyn Expr>> {
+    fn get_wfn_parameters(&self) -> Vec<Arc<dyn Expr>> {
         vec![self.cc_amplitude.clone(), self.orb_rot_parameter.clone()]
     }
 
     #[inline]
-    fn get_lag_multiplier(&self) -> Vec<Arc<dyn Expr>> {
+    fn get_lagrangian_multipliers(&self) -> Vec<Arc<dyn Expr>> {
         vec![self.cc_multiplier.clone(), self.brillouin_multiplier.clone()]
     }
 }

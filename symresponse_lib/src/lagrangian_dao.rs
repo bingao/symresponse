@@ -6,10 +6,10 @@ use num_rational::Rational64;
 use tinned::{
     Add, AoTwoElecEnergy, AoTwoElecMatrix, BasisTimeEvolution, ExchCorrEnergy, ExchCorrPotential,
     Expr, LagMultiplier, MatrixAdd, MatrixMul, NonElecFunction, Number, NumberTolerance,
-    OneElecMatrix, PertMultichain, Perturbation, ResidueParameter, SubExpr, TimeEvolution,
-    TinnedError, Trace, WfnParameter, ZeroOperator, anticommutator, commutator, differentiate_expr,
-    downcast_from_arc, expression_error, generic_error, is_expr_type, is_zero_expr,
-    s_anticommutator, s_commutator, subtract_exprs, sum_pert_frequencies,
+    OneElecMatrix, Perturbation, ResidueParameter, SubExpr, TimeEvolution, TinnedError, Trace,
+    WfnParameter, ZeroOperator, anticommutator, commutator, differentiate_expr, downcast_from_arc,
+    expression_error, generic_error, is_expr_type, is_zero_expr, s_anticommutator, s_commutator,
+    subtract_exprs,
 };
 
 use crate::lagrangian::Lagrangian;
@@ -134,14 +134,12 @@ impl LagrangianDao {
         };
 
         let tdscf_multiplier_name = "tdscf-multiplier";
-        let tdscf_multiplier =
-            SubExpr::builder(tdscf_multiplier_name, tdscf_multiplier_expr).build()?;
-        let tdscf_equation = SubExpr::builder("tdscf-equation", tdscf_equation_expr).build()?;
+        let tdscf_multiplier = SubExpr::new(tdscf_multiplier_name, tdscf_multiplier_expr);
+        let tdscf_equation = SubExpr::new("tdscf-equation", tdscf_equation_expr);
 
         let idemp_multiplier_name = "idempotency-multiplier";
-        let idemp_multiplier =
-            SubExpr::builder(idemp_multiplier_name, idemp_multiplier_expr).build()?;
-        let idempotency = SubExpr::builder("idempotency-constraint", idempotency_expr).build()?;
+        let idemp_multiplier = SubExpr::new(idemp_multiplier_name, idemp_multiplier_expr);
+        let idempotency = SubExpr::new("idempotency-constraint", idempotency_expr);
 
         // Make proxies of Lagrangian multipliers for elimination
         let tdscf_multiplier_proxy = LagMultiplier::builder(tdscf_multiplier_name).build()?;
@@ -159,11 +157,10 @@ impl LagrangianDao {
         // The first term in Equation (98), J. Chem. Phys. 129, 214108 (2008)
         let density_a = density_matrix.differentiate(&perturbation_a)?;
         let dens_a_set = HashSet::from([density_a]);
-        let generalized_energy_a = SubExpr::builder(
+        let generalized_energy_a = SubExpr::new(
             "generalized-energy-a",
             generalized_energy.differentiate(&perturbation_a)?.remove(&dens_a_set)?,
-        )
-        .build()?;
+        );
 
         // The time-averaged quasi-energy derivative Lagrangian
         let lagrangian_expr = subtract_exprs(generalized_energy_a.clone(), Add::new(lag_terms)?)?;
@@ -261,7 +258,7 @@ impl LagrangianDao {
         let generalized_energy = Add::new(energy_terms)?;
 
         let fock_expr = MatrixAdd::new(fock_terms)?;
-        let fock_matrix = SubExpr::builder("generalized-fock-matrix", fock_expr).build()?;
+        let fock_matrix = SubExpr::new("generalized-fock-matrix", fock_expr);
 
         Ok((generalized_energy, fock_matrix))
     }
@@ -383,11 +380,10 @@ impl LagrangianDao {
                         density_t.clone(),
                     ])?,
                 ])?;
-                let general_ew_density = SubExpr::builder(
+                let general_ew_density = SubExpr::new(
                     "generalized-energy-weighted-density-matrix",
                     general_ew_density_expr,
-                )
-                .build()?;
+                );
                 // Pulay term
                 let pulay_term = Trace::new(MatrixMul::new(vec![
                     overlap_a.clone(),
@@ -651,11 +647,13 @@ impl LagrangianDao {
                     (res_param.positive_frequency(), res_param.perturbations().to_vec()),
                 )]);
 
-                let (diff_params, residue_map) = self
+                let residue_setup = self
                     .build_residue_parameters(&[self.density_matrix.clone()], &residue_relations)?;
 
                 (
-                    result.retain(&diff_params, true)?.replace(&residue_map, true)?,
+                    result
+                        .retain(residue_setup.diff_params(), true)?
+                        .replace(residue_setup.residue_map(), true)?,
                     freq_pert_density.clone(),
                 )
             }
@@ -726,27 +724,8 @@ impl LagrangianDao {
 
 impl LagrangianInternal for LagrangianDao {
     #[inline]
-    fn is_non_zero_sum_freqs(
-        &self,
-        exten_perturbations: &[Arc<Perturbation>],
-        inten_perturbations: &[Arc<Perturbation>],
-        num_tol: Option<NumberTolerance>,
-    ) -> Result<bool, TinnedError> {
-        let freq_sum_ext = sum_pert_frequencies(&exten_perturbations).map_err(|e| {
-            generic_error("Sum of extensive perturbations' frequencies failed", Some(Box::new(e)))
-        })?;
-        let freq_sum_int = sum_pert_frequencies(&inten_perturbations).map_err(|e| {
-            generic_error("Sum of intensive perturbations' frequencies failed", Some(Box::new(e)))
-        })?;
-        // Here we need to inlcude the frequency of `perturbation_a`, which can
-        // either be extensive or intensive
-        let terms = vec![freq_sum_ext, freq_sum_int, self.perturbation_a.frequency().clone()];
-
-        let total_freq = Add::new(terms).map_err(|e| {
-            generic_error("Sum of all perturbations' frequencies failed", Some(Box::new(e)))
-        })?;
-
-        Ok(!is_zero_expr(&total_freq, num_tol))
+    fn get_extra_perturbations(&self) -> Vec<Arc<Perturbation>> {
+        vec![self.perturbation_a.clone()]
     }
 
     #[inline]
@@ -792,28 +771,6 @@ impl LagrangianInternal for LagrangianDao {
         simplified_terms.push(lagrangian.remove(&max_fs_derivs)?);
 
         Add::new(simplified_terms)
-    }
-
-    #[inline]
-    fn validate_residue_relations(
-        &self,
-        exten_perturbations: &[Arc<Perturbation>],
-        inten_perturbations: &[Arc<Perturbation>],
-        residue_relations: &HashMap<Arc<dyn Expr>, (bool, Vec<Arc<Perturbation>>)>,
-    ) -> bool {
-        let mut all_perturbations: Vec<Arc<Perturbation>> = exten_perturbations.to_vec();
-        all_perturbations.extend(inten_perturbations.to_vec());
-        all_perturbations.push(self.perturbation_a.clone());
-
-        let all_pert_chain = PertMultichain::from_slice(&all_perturbations);
-
-        for (_excited_state, (_positive_frequency, perturbations)) in residue_relations {
-            if !all_pert_chain.is_subchain_vec(perturbations) {
-                return false;
-            }
-        }
-
-        true
     }
 
     #[inline]
@@ -867,13 +824,13 @@ impl Lagrangian for LagrangianDao {
     }
 
     #[inline]
-    fn get_wfn_parameter(&self) -> Vec<Arc<dyn Expr>> {
+    fn get_wfn_parameters(&self) -> Vec<Arc<dyn Expr>> {
         vec![self.density_matrix.clone()]
     }
 
     // We return an empty vector because we actually use ansatze of Lagrangian multipliers
     #[inline]
-    fn get_lag_multiplier(&self) -> Vec<Arc<dyn Expr>> {
+    fn get_lagrangian_multipliers(&self) -> Vec<Arc<dyn Expr>> {
         Vec::new()
     }
 }

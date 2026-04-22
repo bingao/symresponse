@@ -14,12 +14,14 @@ fn dao_first_order_lr_residue() -> Result<(), TinnedError> {
     let freq_a = Symbol::new("omega_a");
     let pert_a = Perturbation::new("a", freq_a);
     let freq_b = Symbol::new("omega_b");
-    let pert_b = Perturbation::new("b", freq_b.clone());
+    let pert_b = Perturbation::new("b", freq_b);
 
     let density_matrix = WfnParameter::builder("D").build()?;
 
-    let oper_deps =
-        PertMultichain::from_map(BTreeMap::from([(pert_a.clone(), 9), (pert_b.clone(), 9)]));
+    let oper_deps = PertMultichain::from_map(BTreeMap::from([
+        (pert_a.clone(), u32::MAX),
+        (pert_b.clone(), u32::MAX),
+    ]));
 
     let overlap_matrix = OneElecMatrix::builder("S").dependencies(oper_deps.clone()).build()?;
     let one_elec_hamiltonian =
@@ -84,6 +86,7 @@ fn dao_first_order_lr_residue() -> Result<(), TinnedError> {
     .retain(&density_b_set, true)?
     .replace(&res_density_b_map, true)?;
 
+    //FIXME: got an error for serde_json::to_string(...), Error("key must be a string", line: 0, column: 0)
     //let json_residue = serde_json::to_string(&residue).unwrap();
     //println!("Reside = {}", json_residue);
 
@@ -131,7 +134,7 @@ fn lao_mcd() -> Result<(), TinnedError> {
 
     // Since we use London atomic orbitals, all operators depend on the
     // magnetic perturbation and can be differentiated infinitely
-    let perturbing_b_deps = PertMultichain::from_map(BTreeMap::from([(pert_b.clone(), 99)]));
+    let perturbing_b_deps = PertMultichain::from_map(BTreeMap::from([(pert_b.clone(), u32::MAX)]));
 
     let overlap_matrix =
         OneElecMatrix::builder("S").dependencies(perturbing_b_deps.clone()).build()?;
@@ -143,7 +146,7 @@ fn lao_mcd() -> Result<(), TinnedError> {
     // respect to electric perturbations only once
     let perturbing_deps = PertMultichain::from_map(BTreeMap::from([
         (pert_a.clone(), 1),
-        (pert_b.clone(), 99),
+        (pert_b.clone(), u32::MAX),
         (pert_c.clone(), 1),
     ]));
     let perturbing_indep_perts = BTreeSet::from([pert_a.clone(), pert_c.clone()]);
@@ -175,7 +178,7 @@ fn lao_mcd() -> Result<(), TinnedError> {
     )?;
 
     // We treat all perturbations as externsive ones
-    let exten_perturbations = vec![pert_b.clone(), pert_c.clone()];
+    let exten_perturbations = vec![pert_b, pert_c.clone()];
     let inten_perturbations = Vec::new();
 
     let excited_state_a = WfnParameter::builder("X-j").build()?;
@@ -201,18 +204,16 @@ fn lao_mcd() -> Result<(), TinnedError> {
     // Residue density matrices
     let density_a = density_matrix.differentiate(&pert_a)?;
     let density_c = density_matrix.differentiate(&pert_c)?;
-    let res_density_a =
-        ResidueParameter::builder(vec![pert_a.clone()], excited_state_a, density_a.clone())
-            .positive_frequency(false)
-            .build()?;
-    let res_density_c =
-        ResidueParameter::builder(vec![pert_c.clone()], excited_state_c, density_c.clone())
-            .positive_frequency(true)
-            .build()?;
+    let res_density_a = ResidueParameter::builder(vec![pert_a], excited_state_a, density_a.clone())
+        .positive_frequency(false)
+        .build()?;
+    let res_density_c = ResidueParameter::builder(vec![pert_c], excited_state_c, density_c.clone())
+        .positive_frequency(true)
+        .build()?;
     let density_ac_set = HashSet::from([density_a.clone(), density_c.clone()]);
 
     let res_density_ac_map: HashMap<Arc<dyn Expr>, Arc<dyn Expr>> =
-        HashMap::from([(density_a, res_density_a), (density_c, res_density_c)]);
+        HashMap::from([(density_a.clone(), res_density_a), (density_c, res_density_c)]);
 
     // Reference double residue, equation (B27)
     let generalized_energy_abc =
@@ -225,7 +226,7 @@ fn lao_mcd() -> Result<(), TinnedError> {
     let expected_residue = Add::new(vec![
         generalized_energy_abc,
         //  F^{bc} * D^{a}
-        Trace::new(MatrixMul::new(vec![fock_matrix_bc, density_matrix.differentiate(&pert_a)?])?)?,
+        Trace::new(MatrixMul::new(vec![fock_matrix_bc, density_a])?)?,
         Mul::new(vec![
             Number::minus_one(),
             Add::new(vec![
@@ -321,8 +322,8 @@ fn dao_2p_tme() -> Result<(), TinnedError> {
     let residue =
         lag.residue(&exten_perturbations, &inten_perturbations, 3, &residue_info, false, None)?;
 
-    let json_residue = serde_json::to_string(&residue).unwrap();
-    println!("Reside = {}", json_residue);
+    //FIXME: Not sure the correctness of equation (63), needs to figure out and compare
+    println!("Reside = {}", residue);
 
     Ok(())
 }

@@ -232,12 +232,12 @@ impl Lagrangian for LagrangianMcscf {
     }
 
     #[inline]
-    fn get_wfn_parameter(&self) -> Vec<Arc<dyn Expr>> {
+    fn get_wfn_parameters(&self) -> Vec<Arc<dyn Expr>> {
         vec![self.rotation_parameters.clone()]
     }
 
     #[inline]
-    fn get_lag_multiplier(&self) -> Vec<Arc<dyn Expr>> {
+    fn get_lagrangian_multipliers(&self) -> Vec<Arc<dyn Expr>> {
         Vec::new()
     }
 }

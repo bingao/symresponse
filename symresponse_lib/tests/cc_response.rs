@@ -1,33 +1,65 @@
 use std::collections::BTreeMap;
 use std::sync::Arc;
+
 use symresponse::{Lagrangian, LagrangianCc};
 use tinned::{
-    AdjointMap, AdjointMode, ExcitationOperator, ExpAdjointMap, LagMultiplier, MatrixAdd,
+    AdjointMap, AdjointMode, ExcitationOperator, ExpAdjointMap, Expr, LagMultiplier, MatrixAdd,
     MatrixMul, Number, OneElecMatrix, PertMultichain, Perturbation, Symbol, TinnedError,
     WfnParameter, differentiate_expr,
 };
+
+fn make_perturbing_operator(
+    op_name: &str,
+    pert_name: &str,
+    freq_name: &str,
+) -> Result<(Arc<Perturbation>, Arc<dyn Expr>), TinnedError> {
+    let freq = Symbol::new(freq_name);
+    let pert = Perturbation::new(pert_name, freq);
+    let deps = PertMultichain::from_map(BTreeMap::from([(pert.clone(), 1)]));
+    let op = OneElecMatrix::builder(op_name).is_perturbing(true).dependencies(deps).build()?;
+
+    Ok((pert, op))
+}
+
+fn make_st_operator(
+    cluster_operator: Arc<dyn Expr>,
+    operator: Arc<dyn Expr>,
+    max_commutator_order: u32,
+) -> Result<Arc<dyn Expr>, TinnedError> {
+    ExpAdjointMap::builder(cluster_operator, operator, Some(true))
+        .left_action(false)
+        .max_commutator_order(max_commutator_order)
+        .build()
+}
+
+fn make_st_commutator(
+    cluster_operator: Arc<dyn Expr>,
+    excitation_operator: Arc<dyn Expr>,
+    operator: Arc<dyn Expr>,
+    max_commutator_order: u32,
+) -> Result<Arc<dyn Expr>, TinnedError> {
+    ExpAdjointMap::builder(
+        cluster_operator,
+        AdjointMap::new(
+            vec![excitation_operator],
+            operator,
+            Some(false),
+            Some(AdjointMode::Commutative),
+        )?,
+        Some(true),
+    )
+    .left_action(false)
+    .max_commutator_order(max_commutator_order)
+    .build()
+}
 
 #[test]
 fn cc_linear_quadratic_response() -> Result<(), TinnedError> {
     let unperturbed_hamiltonian = OneElecMatrix::builder("H0").build()?;
 
-    let freq_a = Symbol::new("omega_a");
-    let pert_a = Perturbation::new("a", freq_a);
-    let pert_a_deps = PertMultichain::from_map(BTreeMap::from([(pert_a.clone(), 1)]));
-    let perturbing_oper_a =
-        OneElecMatrix::builder("Va").is_perturbing(true).dependencies(pert_a_deps).build()?;
-
-    let freq_b = Symbol::new("omega_b");
-    let pert_b = Perturbation::new("b", freq_b);
-    let pert_b_deps = PertMultichain::from_map(BTreeMap::from([(pert_b.clone(), 1)]));
-    let perturbing_oper_b =
-        OneElecMatrix::builder("Vb").is_perturbing(true).dependencies(pert_b_deps).build()?;
-
-    let freq_c = Symbol::new("omega_c");
-    let pert_c = Perturbation::new("c", freq_c);
-    let pert_c_deps = PertMultichain::from_map(BTreeMap::from([(pert_c.clone(), 1)]));
-    let perturbing_oper_c =
-        OneElecMatrix::builder("Vc").is_perturbing(true).dependencies(pert_c_deps).build()?;
+    let (pert_a, perturbing_oper_a) = make_perturbing_operator("Va", "a", "omega_a")?;
+    let (pert_b, perturbing_oper_b) = make_perturbing_operator("Vb", "b", "omega_b")?;
+    let (pert_c, perturbing_oper_c) = make_perturbing_operator("Vc", "c", "omega_c")?;
 
     let perturbing_operators =
         vec![perturbing_oper_a.clone(), perturbing_oper_b.clone(), perturbing_oper_c.clone()];
@@ -44,10 +76,10 @@ fn cc_linear_quadratic_response() -> Result<(), TinnedError> {
         cc_multiplier.clone(),
     )?;
 
-    let mut exten_perturbations = vec![pert_a.clone(), pert_b.clone()];
+    let mut exten_perturbations = vec![pert_a.clone(), pert_b];
     let inten_perturbations: Vec<Arc<Perturbation>> = Vec::new();
 
-    // Using `min_wfn_exten = 0` means 2n+1 and 2n+2 rules
+    // Using `min_wfn_exten_order = 0` means 2n+1 and 2n+2 rules
     let linear_response =
         lag.response_function(&exten_perturbations, &inten_perturbations, 0, false, None)?;
 
@@ -62,30 +94,28 @@ fn cc_linear_quadratic_response() -> Result<(), TinnedError> {
     let cluster_operator = lag.cluster_operator().clone();
     let de_excitation_operator = lag.de_excitation_operator().clone();
     let max_commutator_order = LagrangianCc::max_commutator_order();
+
     // Similarity-transformed operators
-    let st_unperturbed_hamiltonian = ExpAdjointMap::builder(
+    let st_unperturbed_hamiltonian = make_st_operator(
         cluster_operator.clone(),
         unperturbed_hamiltonian.clone(),
-        Some(true),
-    )
-    .left_action(false)
-    .max_commutator_order(max_commutator_order)
-    .build()?;
-    let st_perturbing_oper_a =
-        ExpAdjointMap::builder(cluster_operator.clone(), perturbing_oper_a.clone(), Some(true))
-            .left_action(false)
-            .max_commutator_order(max_commutator_order)
-            .build()?;
-    let st_perturbing_oper_b =
-        ExpAdjointMap::builder(cluster_operator.clone(), perturbing_oper_b.clone(), Some(true))
-            .left_action(false)
-            .max_commutator_order(max_commutator_order)
-            .build()?;
-    let st_perturbing_oper_c =
-        ExpAdjointMap::builder(cluster_operator.clone(), perturbing_oper_c.clone(), Some(true))
-            .left_action(false)
-            .max_commutator_order(max_commutator_order)
-            .build()?;
+        max_commutator_order,
+    )?;
+    let st_perturbing_oper_a = make_st_operator(
+        cluster_operator.clone(),
+        perturbing_oper_a.clone(),
+        max_commutator_order,
+    )?;
+    let st_perturbing_oper_b = make_st_operator(
+        cluster_operator.clone(),
+        perturbing_oper_b.clone(),
+        max_commutator_order,
+    )?;
+    let st_perturbing_oper_c = make_st_operator(
+        cluster_operator.clone(),
+        perturbing_oper_c.clone(),
+        max_commutator_order,
+    )?;
 
     let lagrangian_energy = MatrixAdd::new(vec![
         st_unperturbed_hamiltonian.clone(),
@@ -124,7 +154,7 @@ fn cc_linear_quadratic_response() -> Result<(), TinnedError> {
 
     assert_eq!(&rhs_cc_amplitude, &expected_rhs_cc_amplitude);
 
-    exten_perturbations.push(pert_c.clone());
+    exten_perturbations.push(pert_c);
 
     let quadratic_response =
         lag.response_function(&exten_perturbations, &inten_perturbations, 0, false, None)?;
@@ -163,58 +193,30 @@ fn cc_linear_quadratic_response() -> Result<(), TinnedError> {
     //}
 
     // Similarity-transformed commutator between operators and the excitation operator
-    let st_comm_unperturbed_hamiltonian = ExpAdjointMap::builder(
+    let st_comm_unperturbed_hamiltonian = make_st_commutator(
         cluster_operator.clone(),
-        AdjointMap::new(
-            vec![cc_excitation_operator.clone()],
-            unperturbed_hamiltonian,
-            Some(false),
-            Some(AdjointMode::Commutative),
-        )?,
-        Some(true),
-    )
-    .left_action(false)
-    .max_commutator_order(max_commutator_order)
-    .build()?;
-    let st_comm_perturbing_oper_a = ExpAdjointMap::builder(
+        cc_excitation_operator.clone(),
+        unperturbed_hamiltonian,
+        max_commutator_order,
+    )?;
+    let st_comm_perturbing_oper_a = make_st_commutator(
         cluster_operator.clone(),
-        AdjointMap::new(
-            vec![cc_excitation_operator.clone()],
-            perturbing_oper_a,
-            Some(false),
-            Some(AdjointMode::Commutative),
-        )?,
-        Some(true),
-    )
-    .left_action(false)
-    .max_commutator_order(max_commutator_order)
-    .build()?;
-    let st_comm_perturbing_oper_b = ExpAdjointMap::builder(
+        cc_excitation_operator.clone(),
+        perturbing_oper_a,
+        max_commutator_order,
+    )?;
+    let st_comm_perturbing_oper_b = make_st_commutator(
         cluster_operator.clone(),
-        AdjointMap::new(
-            vec![cc_excitation_operator.clone()],
-            perturbing_oper_b,
-            Some(false),
-            Some(AdjointMode::Commutative),
-        )?,
-        Some(true),
-    )
-    .left_action(false)
-    .max_commutator_order(max_commutator_order)
-    .build()?;
-    let st_comm_perturbing_oper_c = ExpAdjointMap::builder(
-        cluster_operator.clone(),
-        AdjointMap::new(
-            vec![cc_excitation_operator.clone()],
-            perturbing_oper_c,
-            Some(false),
-            Some(AdjointMode::Commutative),
-        )?,
-        Some(true),
-    )
-    .left_action(false)
-    .max_commutator_order(max_commutator_order)
-    .build()?;
+        cc_excitation_operator.clone(),
+        perturbing_oper_b,
+        max_commutator_order,
+    )?;
+    let st_comm_perturbing_oper_c = make_st_commutator(
+        cluster_operator,
+        cc_excitation_operator,
+        perturbing_oper_c,
+        max_commutator_order,
+    )?;
 
     let cc_multiplier_equation = MatrixAdd::new(vec![
         st_comm_unperturbed_hamiltonian.clone(),
