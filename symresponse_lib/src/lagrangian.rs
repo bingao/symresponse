@@ -106,6 +106,8 @@ pub trait Lagrangian: std::fmt::Debug + Send + Sync + LagrangianInternal {
     // Optimal response function(s) will be searched by varying the order of
     // differentiated wave function parameters to be eliminated with respect to
     // extensive perturbations
+    //
+    //FIXME: add unit test for this method
     fn find_optimal_elimination_order(
         &self,
         exten_perturbations: &[Arc<Perturbation>],
@@ -175,6 +177,8 @@ pub trait Lagrangian: std::fmt::Debug + Send + Sync + LagrangianInternal {
     // removed if users are not able to evaluate it afterwards.
     //
     // When a non-empty `residue_relations` is given, optimal residues will be found.
+    //
+    //FIXME: add unit test for this method
     fn find_optimal_response_function(
         &self,
         avail_perturbations: &[Arc<Perturbation>],

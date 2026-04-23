@@ -1,11 +1,10 @@
-use std::collections::HashSet;
 use std::sync::Arc;
 
 use tinned::{
     Add, AdjointMap, AdjointMode, DotProduct, ExcitationOperator, ExpAdjointMap, Expr,
     HermitianTranspose, LagMultiplier, MatrixAdd, MatrixMul, Number, NumberTolerance, Perturbation,
     SubExpr, TinnedError, Trace, WfnParameter, differentiate_expr, downcast_from_arc,
-    expression_error, is_expr_type, unreachable_error,
+    expression_error, is_expr_type,
 };
 
 use crate::lagrangian::Lagrangian;
@@ -22,7 +21,7 @@ pub struct LagrangianOrbCc {
     // Coupled-cluster operator
     cluster_operator: Arc<dyn Expr>,
     // Lambda operator or de-excitation operator
-    de_excitation_operator: Arc<dyn Expr>,
+    cc_lambda_operator: Arc<dyn Expr>,
     // Response equation for coupled-cluster amplitude
     cc_amplitude_equation: Arc<dyn Expr>,
     // Coupled-cluster Lagrangian multiplier
@@ -53,6 +52,38 @@ impl LagrangianOrbCc {
         4
     }
 
+    // Build one- or two-electron density matrix
+    #[inline]
+    pub fn build_electron_density_matrix(
+        name: impl Into<String>,
+        kappa_operator: &Arc<dyn Expr>,
+        excitation_operator: &Arc<dyn Expr>,
+        cluster_operator: &Arc<dyn Expr>,
+        cc_lambda_operator: &Arc<dyn Expr>,
+    ) -> Result<Arc<dyn Expr>, TinnedError> {
+        // Similarity-transformed single or double excitation operator
+        // e^{kappa} * E_{pq} * e^{-kappa}, or e^{kappa} * e_{pqrs} * e^{-kappa}
+        let kappa_transformed_oper = ExpAdjointMap::builder(
+            kappa_operator.clone(),
+            excitation_operator.clone(),
+            Some(false),
+        )
+        .left_action(true)
+        .build()?;
+        let cc_transformed_oper =
+            ExpAdjointMap::builder(cluster_operator.clone(), kappa_transformed_oper, Some(true))
+                .left_action(false)
+                .max_commutator_order(Self::max_commutator_order())
+                .build()?;
+        // Set one- or two-electron density matrix
+        let density_expr = MatrixAdd::new(vec![
+            cc_transformed_oper.clone(),
+            MatrixMul::new(vec![cc_lambda_operator.clone(), cc_transformed_oper])?,
+        ])?;
+
+        Ok(SubExpr::new(name, density_expr))
+    }
+
     // Builds orbital-relaxed coupled-cluster Lagrangian
     pub fn new(
         one_elec_matrix: Arc<dyn Expr>,
@@ -69,7 +100,7 @@ impl LagrangianOrbCc {
         orb_rot_generator: Arc<dyn Expr>,
         brillouin_multiplier: Arc<dyn Expr>,
     ) -> Result<Self, TinnedError> {
-        // Check types of inputs
+        // Checks types of inputs
         if !is_expr_type::<ExcitationOperator>(&single_excitation_operator) {
             return Err(expression_error(
                 "Invalid type of single excitation operator",
@@ -105,17 +136,16 @@ impl LagrangianOrbCc {
                 None,
             ));
         }
-        if let Some(parameter) = downcast_from_arc::<WfnParameter>(&orb_rot_parameter) {
-            if !parameter.is_perturbing() {
-                return Err(expression_error(
-                    "Non-perturbing orbital rotation parameter",
-                    &orb_rot_parameter,
-                    None,
-                ));
-            }
-        } else {
+        if !is_expr_type::<WfnParameter>(&orb_rot_parameter) {
             return Err(expression_error(
                 "Invalid type of orbital rotation parameter",
+                &orb_rot_parameter,
+                None,
+            ));
+        }
+        if orb_rot_parameter.has_unperturbed_term() {
+            return Err(expression_error(
+                "Non-perturbing orbital rotation parameter",
                 &orb_rot_parameter,
                 None,
             ));
@@ -135,8 +165,8 @@ impl LagrangianOrbCc {
             ));
         }
 
-        // Theoretically. the following dot products allow for swaping CC
-        // excitation opertor and amplitude/multiplier. But that does not
+        // Theoretically, the following dot products allow for swapping CC
+        // excitation operator and amplitude/multiplier. But that does not
         // give us any benefit for symbolic differentiation and computation. We
         // simply set it as `false` here.
         let cluster_operator = DotProduct::new(
@@ -146,7 +176,7 @@ impl LagrangianOrbCc {
             false,
             Some(false),
         )?;
-        let de_excitation_operator = DotProduct::new(
+        let cc_lambda_operator = DotProduct::new(
             cc_excitation_operator.clone(),
             true,
             cc_multiplier.clone(),
@@ -162,42 +192,22 @@ impl LagrangianOrbCc {
             Some(false),
         )?;
 
-        let max_commutator_order: u32 = 4;
+        // Set one- and two-electron density matrices
+        let one_elec_density = Self::build_electron_density_matrix(
+            "one-electron-density",
+            &kappa_operator,
+            &single_excitation_operator,
+            &cluster_operator,
+            &cc_lambda_operator,
+        )?;
 
-        // Similarity-transformed single excitation operator, e^{kappa} * E_{pq} * e^{-kappa}
-        let kappa_single_exc =
-            ExpAdjointMap::builder(kappa_operator.clone(), single_excitation_operator, Some(false))
-                .left_action(true)
-                .build()?;
-        let st_single_exc =
-            ExpAdjointMap::builder(cluster_operator.clone(), kappa_single_exc, Some(true))
-                .left_action(false)
-                .max_commutator_order(max_commutator_order)
-                .build()?;
-        // Set one-electron density matrix
-        let one_density_expr = MatrixAdd::new(vec![
-            st_single_exc.clone(),
-            MatrixMul::new(vec![de_excitation_operator.clone(), st_single_exc])?,
-        ])?;
-        //FIXME: make a unique name for SubExpr!
-        let one_elec_density = SubExpr::new("one-electron-density", one_density_expr);
-
-        // Similarity-transformed double excitation operator, e^{kappa} * e_{pqrs} * e^{-kappa}
-        let kappa_double_exc =
-            ExpAdjointMap::builder(kappa_operator.clone(), double_excitation_operator, Some(false))
-                .left_action(true)
-                .build()?;
-        let st_double_exc =
-            ExpAdjointMap::builder(cluster_operator.clone(), kappa_double_exc, Some(true))
-                .left_action(false)
-                .max_commutator_order(max_commutator_order)
-                .build()?;
-        // Set two-electron density matrix
-        let two_density_expr = MatrixAdd::new(vec![
-            st_double_exc.clone(),
-            MatrixMul::new(vec![de_excitation_operator.clone(), st_double_exc])?,
-        ])?;
-        let two_elec_density = SubExpr::new("two-electron-density", two_density_expr);
+        let two_elec_density = Self::build_electron_density_matrix(
+            "two-electron-density",
+            &kappa_operator,
+            &double_excitation_operator,
+            &cluster_operator,
+            &cc_lambda_operator,
+        )?;
 
         // Similarity-transformed Hamiltonian, e^{kappa} * H * e^{-kappa}
         let kappa_transformed_hamiltonian = MatrixAdd::new(vec![
@@ -209,8 +219,8 @@ impl LagrangianOrbCc {
                 .build()?,
         ])?;
 
-        // [E_{pq}-E_{qp}, e^{kappa} * H * e^{-kappa}], equation (41), J. Chem.
-        // Phys. 92, 4924-4940 (1990)
+        // [E_{pq}-E_{qp}, e^{kappa} * H * e^{-kappa}], equation (41),
+        // J. Chem. Phys. 92, 4924-4940 (1990)
         let brillouin_equation = AdjointMap::new(
             vec![orb_rot_generator.clone()],
             kappa_transformed_hamiltonian.clone(),
@@ -218,8 +228,10 @@ impl LagrangianOrbCc {
             Some(AdjointMode::Symmetrized),
         )?;
 
-        // Response equation for coupled-cluster amplitude, equation (42), J.
-        // Chem. Phys. 92, 4924-4940 (1990)
+        let max_commutator_order = Self::max_commutator_order();
+
+        // Response equation for coupled-cluster amplitude, equation (42),
+        // J. Chem. Phys. 92, 4924-4940 (1990)
         let cc_amplitude_equation = MatrixMul::new(vec![
             HermitianTranspose::new(cc_excitation_operator.clone())?,
             ExpAdjointMap::builder(
@@ -251,7 +263,7 @@ impl LagrangianOrbCc {
         // equation (43), J. Chem. Phys. 92, 4924-4940 (1990)
         let cc_multiplier_equation = MatrixAdd::new(vec![
             cc_transformed_hamiltonian.clone(),
-            MatrixMul::new(vec![de_excitation_operator.clone(), cc_transformed_hamiltonian])?,
+            MatrixMul::new(vec![cc_lambda_operator.clone(), cc_transformed_hamiltonian])?,
         ])?;
 
         // Derivative of e^{kappa} * H * e^{-kappa} with respect to kappa,
@@ -285,7 +297,7 @@ impl LagrangianOrbCc {
         // J. Chem. Phys. 92, 4924-4940 (1990)
         let brillouin_multiplier_equation = MatrixAdd::new(vec![
             cc_transformed_diff_hamiltonian.clone(),
-            MatrixMul::new(vec![de_excitation_operator.clone(), cc_transformed_diff_hamiltonian])?,
+            MatrixMul::new(vec![cc_lambda_operator.clone(), cc_transformed_diff_hamiltonian])?,
             DotProduct::new(
                 AdjointMap::new(
                     vec![orb_rot_generator],
@@ -300,7 +312,7 @@ impl LagrangianOrbCc {
             )?,
         ])?;
 
-        // Set up the Lagrangian
+        // Sets up the Lagrangian
         let lagrangian_expr = Add::new(vec![
             Trace::new(MatrixMul::new(vec![one_elec_density.clone(), one_elec_matrix.clone()])?)?,
             Trace::new(MatrixMul::new(vec![two_elec_density.clone(), two_elec_matrix.clone()])?)?,
@@ -318,7 +330,7 @@ impl LagrangianOrbCc {
             two_elec_matrix,
             cc_amplitude,
             cluster_operator,
-            de_excitation_operator,
+            cc_lambda_operator,
             cc_amplitude_equation,
             cc_multiplier,
             cc_multiplier_equation,
@@ -367,31 +379,13 @@ impl LagrangianOrbCc {
         rsp_parameter: &Arc<dyn Expr>,
         num_tol: Option<NumberTolerance>,
     ) -> Result<Arc<dyn Expr>, TinnedError> {
-        let (general_rhs, is_negative) = if let Some(parameter) =
+        let (equation, derivative, sign) = if let Some(parameter) =
             downcast_from_arc::<WfnParameter>(rsp_parameter)
         {
-            let cc_amplitude =
-                downcast_from_arc::<WfnParameter>(&self.cc_amplitude).ok_or_else(|| {
-                    unreachable_error(
-                        "Unexpected type of coupled-cluster amplitude",
-                        &self.cc_amplitude,
-                        None,
-                    )
-                })?;
-
-            let orb_rot_parameter = downcast_from_arc::<WfnParameter>(&self.orb_rot_parameter)
-                .ok_or_else(|| {
-                    unreachable_error(
-                        "Unexpected type of orbital rotation parameter",
-                        &self.orb_rot_parameter,
-                        None,
-                    )
-                })?;
-
-            if parameter.name() == cc_amplitude.name() {
-                (differentiate_expr(&self.cc_amplitude_equation, parameter.derivative())?, false)
-            } else if parameter.name() == orb_rot_parameter.name() {
-                (differentiate_expr(&self.brillouin_equation, parameter.derivative())?, true)
+            if parameter.match_one_self(&self.cc_amplitude, true) {
+                (&self.cc_amplitude_equation, parameter.derivative(), 1)
+            } else if parameter.match_one_self(&self.orb_rot_parameter, true) {
+                (&self.brillouin_equation, parameter.derivative(), -1)
             } else {
                 return Err(expression_error(
                     "Invalid wave function parameter",
@@ -400,36 +394,10 @@ impl LagrangianOrbCc {
                 ));
             }
         } else if let Some(multiplier) = downcast_from_arc::<LagMultiplier>(rsp_parameter) {
-            let cc_multiplier = downcast_from_arc::<LagMultiplier>(&self.cc_multiplier)
-                .ok_or_else(|| {
-                    unreachable_error(
-                        "Unexpected type of coupled-cluster Lagrangian multiplier",
-                        &self.cc_multiplier,
-                        None,
-                    )
-                })?;
-
-            let brillouin_multiplier = downcast_from_arc::<LagMultiplier>(
-                &self.brillouin_multiplier,
-            )
-            .ok_or_else(|| {
-                unreachable_error(
-                    "Unexpected type of Brillouin condition multiplier",
-                    &self.brillouin_multiplier,
-                    None,
-                )
-            })?;
-
-            if multiplier.name() == cc_multiplier.name() {
-                (differentiate_expr(&self.cc_multiplier_equation, multiplier.derivative())?, true)
-            } else if multiplier.name() == brillouin_multiplier.name() {
-                (
-                    differentiate_expr(
-                        &self.brillouin_multiplier_equation,
-                        multiplier.derivative(),
-                    )?,
-                    true,
-                )
+            if multiplier.match_one_self(&self.cc_multiplier, true) {
+                (&self.cc_multiplier_equation, multiplier.derivative(), -1)
+            } else if multiplier.match_one_self(&self.brillouin_multiplier, true) {
+                (&self.brillouin_multiplier_equation, multiplier.derivative(), -1)
             } else {
                 return Err(expression_error("Invalid Lagrangian multiplier", rsp_parameter, None));
             }
@@ -441,10 +409,11 @@ impl LagrangianOrbCc {
             ));
         };
 
-        let params_to_remove = HashSet::from([rsp_parameter.clone()]);
-        let rhs = general_rhs.substitute_zero_perturbations(num_tol)?.remove(&params_to_remove)?;
+        let rhs = differentiate_expr(equation, derivative)?
+            .substitute_zero_perturbations(num_tol)?
+            .remove_one(rsp_parameter)?;
 
-        if is_negative {
+        if sign < 0 {
             MatrixMul::new(vec![Number::minus_one(), rhs])
         } else {
             Ok(rhs)
@@ -457,8 +426,8 @@ impl LagrangianOrbCc {
     }
 
     #[inline]
-    pub fn de_excitation_operator(&self) -> &Arc<dyn Expr> {
-        &self.de_excitation_operator
+    pub fn cc_lambda_operator(&self) -> &Arc<dyn Expr> {
+        &self.cc_lambda_operator
     }
 
     #[inline]
@@ -491,9 +460,12 @@ impl LagrangianInternal for LagrangianOrbCc {
         min_wfn_order: u32,
     ) -> Result<Arc<dyn Expr>, TinnedError> {
         // See J. Chem. Phys. 92, 4924-4940
-        let result =
-            lagrangian.eliminate(&self.orb_rot_parameter, exten_perturbations, min_wfn_order)?;
-        result.eliminate(&self.cc_amplitude, exten_perturbations, min_wfn_order)
+        let result = lagrangian.eliminate(
+            self.orb_rot_parameter.clone(),
+            exten_perturbations,
+            min_wfn_order,
+        )?;
+        result.eliminate(self.cc_amplitude.clone(), exten_perturbations, min_wfn_order)
     }
 
     #[inline]
@@ -505,11 +477,11 @@ impl LagrangianInternal for LagrangianOrbCc {
     ) -> Result<Arc<dyn Expr>, TinnedError> {
         // See J. Chem. Phys. 92, 4924-4940
         let result = lagrangian.eliminate(
-            &self.brillouin_multiplier,
+            self.brillouin_multiplier.clone(),
             exten_perturbations,
             min_multiplier_order,
         )?;
-        result.eliminate(&self.cc_multiplier, exten_perturbations, min_multiplier_order)
+        result.eliminate(self.cc_multiplier.clone(), exten_perturbations, min_multiplier_order)
     }
 }
 

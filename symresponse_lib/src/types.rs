@@ -1,7 +1,7 @@
 use std::collections::{HashMap, HashSet};
 use std::sync::Arc;
 
-use tinned::{Expr, Perturbation, TinnedError, generic_error};
+use tinned::{Expr, PertMultichain, Perturbation, ResidueParameter, TinnedError, generic_error};
 
 // Elimination scheme
 #[derive(Clone, Copy, Debug, serde::Serialize, serde::Deserialize)]
@@ -126,4 +126,18 @@ pub struct ResponseDetail {
     pub min_wfn_exten_order: u32,
     pub exten_perturbations: Vec<Arc<Perturbation>>,
     pub inten_perturbations: Vec<Arc<Perturbation>>,
+}
+
+// Use internally to prepare right-hand side (RHS) of linear response equation
+pub struct LinearRhsInput<'a> {
+    // Equation to be differentiated to get RHS
+    pub(crate) equation: &'a Arc<dyn Expr>,
+    // Perturbations that the equation will be differentiated with respect to
+    pub(crate) derivative: &'a PertMultichain,
+    // Differentiated response parameter to be solved and should be removed
+    // from the differentiated equation
+    pub(crate) diff_parameter: &'a Arc<dyn Expr>,
+    // For computation of residue, contains the residue response parameter and
+    // unperturbed parameter
+    pub(crate) residue_info: Option<(&'a ResidueParameter, Arc<dyn Expr>)>,
 }

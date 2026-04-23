@@ -1,7 +1,6 @@
 use safer_ffi::prelude::*;
 use std::sync::Arc;
 
-use tinned::NumberTolerance;
 use tinned_ffi::{
     ExprBox, ExprHandle, NumberToleranceHandle, PerturbationSlice, TinnedErrorBox,
     perturbation_vec_from_slice, tinned_error_new, try_with_handle,
@@ -62,7 +61,7 @@ pub fn symresponse_get_lagrangian(
 }
 
 #[ffi_export]
-pub fn symresponse_response_function(
+pub fn symresponse_get_response_function(
     h: Option<&LagrangianHandle>,
     exten_slice: Option<&PerturbationSlice>,
     inten_slice: Option<&PerturbationSlice>,
@@ -71,7 +70,7 @@ pub fn symresponse_response_function(
     num_tol: Option<&NumberToleranceHandle>,
     out_err: Option<Out<'_, TinnedErrorBox>>,
 ) -> Option<ExprBox> {
-    try_with_handle(h, "symresponse_response_function", "LagrangianHandle", |lh| {
+    match try_with_handle(h, "symresponse_response_function", "LagrangianHandle", |lh| {
         let exten_perturbations = match exten_slice {
             Some(slice) => perturbation_vec_from_slice(
                 slice,
@@ -88,10 +87,9 @@ pub fn symresponse_response_function(
             None => Vec::new(),
         };
 
-        let num_tolerance: Option<NumberTolerance> = num_tol.map(|h| h.as_ref().clone());
+        let num_tolerance = num_tol.map(|h| h.as_ref().clone());
 
-        let lag_ref: &dyn Lagrangian = lh.as_ref();
-        lag_ref
+        lh.as_ref()
             .response_function(
                 &exten_perturbations,
                 &inten_perturbations,
@@ -100,17 +98,16 @@ pub fn symresponse_response_function(
                 num_tolerance,
             )
             .map(|arc| ExprBox::new(ExprHandle::new(arc)))
-    })
-    .map_or_else(
-        |e| {
+    }) {
+        Ok(expr) => Some(expr),
+        Err(e) => {
             tinned_error_new(out_err, e);
             None
         },
-        Some,
-    )
+    }
 }
 
 //#[ffi_export]
-//pub fn symresponse_residue() {
+//pub fn symresponse_get_residue() {
 //
 //}

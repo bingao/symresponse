@@ -2,12 +2,13 @@ use std::sync::Arc;
 
 use tinned::{
     AdjointMap, AdjointMode, DotProduct, ExcitationOperator, ExpAdjointMap, Expr, MatrixAdd,
-    NumberTolerance, Perturbation, ResidueParameter, TinnedError, WfnParameter, differentiate_expr,
-    downcast_from_arc, expression_error, is_expr_type,
+    NumberTolerance, Perturbation, ResidueParameter, TinnedError, WfnParameter, downcast_from_arc,
+    expression_error, is_expr_type,
 };
 
 use crate::lagrangian::Lagrangian;
 use crate::lagrangian_internal::sealed::LagrangianInternal;
+use crate::types::LinearRhsInput;
 
 #[derive(Clone, Debug, serde::Serialize, serde::Deserialize)]
 pub struct LagrangianMcscf {
@@ -27,8 +28,22 @@ impl LagrangianMcscf {
         rotation_operators: Arc<dyn Expr>,
         rotation_parameters: Arc<dyn Expr>,
     ) -> Result<Self, TinnedError> {
+        // Build terms for the right-hand side of the response equation of
+        // orbital- and state-rotation parameters
+        fn build_rhs_term(
+            rotation_operators: &Arc<dyn Expr>,
+            term: Arc<dyn Expr>,
+        ) -> Result<Arc<dyn Expr>, TinnedError> {
+            AdjointMap::new(
+                vec![rotation_operators.clone()],
+                term,
+                Some(true),
+                Some(AdjointMode::Symmetrized),
+            )
+        }
+
         // We require perturbing operators do not have zeroth-order/unperturbed term
-        for op in perturbing_operators.iter() {
+        for op in perturbing_operators {
             if op.has_unperturbed_term() {
                 return Err(expression_error(
                     "Perturbing operator should not have zeroth-order term",
@@ -37,18 +52,18 @@ impl LagrangianMcscf {
                 ));
             }
         }
+
         // Check types of orbital- and state-rotation parameters
-        if let Some(parameter) = downcast_from_arc::<WfnParameter>(&rotation_parameters) {
-            if !parameter.is_perturbing() {
-                return Err(expression_error(
-                    "Non-perturbing rotation parameters",
-                    &rotation_parameters,
-                    None,
-                ));
-            }
-        } else {
+        if !is_expr_type::<WfnParameter>(&rotation_parameters) {
             return Err(expression_error(
                 "Invalid type of rotation parameters",
+                &rotation_parameters,
+                None,
+            ));
+        }
+        if rotation_parameters.has_unperturbed_term() {
+            return Err(expression_error(
+                "Non-perturbing rotation parameters",
                 &rotation_parameters,
                 None,
             ));
@@ -77,45 +92,27 @@ impl LagrangianMcscf {
         let mut lag_terms = Vec::with_capacity(len_lag_terms);
         let mut rhs_terms = Vec::with_capacity(len_lag_terms);
 
-        let mut term = ExpAdjointMap::builder(
-            lambda_operator.clone(),
-            unperturbed_hamiltonian.clone(),
-            Some(false),
-        )
-        .left_action(false)
-        .build()?;
+        let mut term =
+            ExpAdjointMap::builder(lambda_operator.clone(), unperturbed_hamiltonian, Some(false))
+                .left_action(false)
+                .build()?;
         lag_terms.push(term.clone());
         // Note that `rhs_terms` should be multiplied by `Number::imaginary_unit()`
-        rhs_terms.push(AdjointMap::new(
-            vec![rotation_operators.clone()],
-            term,
-            Some(true),
-            Some(AdjointMode::Symmetrized),
-        )?);
+        rhs_terms.push(build_rhs_term(&rotation_operators, term)?);
 
         for oper in perturbing_operators {
             term = ExpAdjointMap::builder(lambda_operator.clone(), oper.clone(), Some(false))
                 .left_action(false)
                 .build()?;
             lag_terms.push(term.clone());
-            rhs_terms.push(AdjointMap::new(
-                vec![rotation_operators.clone()],
-                term,
-                Some(true),
-                Some(AdjointMode::Symmetrized),
-            )?);
+            rhs_terms.push(build_rhs_term(&rotation_operators, term)?);
         }
 
         term = ExpAdjointMap::builder_time_evolution(lambda_operator, false, Some(false))
             .left_action(false)
             .build()?;
         lag_terms.push(term.clone());
-        rhs_terms.push(AdjointMap::new(
-            vec![rotation_operators.clone()],
-            term,
-            Some(true),
-            Some(AdjointMode::Symmetrized),
-        )?);
+        rhs_terms.push(build_rhs_term(&rotation_operators, term)?);
 
         let lagrangian_expr = MatrixAdd::new(lag_terms)?;
         let rhs_parameters = MatrixAdd::new(rhs_terms)?;
@@ -149,20 +146,22 @@ impl LagrangianMcscf {
     //
     // Note that `rsp_parameter` should be a differentiated
     // `self.rotation_parameters`, otherwise the result will be incorrect.
-    #[inline]
     pub fn linear_response_rhs(
         &self,
         rsp_parameter: &Arc<dyn Expr>,
         num_tol: Option<NumberTolerance>,
     ) -> Result<Arc<dyn Expr>, TinnedError> {
-        let (general_rhs, diff_parameter, residue_info): (
-            Arc<dyn Expr>,
-            &Arc<dyn Expr>,
-            Option<(&ResidueParameter, Arc<dyn Expr>)>,
-        ) = if let Some(rot_param) = downcast_from_arc::<WfnParameter>(rsp_parameter) {
-            (differentiate_expr(&self.rhs_parameters, rot_param.derivative())?, rsp_parameter, None)
+        let rhs_input = if let Some(rot_param) = downcast_from_arc::<WfnParameter>(rsp_parameter) {
+            LinearRhsInput {
+                equation: &self.rhs_parameters,
+                derivative: rot_param.derivative(),
+                diff_parameter: rsp_parameter,
+                residue_info: None,
+            }
         } else if let Some(res_param) = downcast_from_arc::<ResidueParameter>(rsp_parameter) {
-            if let Some(rot_param) = downcast_from_arc::<WfnParameter>(res_param.parameter()) {
+            let diff_parameter = res_param.parameter();
+
+            if let Some(rot_param) = downcast_from_arc::<WfnParameter>(diff_parameter) {
                 // `ResidueParameter` ensures that `res_param.perturbations()`
                 // is a subchain of `rot_param.derivative()`, so we check if
                 // the former is also a superchain of the latter.
@@ -174,11 +173,12 @@ impl LagrangianMcscf {
                     ));
                 }
 
-                (
-                    differentiate_expr(&self.rhs_parameters, rot_param.derivative())?,
-                    res_param.parameter(),
-                    Some((res_param, self.rotation_parameters.clone())),
-                )
+                LinearRhsInput {
+                    equation: &self.rhs_parameters,
+                    derivative: rot_param.derivative(),
+                    diff_parameter,
+                    residue_info: Some((res_param, self.rotation_parameters.clone())),
+                }
             } else {
                 return Err(expression_error(
                     "Invalid parameter type of residue parameter",
@@ -194,7 +194,7 @@ impl LagrangianMcscf {
             ));
         };
 
-        self.finalize_response_rhs(&general_rhs, diff_parameter, residue_info, num_tol)
+        self.build_linear_rhs(rhs_input, num_tol)
     }
 }
 
@@ -206,7 +206,7 @@ impl LagrangianInternal for LagrangianMcscf {
         exten_perturbations: &[Arc<Perturbation>],
         min_wfn_order: u32,
     ) -> Result<Arc<dyn Expr>, TinnedError> {
-        lagrangian.eliminate(&self.rotation_parameters, exten_perturbations, min_wfn_order)
+        lagrangian.eliminate(self.rotation_parameters.clone(), exten_perturbations, min_wfn_order)
     }
 
     #[inline]

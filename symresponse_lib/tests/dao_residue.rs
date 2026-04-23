@@ -62,29 +62,26 @@ fn dao_first_order_lr_residue() -> Result<(), TinnedError> {
         lag.residue(&exten_perturbations, &inten_perturbations, 3, &residue_info, false, None)?;
 
     // Residue density matrix
-    let density_b = density_matrix.differentiate(&pert_b)?;
+    let density_b = density_matrix.differentiate(pert_b.clone())?;
     let res_density_b =
         ResidueParameter::builder(vec![pert_b.clone()], excited_state, density_b.clone())
             .positive_frequency(true)
             .build()?;
-    let density_b_set = HashSet::from([density_b.clone()]);
-    let res_density_b_map: HashMap<Arc<dyn Expr>, Arc<dyn Expr>> =
-        HashMap::from([(density_b.clone(), res_density_b.clone())]);
 
     // Reference residue, equation (286)
-    let generalized_energy_ab = lag.generalized_energy_a().differentiate(&pert_b)?;
-    let overlap_a = overlap_matrix.differentiate(&pert_a)?;
+    let generalized_energy_ab = lag.generalized_energy_a().differentiate(pert_b.clone())?;
+    let overlap_a = overlap_matrix.differentiate(pert_a)?;
     let general_ew_density =
         lag.general_ew_density().expect("Expect generalized energy-weighted density matrix");
-    let general_ew_density_b = general_ew_density.differentiate(&pert_b)?;
+    let general_ew_density_b = general_ew_density.differentiate(pert_b.clone())?;
     let expected_residue = subtract_exprs(
         generalized_energy_ab,
         Trace::new(MatrixMul::new(vec![overlap_a, general_ew_density_b])?)?,
     )?
-    .eliminate(&density_matrix, &exten_perturbations, 2)?
+    .eliminate(density_matrix, &exten_perturbations, 2)?
     .substitute_zero_perturbations(None)?
-    .retain(&density_b_set, true)?
-    .replace(&res_density_b_map, true)?;
+    .retain_one(&density_b, true)?
+    .replace_one(&density_b, res_density_b.clone(), true)?;
 
     //FIXME: got an error for serde_json::to_string(...), Error("key must be a string", line: 0, column: 0)
     //let json_residue = serde_json::to_string(&residue).unwrap();
@@ -97,19 +94,17 @@ fn dao_first_order_lr_residue() -> Result<(), TinnedError> {
 
     // Get the right-hand side of the linear response equation
     let density_part = WfnParameter::builder("D_P").build()?;
-    let rhs = lag.linear_response_rhs(&res_density_b, &density_part, None)?;
+    let rhs = lag.linear_response_rhs(&res_density_b, density_part.clone(), None)?;
 
     //let json_rhs = serde_json::to_string(&rhs).unwrap();
     //println!("RHS = {}", json_rhs);
 
     // Reference RHS, equation (289), J. Chem. Phys. 129, 214108 (2008)
-    let density_b_map: HashMap<Arc<dyn Expr>, Arc<dyn Expr>> =
-        HashMap::from([(density_b, density_part)]);
     let expected_rhs = lag
         .tdscf_equation()
-        .differentiate(&pert_b)?
+        .differentiate(pert_b)?
         .substitute_zero_perturbations(None)?
-        .replace(&density_b_map, true)?;
+        .replace_one(&density_b, density_part, true)?;
 
     //let json_expected_rhs = serde_json::to_string(&expected_rhs).unwrap();
     //println!("Expected RHS = {}", json_expected_rhs);
@@ -199,11 +194,10 @@ fn lao_mcd() -> Result<(), TinnedError> {
 
     // F^{bc}
     let fock_matrix_bc = differentiate_expr(lag.fock_matrix(), &exten_perturbations)?;
-    let max_fock_derivs = HashSet::from([fock_matrix_bc.clone()]);
 
     // Residue density matrices
-    let density_a = density_matrix.differentiate(&pert_a)?;
-    let density_c = density_matrix.differentiate(&pert_c)?;
+    let density_a = density_matrix.differentiate(pert_a.clone())?;
+    let density_c = density_matrix.differentiate(pert_c.clone())?;
     let res_density_a = ResidueParameter::builder(vec![pert_a], excited_state_a, density_a.clone())
         .positive_frequency(false)
         .build()?;
@@ -218,11 +212,11 @@ fn lao_mcd() -> Result<(), TinnedError> {
     // Reference double residue, equation (B27)
     let generalized_energy_abc =
         differentiate_expr(lag.generalized_energy_a(), &exten_perturbations)?
-            .remove(&max_fock_derivs)?;
-    let tdscf_equation_bc =
-        differentiate_expr(lag.tdscf_equation(), &exten_perturbations)?.remove(&max_fock_derivs)?;
+            .remove_one(&fock_matrix_bc)?;
+    let tdscf_equation_bc = differentiate_expr(lag.tdscf_equation(), &exten_perturbations)?
+        .remove_one(&fock_matrix_bc)?;
     let idempotency_bc =
-        differentiate_expr(lag.idempotency(), &exten_perturbations)?.remove(&max_fock_derivs)?;
+        differentiate_expr(lag.idempotency(), &exten_perturbations)?.remove_one(&fock_matrix_bc)?;
     let expected_residue = Add::new(vec![
         generalized_energy_abc,
         //  F^{bc} * D^{a}
@@ -238,10 +232,10 @@ fn lao_mcd() -> Result<(), TinnedError> {
             ])?,
         ])?,
     ])?
-    .eliminate(&density_matrix, &exten_perturbations, 2)?
+    .eliminate(density_matrix, &exten_perturbations, 2)?
     .substitute_zero_perturbations(None)?
-    .retain(&density_ac_set, true)?
-    .replace(&res_density_ac_map, true)?;
+    .retain_all(&density_ac_set, true)?
+    .replace_all(&res_density_ac_map, true)?;
 
     //let json_expected_residue = serde_json::to_string(&expected_residue).unwrap();
     //println!("Expected residue = {}", json_expected_residue);

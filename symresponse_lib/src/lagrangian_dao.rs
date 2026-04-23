@@ -14,6 +14,7 @@ use tinned::{
 
 use crate::lagrangian::Lagrangian;
 use crate::lagrangian_internal::sealed::LagrangianInternal;
+use crate::types::LinearRhsInput;
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
 pub enum SymmetrizeMode {
@@ -46,7 +47,7 @@ pub struct LagrangianDao {
     idemp_multiplier: Arc<dyn Expr>,
     idempotency: Arc<dyn Expr>,
     lagrangian_expr: Arc<dyn Expr>,
-    symmetrized_mode: SymmetrizeMode,
+    symmetrize_mode: SymmetrizeMode,
 }
 
 impl LagrangianDao {
@@ -62,16 +63,16 @@ impl LagrangianDao {
         xc_energy: Option<Arc<dyn Expr>>,
         xc_potential: Option<Arc<dyn Expr>>,
         h_nuc: Option<Arc<dyn Expr>>,
-        symmetrized_mode: Option<SymmetrizeMode>,
+        symmetrize_mode: Option<SymmetrizeMode>,
         num_tol: Option<NumberTolerance>,
     ) -> Result<Self, TinnedError> {
         let (generalized_energy, fock_matrix) = Self::build_energy_and_fock(
-            density_matrix.clone(),
+            &density_matrix,
             one_elec_operators,
-            two_elec_operator,
-            xc_energy,
-            xc_potential,
-            h_nuc,
+            &two_elec_operator,
+            &xc_energy,
+            &xc_potential,
+            &h_nuc,
         )?;
 
         // Constraints and Lagrangian terms
@@ -93,9 +94,9 @@ impl LagrangianDao {
                     idempotency_expr,
                 ) = Self::build_constraints_with_overlap(
                     perturbation_a.clone(),
-                    density_matrix.clone(),
-                    overlap.clone(),
-                    fock_matrix.clone(),
+                    &density_matrix,
+                    overlap,
+                    &fock_matrix,
                     num_tol,
                 )?;
 
@@ -119,8 +120,8 @@ impl LagrangianDao {
                     idempotency_expr,
                 ) = Self::build_lagrangian_constraints(
                     perturbation_a.clone(),
-                    density_matrix.clone(),
-                    fock_matrix.clone(),
+                    &density_matrix,
+                    &fock_matrix,
                 )?;
 
                 (
@@ -155,11 +156,10 @@ impl LagrangianDao {
         ])?)?);
 
         // The first term in Equation (98), J. Chem. Phys. 129, 214108 (2008)
-        let density_a = density_matrix.differentiate(&perturbation_a)?;
-        let dens_a_set = HashSet::from([density_a]);
+        let density_a = density_matrix.differentiate(perturbation_a.clone())?;
         let generalized_energy_a = SubExpr::new(
             "generalized-energy-a",
-            generalized_energy.differentiate(&perturbation_a)?.remove(&dens_a_set)?,
+            generalized_energy.differentiate(perturbation_a.clone())?.remove_one(&density_a)?,
         );
 
         // The time-averaged quasi-energy derivative Lagrangian
@@ -179,30 +179,30 @@ impl LagrangianDao {
             idemp_multiplier,
             idempotency,
             lagrangian_expr,
-            symmetrized_mode: symmetrized_mode.unwrap_or_default(),
+            symmetrize_mode: symmetrize_mode.unwrap_or_default(),
         })
     }
 
     // Build generalized energy and Fock matrix
     #[inline]
     fn build_energy_and_fock(
-        density_matrix: Arc<dyn Expr>,
+        density_matrix: &Arc<dyn Expr>,
         one_elec_operators: &[Arc<dyn Expr>],
-        two_elec_operator: Option<Arc<dyn Expr>>,
-        xc_energy: Option<Arc<dyn Expr>>,
-        xc_potential: Option<Arc<dyn Expr>>,
-        h_nuc: Option<Arc<dyn Expr>>,
+        two_elec_operator: &Option<Arc<dyn Expr>>,
+        xc_energy: &Option<Arc<dyn Expr>>,
+        xc_potential: &Option<Arc<dyn Expr>>,
+        h_nuc: &Option<Arc<dyn Expr>>,
     ) -> Result<(Arc<dyn Expr>, Arc<dyn Expr>), TinnedError> {
-        if !is_expr_type::<WfnParameter>(&density_matrix) {
-            return Err(expression_error("Invalid type of density matrix", &density_matrix, None));
+        if !is_expr_type::<WfnParameter>(density_matrix) {
+            return Err(expression_error("Invalid type of density matrix", density_matrix, None));
         }
 
         let mut energy_terms = Vec::with_capacity(one_elec_operators.len() + 3);
         let mut fock_terms = Vec::with_capacity(one_elec_operators.len() + 2);
 
         for op in one_elec_operators {
-            if !is_expr_type::<OneElecMatrix>(&op) && !is_expr_type::<BasisTimeEvolution>(&op) {
-                return Err(expression_error("Invalid type of one-electron matrix", &op, None));
+            if !is_expr_type::<OneElecMatrix>(op) && !is_expr_type::<BasisTimeEvolution>(op) {
+                return Err(expression_error("Invalid type of one-electron matrix", op, None));
             }
 
             fock_terms.push(op.clone());
@@ -212,7 +212,7 @@ impl LagrangianDao {
             energy_terms.push(trace);
         }
 
-        if let Some(op) = &two_elec_operator {
+        if let Some(op) = two_elec_operator {
             if let Some(two_elec_op) = downcast_from_arc::<AoTwoElecMatrix>(op) {
                 energy_terms.push(AoTwoElecEnergy::builder_from_operator(two_elec_op).build()?);
             } else {
@@ -221,33 +221,33 @@ impl LagrangianDao {
             fock_terms.push(op.clone());
         }
 
-        if let Some(energy) = &xc_energy {
-            if !is_expr_type::<ExchCorrEnergy>(&energy) {
+        if let Some(energy) = xc_energy {
+            if !is_expr_type::<ExchCorrEnergy>(energy) {
                 return Err(expression_error(
                     "Invalid type of exchange-correlation energy functional",
-                    &energy,
+                    energy,
                     None,
                 ));
             }
 
             energy_terms.push(energy.clone());
         }
-        if let Some(op) = &xc_potential {
-            if !is_expr_type::<ExchCorrPotential>(&op) {
+        if let Some(op) = xc_potential {
+            if !is_expr_type::<ExchCorrPotential>(op) {
                 return Err(expression_error(
                     "Invalid type of exchange-correlation functional derivative matrix",
-                    &op,
+                    op,
                     None,
                 ));
             }
 
             fock_terms.push(op.clone());
         }
-        if let Some(energy) = &h_nuc {
-            if !is_expr_type::<NonElecFunction>(&energy) {
+        if let Some(energy) = h_nuc {
+            if !is_expr_type::<NonElecFunction>(energy) {
                 return Err(expression_error(
                     "Invalid type of nuclear contributions",
-                    &energy,
+                    energy,
                     None,
                 ));
             }
@@ -265,18 +265,17 @@ impl LagrangianDao {
 
     // Apply the time-evolution operator i*\frac{\partial}{\partial t} to a given expression
     #[inline]
-    fn apply_time_evolution(expr: Arc<dyn Expr>) -> Result<Arc<dyn Expr>, TinnedError> {
-        TimeEvolution::builder(expr).is_forward(true).build()
+    fn apply_time_evolution(expr: &Arc<dyn Expr>) -> Result<Arc<dyn Expr>, TinnedError> {
+        TimeEvolution::builder(expr.clone()).is_forward(true).build()
     }
 
     // Build generalized energy-weighted density matrix, Pulay term, TDSCF
     // equation and idempotency constraints with corresponding multipliers
-    #[inline]
     fn build_constraints_with_overlap(
         perturbation_a: Arc<Perturbation>,
-        density_matrix: Arc<dyn Expr>,
-        overlap_matrix: Arc<dyn Expr>,
-        fock_matrix: Arc<dyn Expr>,
+        density_matrix: &Arc<dyn Expr>,
+        overlap_matrix: &Arc<dyn Expr>,
+        fock_matrix: &Arc<dyn Expr>,
         num_tol: Option<NumberTolerance>,
     ) -> Result<
         (
@@ -289,8 +288,8 @@ impl LagrangianDao {
         ),
         TinnedError,
     > {
-        if !is_expr_type::<OneElecMatrix>(&overlap_matrix) {
-            return Err(expression_error("Invalid type of overlap matrix", &overlap_matrix, None));
+        if !is_expr_type::<OneElecMatrix>(overlap_matrix) {
+            return Err(expression_error("Invalid type of overlap matrix", overlap_matrix, None));
         }
 
         let minus_one = Number::minus_one();
@@ -298,13 +297,13 @@ impl LagrangianDao {
         let negative_one_half = Number::from_rational(Rational64::new(-1, 2));
 
         // Equation (220), J. Chem. Phys. 129, 214108 (2008)
-        let density_a = density_matrix.differentiate(&perturbation_a)?;
+        let density_a = density_matrix.differentiate(perturbation_a.clone())?;
         let tdscf_multiplier_expr =
             s_commutator(density_a.clone(), density_matrix.clone(), overlap_matrix.clone())?;
 
         // Equation (229), J. Chem. Phys. 129, 214108 (2008)
-        let density_t = Self::apply_time_evolution(density_matrix.clone())?;
-        let overlap_t = Self::apply_time_evolution(overlap_matrix.clone())?;
+        let density_t = Self::apply_time_evolution(density_matrix)?;
+        let overlap_t = Self::apply_time_evolution(overlap_matrix)?;
         let tdscf_equation_expr = MatrixAdd::new(vec![
             MatrixMul::new(vec![
                 fock_matrix.clone(),
@@ -338,8 +337,8 @@ impl LagrangianDao {
         ])?;
 
         // Equation (224), J. Chem. Phys. 129, 214108 (2008)
-        let overlap_a = overlap_matrix.differentiate(&perturbation_a)?;
-        let fock_a = fock_matrix.differentiate(&perturbation_a)?;
+        let overlap_a = overlap_matrix.differentiate(perturbation_a.clone())?;
+        let fock_a = fock_matrix.differentiate(perturbation_a)?;
         let (general_ew_density, pulay_term, idemp_multiplier_expr) =
             if is_zero_expr(&overlap_a, num_tol) {
                 (
@@ -459,21 +458,20 @@ impl LagrangianDao {
 
     // Build TDSCF equation and idempotency constraints with corresponding
     // multipliers for orthonormal basis sets
-    #[inline]
     fn build_lagrangian_constraints(
         perturbation_a: Arc<Perturbation>,
-        density_matrix: Arc<dyn Expr>,
-        fock_matrix: Arc<dyn Expr>,
+        density_matrix: &Arc<dyn Expr>,
+        fock_matrix: &Arc<dyn Expr>,
     ) -> Result<(Arc<dyn Expr>, Arc<dyn Expr>, Arc<dyn Expr>, Arc<dyn Expr>), TinnedError> {
         // D^{a}D-DD^{a}
-        let density_a = density_matrix.differentiate(&perturbation_a)?;
+        let density_a = density_matrix.differentiate(perturbation_a.clone())?;
         let tdscf_multiplier_expr = commutator(density_a.clone(), density_matrix.clone())?;
         // Y = FD-DF-i\frac{\partial D}{\partial t}
-        let density_t = Self::apply_time_evolution(density_matrix.clone())?;
+        let density_t = Self::apply_time_evolution(density_matrix)?;
         let tdscf_equation_expr =
             subtract_exprs(commutator(fock_matrix.clone(), density_matrix.clone())?, density_t)?;
         // F^{a}D+DF^{a}-F^{a}
-        let fock_a = fock_matrix.differentiate(&perturbation_a)?;
+        let fock_a = fock_matrix.differentiate(perturbation_a)?;
         let idemp_multiplier_expr =
             subtract_exprs(anticommutator(fock_a.clone(), density_matrix.clone())?, fock_a)?;
         // D*D
@@ -508,31 +506,30 @@ impl LagrangianDao {
     // `self.density_matrix`, otherwise the result will be incorrect.
     //
     //FIXME: add unit test for this function
-    #[inline]
     pub fn particular_density_solution(
         &self,
         freq_pert_density: &Arc<dyn Expr>,
         num_tol: Option<NumberTolerance>,
     ) -> Result<Arc<dyn Expr>, TinnedError> {
-        let (idemp_deriv, diff_parameter, residue_info): (
-            Arc<dyn Expr>,
-            &Arc<dyn Expr>,
-            Option<(&ResidueParameter, Arc<dyn Expr>)>,
-        ) = if let Some(wfn_param) = downcast_from_arc::<WfnParameter>(freq_pert_density) {
-            (
-                differentiate_expr(&self.idempotency, wfn_param.derivative())?,
-                freq_pert_density,
-                None,
-            )
+        let rhs_input = if let Some(wfn_param) =
+            downcast_from_arc::<WfnParameter>(freq_pert_density)
+        {
+            LinearRhsInput {
+                equation: &self.idempotency,
+                derivative: wfn_param.derivative(),
+                diff_parameter: freq_pert_density,
+                residue_info: None,
+            }
         } else if let Some(res_param) = downcast_from_arc::<ResidueParameter>(freq_pert_density) {
-            let wfn =
-                downcast_from_arc::<WfnParameter>(res_param.parameter()).ok_or_else(|| {
-                    expression_error(
-                        "Invalid parameter type of residue density matrix",
-                        freq_pert_density,
-                        None,
-                    )
-                })?;
+            let diff_parameter = res_param.parameter();
+
+            let wfn = downcast_from_arc::<WfnParameter>(diff_parameter).ok_or_else(|| {
+                expression_error(
+                    "Invalid parameter type of residue density matrix",
+                    freq_pert_density,
+                    None,
+                )
+            })?;
 
             // `ResidueParameter` ensures that `res_param.perturbations()`
             // is a subchain of `wfn.derivative()`, so we check if the
@@ -541,11 +538,12 @@ impl LagrangianDao {
                 return Ok(ZeroOperator::new());
             }
 
-            (
-                differentiate_expr(&self.idempotency, wfn.derivative())?,
-                res_param.parameter(),
-                Some((res_param, self.density_matrix.clone())),
-            )
+            LinearRhsInput {
+                equation: &self.idempotency,
+                derivative: wfn.derivative(),
+                diff_parameter,
+                residue_info: Some((res_param, self.density_matrix.clone())),
+            }
         } else {
             return Err(expression_error(
                 "Invalid type of density matrix",
@@ -554,12 +552,7 @@ impl LagrangianDao {
             ));
         };
 
-        let idemp_deriv = self.finalize_response_rhs(
-            &idemp_deriv,
-            diff_parameter,
-            residue_info,
-            num_tol.clone(),
-        )?;
+        let idemp_deriv = self.build_linear_rhs(rhs_input, num_tol)?;
 
         let anticomm_idemp_dm = if let Some(overlap) = &self.overlap_matrix {
             s_anticommutator(idemp_deriv.clone(), self.density_matrix.clone(), overlap.clone())?
@@ -599,11 +592,10 @@ impl LagrangianDao {
     //
     // Note that `freq_pert_density` should be a differentiated
     // `self.density_matrix`, otherwise the result will be incorrect.
-    #[inline]
     pub fn linear_response_rhs(
         &self,
         freq_pert_density: &Arc<dyn Expr>,
-        particular_solution: &Arc<dyn Expr>,
+        particular_solution: Arc<dyn Expr>,
         num_tol: Option<NumberTolerance>,
     ) -> Result<Arc<dyn Expr>, TinnedError> {
         let (tdscf_deriv, replacement_target) = if let Some(wfn_param) =
@@ -612,17 +604,18 @@ impl LagrangianDao {
             (
                 differentiate_expr(&self.tdscf_equation, wfn_param.derivative())?
                     .substitute_zero_perturbations(num_tol)?,
-                freq_pert_density.clone(),
+                freq_pert_density,
             )
         } else if let Some(res_param) = downcast_from_arc::<ResidueParameter>(freq_pert_density) {
-            let wfn =
-                downcast_from_arc::<WfnParameter>(res_param.parameter()).ok_or_else(|| {
-                    expression_error(
-                        "Invalid parameter type of residue density matrix",
-                        freq_pert_density,
-                        None,
-                    )
-                })?;
+            let diff_parameter = res_param.parameter();
+
+            let wfn = downcast_from_arc::<WfnParameter>(diff_parameter).ok_or_else(|| {
+                expression_error(
+                    "Invalid parameter type of residue density matrix",
+                    freq_pert_density,
+                    None,
+                )
+            })?;
 
             // Clean `TimeEvolution` and unperturbed
             // `BasisTimeEvolution` objects first, then replace the
@@ -640,7 +633,7 @@ impl LagrangianDao {
             // excitation energy, nothing is different for the right-hand
             // side of the residue.
             if wfn.derivative().is_superchain_vec(res_param.perturbations()) {
-                (result, res_param.parameter().clone())
+                (result, diff_parameter)
             } else {
                 let residue_relations = HashMap::from([(
                     res_param.excited_state().clone(),
@@ -652,9 +645,9 @@ impl LagrangianDao {
 
                 (
                     result
-                        .retain(residue_setup.diff_params(), true)?
-                        .replace(residue_setup.residue_map(), true)?,
-                    freq_pert_density.clone(),
+                        .retain_all(residue_setup.diff_params(), true)?
+                        .replace_all(residue_setup.residue_map(), true)?,
+                    freq_pert_density,
                 )
             }
         } else {
@@ -665,10 +658,7 @@ impl LagrangianDao {
             ));
         };
 
-        let density_particular_map =
-            HashMap::from([(replacement_target, particular_solution.clone())]);
-
-        tdscf_deriv.replace(&density_particular_map, false)
+        tdscf_deriv.replace_one(replacement_target, particular_solution, false)
     }
 
     #[inline]
@@ -717,8 +707,8 @@ impl LagrangianDao {
     }
 
     #[inline]
-    pub fn symmetrized_mode(&self) -> SymmetrizeMode {
-        self.symmetrized_mode
+    pub fn symmetrize_mode(&self) -> SymmetrizeMode {
+        self.symmetrize_mode
     }
 }
 
@@ -728,14 +718,14 @@ impl LagrangianInternal for LagrangianDao {
         vec![self.perturbation_a.clone()]
     }
 
-    #[inline]
+    //FIXME: Refer to some euquations in our manuscript later
     fn post_differentiation(
         &self,
         lagrangian: &Arc<dyn Expr>,
         exten_perturbations: &[Arc<Perturbation>],
         inten_perturbations: &[Arc<Perturbation>],
     ) -> Result<Arc<dyn Expr>, TinnedError> {
-        let do_symmetrize: bool = match self.symmetrized_mode {
+        let do_symmetrize: bool = match self.symmetrize_mode {
             SymmetrizeMode::Always => true,
             SymmetrizeMode::Never => false,
             // We perform symmetrization when there is no intensive perturbations
@@ -750,7 +740,7 @@ impl LagrangianInternal for LagrangianDao {
             self.do_differentiation(&self.fock_matrix, exten_perturbations, inten_perturbations)?;
         let mut max_fs_derivs = HashSet::from([fock_deriv.clone()]);
 
-        let dens_deriv = self.density_matrix.differentiate(&self.perturbation_a)?;
+        let dens_deriv = self.density_matrix.differentiate(self.perturbation_a.clone())?;
         let mut simplified_terms = vec![Trace::new(MatrixMul::new(vec![fock_deriv, dens_deriv])?)?];
 
         if let Some(overlap) = &self.overlap_matrix {
@@ -758,7 +748,7 @@ impl LagrangianInternal for LagrangianDao {
                 self.do_differentiation(&overlap, exten_perturbations, inten_perturbations)?;
             max_fs_derivs.insert(overlap_deriv.clone());
             if let Some(gew_density) = &self.general_ew_density {
-                let gew_density_deriv = gew_density.differentiate(&self.perturbation_a)?;
+                let gew_density_deriv = gew_density.differentiate(self.perturbation_a.clone())?;
                 simplified_terms.push(Trace::new(MatrixMul::new(vec![
                     Number::minus_one(),
                     overlap_deriv,
@@ -768,7 +758,7 @@ impl LagrangianInternal for LagrangianDao {
         }
 
         // Removes terms containing maximum order derivatives of Fock and overlap matrices
-        simplified_terms.push(lagrangian.remove(&max_fs_derivs)?);
+        simplified_terms.push(lagrangian.remove_all(&max_fs_derivs)?);
 
         Add::new(simplified_terms)
     }
@@ -780,7 +770,7 @@ impl LagrangianInternal for LagrangianDao {
         exten_perturbations: &[Arc<Perturbation>],
         min_wfn_order: u32,
     ) -> Result<Arc<dyn Expr>, TinnedError> {
-        lagrangian.eliminate(&self.density_matrix, exten_perturbations, min_wfn_order)
+        lagrangian.eliminate(self.density_matrix.clone(), exten_perturbations, min_wfn_order)
     }
 
     #[inline]
@@ -791,13 +781,21 @@ impl LagrangianInternal for LagrangianDao {
         min_multiplier_order: u32,
     ) -> Result<Arc<dyn Expr>, TinnedError> {
         let mut result = lagrangian
-            .eliminate(&self.tdscf_multiplier_proxy, exten_perturbations, min_multiplier_order)
+            .eliminate(
+                self.tdscf_multiplier_proxy.clone(),
+                exten_perturbations,
+                min_multiplier_order,
+            )
             .map_err(|e| {
                 generic_error("Elimination of TDSCF multiplier failed", Some(Box::new(e)))
             })?;
 
         result = result
-            .eliminate(&self.idemp_multiplier_proxy, exten_perturbations, min_multiplier_order)
+            .eliminate(
+                self.idemp_multiplier_proxy.clone(),
+                exten_perturbations,
+                min_multiplier_order,
+            )
             .map_err(|e| {
                 generic_error("Elimination of idempotency multiplier failed", Some(Box::new(e)))
             })?;
@@ -808,7 +806,7 @@ impl LagrangianInternal for LagrangianDao {
             (self.idemp_multiplier_proxy.clone(), self.idemp_multiplier.clone()),
         ]);
 
-        result.replace(&multiplier_map, true)
+        result.replace_all(&multiplier_map, true)
     }
 }
 

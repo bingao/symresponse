@@ -50,7 +50,7 @@ void cc_response(void) {
     TINNED_SAFE_FREE_EXPR(freq_b);
 
     // Unperturbed Hamiltonian
-    ExprHandle_t* H0 = tinned_one_elec_operator_new("H0", NULL, &err);
+    ExprHandle_t* H0 = tinned_one_elec_matrix_new("H0", false, NULL, NULL, &err);
     if (!H0) {
         fprintf(
             stderr,
@@ -71,7 +71,7 @@ void cc_response(void) {
         );
         return;
     }
-    ExprHandle_t* Va = tinned_one_elec_operator_new("Va", deps_Va, &err);
+    ExprHandle_t* Va = tinned_one_elec_matrix_new("Va", true, deps_Va, NULL, &err);
     if (!Va) {
         fprintf(
             stderr,
@@ -92,7 +92,7 @@ void cc_response(void) {
         );
         return;
     }
-    ExprHandle_t* Vb = tinned_one_elec_operator_new("Vb", deps_Vb, &err);
+    ExprHandle_t* Vb = tinned_one_elec_matrix_new("Vb", true, deps_Vb, NULL, &err);
     if (!Vb) {
         fprintf(
             stderr,
@@ -104,7 +104,7 @@ void cc_response(void) {
     TINNED_SAFE_FREE_PERT_MULTICHAIN(deps_Vb);
 
     // Amplitudes
-    ExprHandle_t* cc_amplitude = tinned_wfn_parameter_new("t", &err);
+    ExprHandle_t* cc_amplitude = tinned_wfn_parameter_new("t", false, &err);
     if (!cc_amplitude) {
         fprintf(
             stderr,
@@ -115,8 +115,8 @@ void cc_response(void) {
     }
 
     // Excitation operators
-    ExprHandle_t* excitation_operators = tinned_one_elec_operator_new("tau", NULL, &err);
-    if (!excitation_operators) {
+    ExprHandle_t* cc_excitation_operator = tinned_excitation_operator_new("tau", &err);
+    if (!cc_excitation_operator) {
         fprintf(
             stderr,
             "Failed to create excitation operators, with error message: %s\n",
@@ -126,8 +126,8 @@ void cc_response(void) {
     }
 
     // Lagrangian multipliers
-    ExprHandle_t* multipliers = tinned_lag_multiplier_new("lambda", &err);
-    if (!multipliers) {
+    ExprHandle_t* cc_multiplier = tinned_lag_multiplier_new("lambda", false, &err);
+    if (!cc_multiplier) {
         fprintf(
             stderr,
             "Failed to create Lagrangian multipliers, with error message: %s\n",
@@ -138,13 +138,13 @@ void cc_response(void) {
 
     // Create quasi-energy Lagrangian
     ExprHandle_t const * const perturbing_operators[3] = {Va, Vb};
-    ExprSlice_t perturbation_oper_slice = {
+    ExprSlice_t perturbing_oper_slice = {
         .ptr = perturbing_operators,
         .len = 2,
     };
 
     LagrangianHandle_t* L = symresponse_lagrangian_cc_new(
-        H0, &perturbation_oper_slice, cc_amplitude, excitation_operators, multipliers, &err
+        H0, &perturbing_oper_slice, cc_amplitude, cc_excitation_operator, cc_multiplier, &err
     );
     if (!L) {
         fprintf(
@@ -159,8 +159,8 @@ void cc_response(void) {
     TINNED_SAFE_FREE_EXPR(Va);
     TINNED_SAFE_FREE_EXPR(Vb);
     TINNED_SAFE_FREE_EXPR(cc_amplitude);
-    TINNED_SAFE_FREE_EXPR(excitation_operators);
-    TINNED_SAFE_FREE_EXPR(multipliers);
+    TINNED_SAFE_FREE_EXPR(cc_excitation_operator);
+    TINNED_SAFE_FREE_EXPR(cc_multiplier);
 
     // Response function <<A; B>>, no intensive perturbations
     PerturbationHandle_t const * const exten_perturbations[2] = {pert_a, pert_b};
@@ -169,7 +169,7 @@ void cc_response(void) {
         .len = 2,
     };
     // Here, `false` disables the validation of sum of perturbation frequencies
-    ExprHandle_t* L_ab = symresponse_response_function (
+    ExprHandle_t* L_ab = symresponse_get_response_function (
         L, &exten_slice, NULL, 0, false, NULL, &err
     );
     if (!L_ab) {

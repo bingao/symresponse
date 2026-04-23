@@ -10,7 +10,7 @@ pub(crate) mod sealed {
         sum_pert_frequencies,
     };
 
-    use crate::types::{EliminationScheme, ResidueSetup, ResponseDetail};
+    use crate::types::{EliminationScheme, LinearRhsInput, ResidueSetup, ResponseDetail};
 
     pub trait LagrangianInternal {
         // For AO density-matrix based response theory, we need the perturbation a
@@ -407,12 +407,12 @@ pub(crate) mod sealed {
             // Retains differentiated parameters specified by `residue_relations`,
             // as well as their higher-order ones while removes other
             // (un)differentiated parameters.
-            let result = rsp_function.retain(residue_setup.diff_params(), true)?;
+            let result = rsp_function.retain_all(residue_setup.diff_params(), true)?;
 
             //FIXME: `result` may become zero after `retain()`, we could consider the "complementary" residue parameters
 
             // Replaces differentiated parameters by their residue parameters.
-            result.replace(residue_setup.residue_map(), true)
+            result.replace_all(residue_setup.residue_map(), true)
         }
 
         // Returns response function with its weight.
@@ -442,7 +442,7 @@ pub(crate) mod sealed {
                      + Sync
              ),
         ) -> Result<Option<(i64, ResponseDetail)>, TinnedError> {
-            if rsp_function.exist_any(excluded_operators, false) {
+            if rsp_function.match_any(excluded_operators, false) {
                 return Ok(None);
             }
 
@@ -450,13 +450,13 @@ pub(crate) mod sealed {
             let mut lag_map = BTreeMap::<u32, HashSet<Arc<dyn Expr>>>::new();
 
             for param in wfn_parameters {
-                for (order, found) in rsp_function.find_superchains(&param) {
+                for (order, found) in rsp_function.find_all(&param) {
                     wfn_map.entry(order).or_default().extend(found);
                 }
             }
 
             for param in lagrangian_multipliers {
-                for (order, found) in rsp_function.find_superchains(&param) {
+                for (order, found) in rsp_function.find_all(&param) {
                     lag_map.entry(order).or_default().extend(found);
                 }
             }
@@ -593,20 +593,17 @@ pub(crate) mod sealed {
             Ok(Some((min_weight, optimal)))
         }
 
-        // Finalizes the right-hand side of (linear) response equation
-        fn finalize_response_rhs(
+        // Builds the right-hand side of (linear) response equation
+        fn build_linear_rhs(
             &self,
-            general_rhs: &Arc<dyn Expr>,
-            diff_parameter: &Arc<dyn Expr>,
-            residue_info: Option<(&ResidueParameter, Arc<dyn Expr>)>,
+            rhs_input: LinearRhsInput<'_>,
             num_tol: Option<NumberTolerance>,
         ) -> Result<Arc<dyn Expr>, TinnedError> {
-            let params_to_remove = HashSet::from([diff_parameter.clone()]);
+            let result = differentiate_expr(rhs_input.equation, rhs_input.derivative)?
+                .substitute_zero_perturbations(num_tol)?
+                .remove_one(rhs_input.diff_parameter)?;
 
-            let result =
-                general_rhs.substitute_zero_perturbations(num_tol)?.remove(&params_to_remove)?;
-
-            let Some((residue_parameter, unperturbed_parameter)) = residue_info else {
+            let Some((residue_parameter, unperturbed_parameter)) = rhs_input.residue_info else {
                 return Ok(result);
             };
 
@@ -623,8 +620,8 @@ pub(crate) mod sealed {
                 self.build_residue_parameters(&[unperturbed_parameter], &residue_relations)?;
 
             result
-                .retain(residue_setup.diff_params(), true)?
-                .replace(residue_setup.residue_map(), true)
+                .retain_all(residue_setup.diff_params(), true)?
+                .replace_all(residue_setup.residue_map(), true)
         }
     }
 }

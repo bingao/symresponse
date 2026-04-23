@@ -21,12 +21,40 @@ typedef struct LagrangianHandle LagrangianHandle_t;
 /** \brief
  *  An *opaque* handle that C can only pass around
  */
-typedef struct TinnedErrorHandle TinnedErrorHandle_t;
+typedef struct ExprHandle ExprHandle_t;
+
+/** <No documentation available> */
+typedef struct NumberToleranceHandle NumberToleranceHandle_t;
 
 /** \brief
  *  An *opaque* handle that C can only pass around
  */
-typedef struct ExprHandle ExprHandle_t;
+typedef struct TinnedErrorHandle TinnedErrorHandle_t;
+
+/** <No documentation available> */
+ExprHandle_t *
+symresponse_cc_linear_response_rhs (
+    LagrangianHandle_t const * h,
+    ExprHandle_t const * rsp_parameter,
+    NumberToleranceHandle_t const * num_tol,
+    TinnedErrorHandle_t * * out_err);
+
+/** <No documentation available> */
+ExprHandle_t *
+symresponse_dao_linear_response_rhs (
+    LagrangianHandle_t const * h,
+    ExprHandle_t const * density_freq,
+    ExprHandle_t const * density_part,
+    NumberToleranceHandle_t const * num_tol,
+    TinnedErrorHandle_t * * out_err);
+
+/** <No documentation available> */
+ExprHandle_t *
+symresponse_dao_particular_density_solution (
+    LagrangianHandle_t const * h,
+    ExprHandle_t const * density_freq,
+    NumberToleranceHandle_t const * num_tol,
+    TinnedErrorHandle_t * * out_err);
 
 /** <No documentation available> */
 ExprHandle_t *
@@ -34,20 +62,39 @@ symresponse_get_lagrangian (
     LagrangianHandle_t const * h,
     TinnedErrorHandle_t * * out_err);
 
-/** <No documentation available> */
-typedef struct NumberToleranceHandle NumberToleranceHandle_t;
-
-/** <No documentation available> */
-ExprHandle_t *
-symresponse_lagrangian_cc_linear_response_rhs (
-    LagrangianHandle_t const * h,
-    ExprHandle_t const * rsp_parameter,
-    NumberToleranceHandle_t const * num_tol,
-    TinnedErrorHandle_t * * out_err);
+/** \brief
+ *  An *opaque* handle that C can only pass around
+ */
+typedef struct PerturbationHandle PerturbationHandle_t;
 
 
 #include <stddef.h>
 #include <stdint.h>
+
+/** \brief
+ *  Borrowed slice of handles
+ */
+typedef struct PerturbationSlice {
+    /** <No documentation available> */
+    PerturbationHandle_t const * const * ptr;
+
+    /** <No documentation available> */
+    size_t len;
+} PerturbationSlice_t;
+
+
+#include <stdbool.h>
+
+/** <No documentation available> */
+ExprHandle_t *
+symresponse_get_response_function (
+    LagrangianHandle_t const * h,
+    PerturbationSlice_t const * exten_slice,
+    PerturbationSlice_t const * inten_slice,
+    uint32_t min_wfn_exten_order,
+    bool validate_frequencies,
+    NumberToleranceHandle_t const * num_tol,
+    TinnedErrorHandle_t * * out_err);
 
 /** \brief
  *  Borrowed slice of handles
@@ -69,20 +116,6 @@ symresponse_lagrangian_cc_new (
     ExprHandle_t const * cc_excitation_operator,
     ExprHandle_t const * cc_multiplier,
     TinnedErrorHandle_t * * out_err);
-
-/** <No documentation available> */
-ExprHandle_t *
-symresponse_lagrangian_dao_linear_response_rhs (
-    LagrangianHandle_t const * h,
-    ExprHandle_t const * density_freq,
-    ExprHandle_t const * density_part,
-    NumberToleranceHandle_t const * num_tol,
-    TinnedErrorHandle_t * * out_err);
-
-/** \brief
- *  An *opaque* handle that C can only pass around
- */
-typedef struct PerturbationHandle PerturbationHandle_t;
 
 /** <No documentation available> */
 /** \remark Has the same ABI as `uint8_t` **/
@@ -113,15 +146,7 @@ symresponse_lagrangian_dao_new (
     ExprHandle_t const * xc_energy,
     ExprHandle_t const * xc_potential,
     ExprHandle_t const * h_nuc,
-    SymmetrizeModeReprC_t const * symmetrized_mode,
-    NumberToleranceHandle_t const * num_tol,
-    TinnedErrorHandle_t * * out_err);
-
-/** <No documentation available> */
-ExprHandle_t *
-symresponse_lagrangian_dao_particular_density_solution (
-    LagrangianHandle_t const * h,
-    ExprHandle_t const * density_freq,
+    SymmetrizeModeReprC_t const * symmetrize_mode,
     NumberToleranceHandle_t const * num_tol,
     TinnedErrorHandle_t * * out_err);
 
@@ -129,31 +154,6 @@ symresponse_lagrangian_dao_particular_density_solution (
 void
 symresponse_lagrangian_free (
     LagrangianHandle_t * lag);
-
-/** \brief
- *  Borrowed slice of handles
- */
-typedef struct PerturbationSlice {
-    /** <No documentation available> */
-    PerturbationHandle_t const * const * ptr;
-
-    /** <No documentation available> */
-    size_t len;
-} PerturbationSlice_t;
-
-
-#include <stdbool.h>
-
-/** <No documentation available> */
-ExprHandle_t *
-symresponse_response_function (
-    LagrangianHandle_t const * h,
-    PerturbationSlice_t const * exten_slice,
-    PerturbationSlice_t const * inten_slice,
-    uint32_t min_wfn_exten_order,
-    bool validate_frequencies,
-    NumberToleranceHandle_t const * num_tol,
-    TinnedErrorHandle_t * * out_err);
 
 /** <No documentation available> */
 ExprHandle_t *
@@ -645,19 +645,11 @@ tinned_expr_eq (
     TinnedErrorHandle_t * * out_err);
 
 /** <No documentation available> */
-bool
-tinned_expr_exist_any (
-    ExprHandle_t const * h,
-    ExprSlice_t const * set,
-    bool include_derivatives,
-    TinnedErrorHandle_t * * out_err);
-
-/** <No documentation available> */
 typedef struct ExprSuperchainHandle ExprSuperchainHandle_t;
 
 /** <No documentation available> */
 ExprSuperchainHandle_t *
-tinned_expr_find_superchains (
+tinned_expr_find_all (
     ExprHandle_t const * h,
     ExprHandle_t const * s,
     TinnedErrorHandle_t * * out_err);
@@ -686,15 +678,30 @@ tinned_expr_is_scalar (
     TinnedErrorHandle_t * * out_err);
 
 /** <No documentation available> */
+bool
+tinned_expr_match_any (
+    ExprHandle_t const * h,
+    ExprSlice_t const * set,
+    bool include_derivatives,
+    TinnedErrorHandle_t * * out_err);
+
+/** <No documentation available> */
 ExprHandle_t *
-tinned_expr_remove (
+tinned_expr_remove_all (
     ExprHandle_t const * h,
     ExprSlice_t const * set,
     TinnedErrorHandle_t * * out_err);
 
 /** <No documentation available> */
 ExprHandle_t *
-tinned_expr_replace (
+tinned_expr_remove_one (
+    ExprHandle_t const * h,
+    ExprHandle_t const * s,
+    TinnedErrorHandle_t * * out_err);
+
+/** <No documentation available> */
+ExprHandle_t *
+tinned_expr_replace_all (
     ExprHandle_t const * h,
     ExprSlice_t const * keys,
     ExprSlice_t const * values,
@@ -703,7 +710,7 @@ tinned_expr_replace (
 
 /** <No documentation available> */
 ExprHandle_t *
-tinned_expr_retain (
+tinned_expr_retain_all (
     ExprHandle_t const * h,
     ExprSlice_t const * set,
     bool include_derivatives,

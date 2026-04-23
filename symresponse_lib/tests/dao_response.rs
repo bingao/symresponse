@@ -1,4 +1,4 @@
-use std::collections::{BTreeMap, BTreeSet, HashSet};
+use std::collections::{BTreeMap, BTreeSet};
 use symresponse::{Lagrangian, LagrangianDao, SymmetrizeMode};
 use tinned::{
     Add, AoTwoElecMatrix, BasisTimeEvolution, ExchCorrEnergy, ExchCorrPotential, MatrixMul, Mul,
@@ -93,7 +93,6 @@ fn lao_quadratic_response() -> Result<(), TinnedError> {
 
     // F^{bc}
     let fock_matrix_bc = differentiate_expr(lag.fock_matrix(), &exten_perturbations)?;
-    let max_fock_derivs = HashSet::from([fock_matrix_bc.clone()]);
 
     // Differentiated generalized energy of Equation (B1)
     //let generalized_energy_abc = Trace::new(MatrixMul::new(vec![
@@ -102,18 +101,18 @@ fn lao_quadratic_response() -> Result<(), TinnedError> {
     //])?)?;
     let generalized_energy_abc =
         differentiate_expr(lag.generalized_energy_a(), &exten_perturbations)?
-            .remove(&max_fock_derivs)?;
+            .remove_one(&fock_matrix_bc)?;
     // TDSCF equation of Equation (B1)
-    let tdscf_equation_bc =
-        differentiate_expr(lag.tdscf_equation(), &exten_perturbations)?.remove(&max_fock_derivs)?;
+    let tdscf_equation_bc = differentiate_expr(lag.tdscf_equation(), &exten_perturbations)?
+        .remove_one(&fock_matrix_bc)?;
     // Idempotency constraint of Equation (B1)
     let idempotency_bc =
-        differentiate_expr(lag.idempotency(), &exten_perturbations)?.remove(&max_fock_derivs)?;
+        differentiate_expr(lag.idempotency(), &exten_perturbations)?.remove_one(&fock_matrix_bc)?;
     // Construct terms of Equation (B1)
     let mut expected_response = Add::new(vec![
         generalized_energy_abc,
         //  F^{bc} * D^{a}
-        Trace::new(MatrixMul::new(vec![fock_matrix_bc, density_matrix.differentiate(&pert_a)?])?)?,
+        Trace::new(MatrixMul::new(vec![fock_matrix_bc, density_matrix.differentiate(pert_a)?])?)?,
         Mul::new(vec![
             Number::minus_one(),
             Add::new(vec![
@@ -127,12 +126,12 @@ fn lao_quadratic_response() -> Result<(), TinnedError> {
             ])?,
         ])?,
     ])?
-    .eliminate(&density_matrix, &exten_perturbations, 2)?;
+    .eliminate(density_matrix, &exten_perturbations, 2)?;
 
     //FIXME: is this elimination necessary?
     // Elimiate multipliers for TDSCF equation and idempotency constraints
     for multiplier in lag.get_lagrangian_multipliers() {
-        expected_response = expected_response.eliminate(&multiplier, &exten_perturbations, 1)?;
+        expected_response = expected_response.eliminate(multiplier, &exten_perturbations, 1)?;
     }
 
     // Final result of Equation (B1)

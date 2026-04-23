@@ -53,31 +53,29 @@ pub fn symresponse_lagrangian_cc_new(
 }
 
 #[ffi_export]
-pub extern "C" fn symresponse_lagrangian_cc_linear_response_rhs(
+pub extern "C" fn symresponse_cc_linear_response_rhs(
     h: Option<&LagrangianHandle>,
     rsp_parameter: &ExprHandle,
     num_tol: Option<&NumberToleranceHandle>,
     out_err: Option<Out<'_, TinnedErrorBox>>,
 ) -> Option<ExprBox> {
-    try_with_handle(h, "symresponse_lagrangian_cc_linear_response_rhs", "LagrangianHandle", |lh| {
-        let lag_ref = lh.as_ref();
-        if let Some(lag) = lag_ref.as_any().downcast_ref::<LagrangianCc>() {
+    match try_with_handle(h, "symresponse_cc_linear_response_rhs", "LagrangianHandle", |lh| {
+        if let Some(lag) = lh.as_ref().as_any().downcast_ref::<LagrangianCc>() {
             let rsp_parameter_arc: Arc<dyn Expr> = rsp_parameter.clone_arc();
             let num_tolerance: Option<NumberTolerance> = num_tol.map(|h| h.as_ref().clone());
             lag.linear_response_rhs(&rsp_parameter_arc, num_tolerance)
                 .map(|arc| ExprBox::new(ExprHandle::new(arc)))
         } else {
             Err(generic_error(
-                "Invalid Lagrangian type in symresponse_lagrangian_cc_linear_response_rhs",
+                "Invalid Lagrangian type in symresponse_cc_linear_response_rhs",
                 None,
             ))
         }
-    })
-    .map_or_else(
-        |e| {
+    }) {
+        Ok(expr) => Some(expr),
+        Err(e) => {
             tinned_error_new(out_err, e);
             None
         },
-        Some,
-    )
+    }
 }

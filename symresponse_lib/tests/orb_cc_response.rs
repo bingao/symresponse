@@ -10,10 +10,10 @@ use tinned::{
 
 fn normalize_response_expr(
     expr: Arc<dyn Expr>,
-    orb_rot_parameter: &Arc<dyn Expr>,
-    cc_amplitude: &Arc<dyn Expr>,
-    brillouin_multiplier: &Arc<dyn Expr>,
-    cc_multiplier: &Arc<dyn Expr>,
+    orb_rot_parameter: Arc<dyn Expr>,
+    cc_amplitude: Arc<dyn Expr>,
+    brillouin_multiplier: Arc<dyn Expr>,
+    cc_multiplier: Arc<dyn Expr>,
     exten_perturbations: &[Arc<Perturbation>],
 ) -> Result<Arc<dyn Expr>, TinnedError> {
     expr.eliminate(orb_rot_parameter, exten_perturbations, 2)?
@@ -116,10 +116,10 @@ fn orb_cc_linear_response() -> Result<(), TinnedError> {
     let normalize = |expr: Arc<dyn Expr>| {
         normalize_response_expr(
             expr,
-            &orb_rot_parameter,
-            &cc_amplitude,
-            &brillouin_multiplier,
-            &cc_multiplier,
+            orb_rot_parameter.clone(),
+            cc_amplitude.clone(),
+            brillouin_multiplier.clone(),
+            cc_multiplier.clone(),
             &exten_perturbations,
         )
     };
@@ -133,17 +133,17 @@ fn orb_cc_linear_response() -> Result<(), TinnedError> {
     let one_elec_density = lag.one_elec_density().clone();
     let two_elec_density = lag.two_elec_density().clone();
 
-    let one_elec_matrix_x = one_elec_matrix.differentiate(&pert_x)?;
-    let two_elec_matrix_x = two_elec_matrix.differentiate(&pert_x)?;
+    let one_elec_matrix_x = one_elec_matrix.differentiate(pert_x.clone())?;
+    let two_elec_matrix_x = two_elec_matrix.differentiate(pert_x.clone())?;
 
-    let orb_rot_parameter_x = orb_rot_parameter.differentiate(&pert_x)?;
-    let orb_rot_parameter_y = orb_rot_parameter.differentiate(&pert_y)?;
+    let orb_rot_parameter_x = orb_rot_parameter.differentiate(pert_x.clone())?;
+    let orb_rot_parameter_y = orb_rot_parameter.differentiate(pert_y.clone())?;
 
-    let cc_amplitude_x = cc_amplitude.differentiate(&pert_x)?;
-    let cc_amplitude_y = cc_amplitude.differentiate(&pert_y)?;
+    let cc_amplitude_x = cc_amplitude.differentiate(pert_x.clone())?;
+    let cc_amplitude_y = cc_amplitude.differentiate(pert_y.clone())?;
 
-    let kappa_operator_x = lag.kappa_operator().differentiate(&pert_x)?;
-    let cluster_operator_x = lag.cluster_operator().differentiate(&pert_x)?;
+    let kappa_operator_x = lag.kappa_operator().differentiate(pert_x.clone())?;
+    let cluster_operator_x = lag.cluster_operator().differentiate(pert_x.clone())?;
 
     // Build reference linear response function
     let expected_linear_response = normalize(Add::new(vec![
@@ -152,12 +152,12 @@ fn orb_cc_linear_response() -> Result<(), TinnedError> {
             differentiate_expr(&one_elec_matrix, &exten_perturbations)?,
         ])?)?,
         Trace::new(MatrixMul::new(vec![
-            one_elec_density.differentiate(&pert_y)?,
+            one_elec_density.differentiate(pert_y.clone())?,
             one_elec_matrix_x.clone(),
         ])?)?,
         Trace::new(MatrixMul::new(vec![
-            one_elec_density.differentiate(&pert_x)?,
-            one_elec_matrix.differentiate(&pert_y)?,
+            one_elec_density.differentiate(pert_x.clone())?,
+            one_elec_matrix.differentiate(pert_y.clone())?,
         ])?)?,
         Trace::new(MatrixMul::new(vec![
             differentiate_expr(&one_elec_density, &exten_perturbations)?,
@@ -168,12 +168,12 @@ fn orb_cc_linear_response() -> Result<(), TinnedError> {
             differentiate_expr(&two_elec_matrix, &exten_perturbations)?,
         ])?)?,
         Trace::new(MatrixMul::new(vec![
-            two_elec_density.differentiate(&pert_y)?,
+            two_elec_density.differentiate(pert_y.clone())?,
             two_elec_matrix_x.clone(),
         ])?)?,
         Trace::new(MatrixMul::new(vec![
-            two_elec_density.differentiate(&pert_x)?,
-            two_elec_matrix.differentiate(&pert_y)?,
+            two_elec_density.differentiate(pert_x.clone())?,
+            two_elec_matrix.differentiate(pert_y)?,
         ])?)?,
         Trace::new(MatrixMul::new(vec![
             differentiate_expr(&two_elec_density, &exten_perturbations)?,
@@ -194,7 +194,7 @@ fn orb_cc_linear_response() -> Result<(), TinnedError> {
     assert_eq!(&linear_response, &expected_linear_response);
 
     // Find all (un)perturbed one-electron density matrices
-    let one_elec_densities = linear_response.find_superchains(&one_elec_density);
+    let one_elec_densities = linear_response.find_all(&one_elec_density);
 
     assert_eq!(one_elec_densities.len(), 3);
 
@@ -221,7 +221,7 @@ fn orb_cc_linear_response() -> Result<(), TinnedError> {
     }
 
     // Find all (un)perturbed two-electron density matrices
-    let two_elec_densities = linear_response.find_superchains(&two_elec_density);
+    let two_elec_densities = linear_response.find_all(&two_elec_density);
 
     assert_eq!(two_elec_densities.len(), 3);
 
@@ -248,7 +248,7 @@ fn orb_cc_linear_response() -> Result<(), TinnedError> {
     }
 
     // Find all perturbed orbital rotation parameters, unperturbed one is zero
-    let orb_rot_parameters = linear_response.find_superchains(&orb_rot_parameter);
+    let orb_rot_parameters = linear_response.find_all(&orb_rot_parameter);
 
     assert_eq!(orb_rot_parameters.len(), 1);
 
@@ -256,7 +256,7 @@ fn orb_cc_linear_response() -> Result<(), TinnedError> {
         MatrixAdd::new(vec![one_elec_matrix.clone(), two_elec_matrix.clone()])?;
     let rhs_hartree_fock_x = AdjointMap::new(
         vec![orb_rot_generator.clone()],
-        hamiltonian_operator.differentiate(&pert_x)?,
+        hamiltonian_operator.differentiate(pert_x.clone())?,
         Some(true),
         Some(AdjointMode::Symmetrized),
     )?;
@@ -280,7 +280,7 @@ fn orb_cc_linear_response() -> Result<(), TinnedError> {
     }
 
     // Find all (un)perturbed coupled-cluster amplitudes
-    let cc_amplitudes = linear_response.find_superchains(&cc_amplitude);
+    let cc_amplitudes = linear_response.find_all(&cc_amplitude);
 
     assert_eq!(cc_amplitudes.len(), 2);
 
@@ -344,7 +344,7 @@ fn orb_cc_linear_response() -> Result<(), TinnedError> {
     }
 
     // Find all (un)perturbed coupled-cluster multipliers
-    let cc_multipliers = linear_response.find_superchains(&cc_multiplier);
+    let cc_multipliers = linear_response.find_all(&cc_multiplier);
 
     assert_eq!(cc_multipliers.len(), 1);
 
@@ -377,7 +377,7 @@ fn orb_cc_linear_response() -> Result<(), TinnedError> {
 
     // Test RHS of the first-order coupled-cluster multiplier
     {
-        let cc_multiplier_x = cc_multiplier.differentiate(&pert_x)?;
+        let cc_multiplier_x = cc_multiplier.differentiate(pert_x.clone())?;
         let rhs_multiplier_x = lag.linear_response_rhs(&cc_multiplier_x, None)?;
         assert!(is_expr_type::<MatrixMul>(&rhs_multiplier_x));
 
@@ -418,13 +418,13 @@ fn orb_cc_linear_response() -> Result<(), TinnedError> {
 
         assert_matrix_mul_has_factor_pair_unordered(
             matrix_mul,
-            lag.de_excitation_operator(),
+            lag.cc_lambda_operator(),
             exp_ad_map_term,
         );
     }
 
     // Find all (un)perturbed Brillouin condition multipliers
-    let brillouin_multipliers = linear_response.find_superchains(&brillouin_multiplier);
+    let brillouin_multipliers = linear_response.find_all(&brillouin_multiplier);
 
     assert_eq!(brillouin_multipliers.len(), 1);
 
@@ -463,7 +463,7 @@ fn orb_cc_linear_response() -> Result<(), TinnedError> {
 
             assert_matrix_mul_has_factor_pair_unordered(
                 matrix_mul,
-                lag.de_excitation_operator(),
+                lag.cc_lambda_operator(),
                 exp_ad_map_term,
             );
         }
@@ -471,7 +471,7 @@ fn orb_cc_linear_response() -> Result<(), TinnedError> {
 
     // Test RHS of the first-order Brillouin condition multiplier
     {
-        let brillouin_multiplier_x = brillouin_multiplier.differentiate(&pert_x)?;
+        let brillouin_multiplier_x = brillouin_multiplier.differentiate(pert_x.clone())?;
         let rhs_multiplier_x = lag.linear_response_rhs(&brillouin_multiplier_x, None)?;
         assert!(is_expr_type::<MatrixMul>(&rhs_multiplier_x));
 
@@ -548,18 +548,18 @@ fn orb_cc_linear_response() -> Result<(), TinnedError> {
         let mut exist_cc_multiplier_x = false;
         let mut exist_eff_hamiltonian_x = false;
 
-        let de_excitation_operator_x = lag.de_excitation_operator().differentiate(&pert_x)?;
+        let cc_lambda_operator_x = lag.cc_lambda_operator().differentiate(pert_x)?;
 
         for term in cc_multiplier_terms {
             assert_eq!(term.coefficient(), &Number::one());
             assert_eq!(term.factors().len(), 2);
 
-            if &term.factors()[0] == lag.de_excitation_operator() {
+            if &term.factors()[0] == lag.cc_lambda_operator() {
                 let oper = expect_exp_adjoint_map(&term.factors()[1]);
                 assert_eq!(oper.generator(), lag.cluster_operator());
                 assert_eq!(oper.result(), &diff_kappa_transformed_hamiltonian_x);
                 exist_eff_hamiltonian_x = true;
-            } else if &term.factors()[0] == &de_excitation_operator_x {
+            } else if &term.factors()[0] == &cc_lambda_operator_x {
                 // The last line of equation (54), but there are two typos in
                 // that equation: Lambda should be first order differentiated
                 // and Hamiltonian should be undifferentiated.
@@ -568,13 +568,13 @@ fn orb_cc_linear_response() -> Result<(), TinnedError> {
                 assert_eq!(oper.result(), &unperturbed_brillouin_equation);
                 exist_cc_multiplier_x = true;
             } else if &term.factors()[0] == &unperturbed_brillouin_equation {
-                assert_eq!(&term.factors()[1], &de_excitation_operator_x);
+                assert_eq!(&term.factors()[1], &cc_lambda_operator_x);
                 exist_cc_multiplier_x = true;
             } else {
                 let oper = expect_exp_adjoint_map(&term.factors()[0]);
                 assert_eq!(oper.generator(), lag.cluster_operator());
                 assert_eq!(oper.result(), &diff_kappa_transformed_hamiltonian_x);
-                assert_eq!(&term.factors()[1], lag.de_excitation_operator());
+                assert_eq!(&term.factors()[1], lag.cc_lambda_operator());
                 exist_eff_hamiltonian_x = true;
             }
         }
