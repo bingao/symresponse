@@ -1,5 +1,10 @@
 # SymResponse
 
+⚠️ This branch is no longer maintained.
+Please use the `main` branch (Rust implementation).
+
+---
+
 A unified framework for response theory at different levels of
 electronic-structure theory. Theoretical background can be found in:
 
