@@ -10,6 +10,22 @@ use tinned::{
 use crate::lagrangian::Lagrangian;
 use crate::lagrangian_internal::sealed::LagrangianInternal;
 
+/// Orbital-relaxed coupled-cluster quasienergy Lagrangian.
+///
+/// This Lagrangian is built from one- and two-electron matrices,
+/// coupled-cluster amplitudes, coupled-cluster Lagrangian multipliers,
+/// orbital-rotation parameters, and Brillouin-condition multipliers.
+///
+/// The coupled-cluster amplitudes and orbital-rotation parameters must be
+/// `tinned::WfnParameter` expressions. The coupled-cluster multiplier and
+/// Brillouin-condition multiplier must be `tinned::LagMultiplier` expressions.
+/// The excitation operators and orbital-rotation generator must be
+/// `tinned::ExcitationOperator` expressions.
+///
+/// The orbital-rotation parameter must not contain an unperturbed term.
+///
+/// The stored Lagrangian contains one- and two-electron density contributions
+/// and a Brillouin-condition multiplier contribution.
 #[derive(Clone, Debug, serde::Serialize, serde::Deserialize)]
 pub struct LagrangianOrbCc {
     // One-electron operator
@@ -20,7 +36,7 @@ pub struct LagrangianOrbCc {
     cc_amplitude: Arc<dyn Expr>,
     // Coupled-cluster operator
     cluster_operator: Arc<dyn Expr>,
-    // Lambda operator or de-excitation operator
+    // Lambda operator, or de-excitation operator
     cc_lambda_operator: Arc<dyn Expr>,
     // Response equation for coupled-cluster amplitude
     cc_amplitude_equation: Arc<dyn Expr>,
@@ -46,13 +62,31 @@ pub struct LagrangianOrbCc {
 }
 
 impl LagrangianOrbCc {
-    // Maximum commutator order
+    /// Returns the maximum commutator order used for the coupled-cluster
+    /// similarity transformation.
     #[inline]
     pub fn max_commutator_order() -> u32 {
         4
     }
 
-    // Build one- or two-electron density matrix
+    /// Builds a one- or two-electron density matrix expression.
+    ///
+    /// The density matrix is built from an orbital-rotation-transformed excitation
+    /// operator, followed by a coupled-cluster similarity transformation and the
+    /// corresponding lambda contribution.
+    ///
+    /// # Arguments
+    ///
+    /// * `name` - Name of the density matrix.
+    /// * `kappa_operator` - Orbital-rotation operator.
+    /// * `excitation_operator` - Single- or double-excitation operator.
+    /// * `cluster_operator` - Coupled-cluster operator.
+    /// * `cc_lambda_operator` - Coupled-cluster Lambda operator, or de-excitation operator.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if symbolic construction of the transformed operator,
+    /// Lambda contribution, or density matrix expression fails.
     #[inline]
     pub fn build_electron_density_matrix(
         name: impl Into<String>,
@@ -84,7 +118,33 @@ impl LagrangianOrbCc {
         Ok(SubExpr::new(name, density_expr))
     }
 
-    // Builds orbital-relaxed coupled-cluster Lagrangian
+    /// Builds an orbital-relaxed coupled-cluster quasienergy Lagrangian.
+    ///
+    /// # Arguments
+    ///
+    /// * `one_elec_matrix` - One-electron matrix.
+    /// * `single_excitation_operator` - Single-excitation operator.
+    /// * `two_elec_matrix` - Two-electron matrix.
+    /// * `double_excitation_operator` - Double-excitation operator.
+    /// * `cc_amplitude` - Coupled-cluster amplitude. This expression must be a
+    ///   `tinned::WfnParameter`.
+    /// * `cc_excitation_operator` - Coupled-cluster excitation operator. This
+    ///   expression must be a `tinned::ExcitationOperator`.
+    /// * `cc_multiplier` - Coupled-cluster Lagrangian multiplier. This expression
+    ///   must be a `tinned::LagMultiplier`.
+    /// * `orb_rot_parameter` - Orbital-rotation parameter. This expression must be
+    ///   a `tinned::WfnParameter` and must not have an unperturbed term.
+    /// * `orb_rot_generator` - Orbital-rotation generator. This expression must be
+    ///   a `tinned::ExcitationOperator`.
+    /// * `brillouin_multiplier` - Brillouin-condition multiplier. This expression
+    ///   must be a `tinned::LagMultiplier`.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if any supplied expression has an unsupported type, if
+    /// `orb_rot_parameter` has an unperturbed term, or if symbolic construction of
+    /// the cluster operator, Lambda operator, orbital-rotation operator, density
+    /// matrices, response equations, multipliers, or final Lagrangian fails.
     pub fn new(
         one_elec_matrix: Arc<dyn Expr>,
         // Single excitation $E_{pq}$
@@ -345,34 +405,40 @@ impl LagrangianOrbCc {
         })
     }
 
-    // Returns right-hand side (RHS) of the (linear) response equation.
-    // `rsp_parameter`, which can be the type of `WfnParameter`
-    // (coupled-cluster amplitudes), `LagMultiplier` (Lagrangian multipliers),
-    // or `ResidueParameter` (for residues).
-    //
-    // (1) For types `WfnParameter` and `LagMultiplier`, we simply follow, for
-    //     example, Equations (28) and (29), J. Phys. Chem. A 2025, 129, 3709-3721.
-    //
-    // (2) For type `ResidueParameter`, we need to check its field
-    //     `parameter`, which must be either type WfnParameter` or `LagMultiplier`.
-    //
-    // 2a) If `parameter`'s derivative is equivalent to `perturbations` of
-    //     `ResidueParameter`, we have a residue CC amplitude or Lagrangian
-    //     multiplier, which may be solved from the left and right eigenvectors
-    //     of the nonsymmetric Jacobian, and users should not call this method.
-    //
-    // 2b) If `parameter`'s derivative is a superchain of `perturbations`, we
-    //     have a higher-order residue CC amplitude or Lagrangian multiplier.
-    //     We need to remove all terms not containing `parameter` or its
-    //     higher-order differentiated ones, and replace retained
-    //     (un)differentiated `parameter`'s with corresponding residue
-    //     `parameter`'s.
-    //
-    // Note that `rsp_parameter` should be a differentiated
-    // `self.cc_amplitude` or `self.multipliers`, otherwise the result will be
-    // incorrect.
-    // J. Chem. Phys. 92, 4924-4940 (Apr. 1990)
-    // notes: equations (10)-(13)
+    /// Builds the right-hand side of a linear response equation for a given
+    /// response parameter.
+    ///
+    /// The response parameter is expected to be derived from this Lagrangian's
+    /// coupled-cluster amplitude, orbital-rotation parameter, coupled-cluster
+    /// Lagrangian multiplier, or Brillouin-condition multiplier, and must be one
+    /// of:
+    ///
+    /// - a `tinned::WfnParameter` representing a differentiated coupled-cluster
+    ///   amplitude or orbital-rotation parameter, or
+    /// - a differentiated `tinned::LagMultiplier` representing a
+    ///   coupled-cluster Lagrangian multiplier or Brillouin-condition multiplier.
+    ///
+    /// Residue response parameters are not supported yet.
+    ///
+    /// The right-hand side is built using equations (41)-(44) of
+    /// J. Chem. Phys. 92, 4924-4940 (1990), respectively, for differentiated
+    /// orbital-rotation parameters, coupled-cluster amplitudes,
+    /// coupled-cluster Lagrangian multipliers, and Brillouin-condition
+    /// multipliers.
+    ///
+    /// # Arguments
+    ///
+    /// * `rsp_parameter` - The response parameter for which the right-hand side is
+    ///   constructed.
+    /// * `num_tol` - Optional numerical tolerance used to determine whether a
+    ///   `tinned::Number` should be treated as zero.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if `rsp_parameter` has an unsupported type, if
+    /// `rsp_parameter` is not derived from this Lagrangian's coupled-cluster
+    /// amplitude, orbital-rotation parameter, or multipliers, or if symbolic
+    /// construction fails.
     #[inline]
     pub fn linear_response_rhs(
         &self,
@@ -420,31 +486,37 @@ impl LagrangianOrbCc {
         }
     }
 
+    /// Returns the coupled-cluster operator.
     #[inline]
     pub fn cluster_operator(&self) -> &Arc<dyn Expr> {
         &self.cluster_operator
     }
 
+    /// Returns the coupled-cluster Lambda operator, or de-excitation operator.
     #[inline]
     pub fn cc_lambda_operator(&self) -> &Arc<dyn Expr> {
         &self.cc_lambda_operator
     }
 
+    /// Returns the orbital-rotation operator.
     #[inline]
     pub fn kappa_operator(&self) -> &Arc<dyn Expr> {
         &self.kappa_operator
     }
 
+    /// Returns the Brillouin equation.
     #[inline]
     pub fn brillouin_equation(&self) -> &Arc<dyn Expr> {
         &self.brillouin_equation
     }
 
+    /// Returns the one-electron density matrix.
     #[inline]
     pub fn one_elec_density(&self) -> &Arc<dyn Expr> {
         &self.one_elec_density
     }
 
+    /// Returns the two-electron density matrix.
     #[inline]
     pub fn two_elec_density(&self) -> &Arc<dyn Expr> {
         &self.two_elec_density

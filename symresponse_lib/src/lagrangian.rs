@@ -8,25 +8,47 @@ use tinned::{Expr, NumberTolerance, Perturbation, TinnedError, generic_error};
 use crate::lagrangian_internal::sealed::LagrangianInternal;
 use crate::types::ResponseDetail;
 
-// Base Lagrangian trait
+/// Base trait for all Lagrangian implementations.
+///
+/// A `Lagrangian` represents a time-averaged quasi-energy functional and
+/// provides methods to compute response functions, residues, and optimal
+/// elimination strategies within response theory.
+///
+/// Implementations must provide access to:
+/// - The symbolic Lagrangian expression
+/// - Wave function parameters
+/// - Lagrangian multipliers
+///
+/// This trait also provides default implementations for:
+/// - Response function computation
+/// - Residue computation
+/// - Optimization of elimination strategies
 pub trait Lagrangian: std::fmt::Debug + Send + Sync + LagrangianInternal {
-    // Exposes the trait object as `dyn Any` to enable runtime downcasting of
-    // trait objects to concrete types.
+    /// Returns a reference to `self` as `dyn Any` for downcasting.
     fn as_any(&self) -> &dyn std::any::Any;
 
-    // Return response function according to given extensive and intensive
-    // perturbations, and minimum order of differentiated wave function
-    // parameters to be eliminated, with respect to extensive perturbations.
-    //
-    // `exten_perturbations` and `inten_perturbations` contain, respectively,
-    // extensive and intensive perturbations. The former must contain at least
-    // one extensive perturbation, while the latter can be empty.
-    //
-    // `min_wfn_exten_order` as 0, means it will be automatically determined as the
-    // next integer of the floor function of the half number of extensive
-    // perturbations. For `min_wfn_exten_order` greater than the number of extensive
-    // perturbations, it means no elimination of wave function parameters so
-    // that more Lagrangian multipliers can be eliminated.
+    /// Computes the response function for the given perturbations.
+    ///
+    /// # Arguments
+    ///
+    /// * `exten_perturbations` - Extensive perturbations (must contain at least one element)
+    /// * `inten_perturbations` - Intensive perturbations (may be empty)
+    /// * `min_wfn_exten_order` - Minimum order of differentiated wave function
+    ///   parameters to eliminate with respect to extensive perturbations. For
+    ///   `n_exten` extensive perturbations,
+    ///     - `0`: automatically determined as `floor(n_exten / 2) + 1`
+    ///     - `> n_exten`: disables elimination of wave function parameters
+    /// * `validate_frequencies` - Whether to validate perturbation frequencies
+    /// * `num_tol` - Optional numerical tolerance used to determine whether a
+    ///   `tinned::Number` should be treated as zero.
+    ///
+    /// # Returns
+    ///
+    /// A symbolic expression representing the response function.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if differentiation or elimination fails.
     fn response_function(
         &self,
         exten_perturbations: &[Arc<Perturbation>],
@@ -46,13 +68,23 @@ pub trait Lagrangian: std::fmt::Debug + Send + Sync + LagrangianInternal {
         self.do_elimination(&diff_lagrangian, exten_perturbations, min_wfn_exten_order, num_tol)
     }
 
-    // Returns residue according to given extensive and intensive
-    // perturbations, and minimum order of differentiated wave function
-    // parameters to be eliminated, with respect to extensive perturbations.
-    //
-    // `residue_relations` contains excited state as the key `Arc<dyn Expr>`,
-    // and the value informs in which direction perturbations approach the
-    // excitation energy.
+    /// Computes the residue associated with the response function.
+    ///
+    /// # Arguments
+    ///
+    /// * `residue_relations` - Mapping from excited states to:
+    ///     - direction of approach (bool)
+    ///     - associated perturbations
+    ///
+    /// Other arguments are identical to [`Lagrangian::response_function`].
+    ///
+    /// # Returns
+    ///
+    /// A symbolic expression representing the residue.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if preparation or evaluation fails.
     #[inline]
     fn residue(
         &self,
@@ -84,29 +116,50 @@ pub trait Lagrangian: std::fmt::Debug + Send + Sync + LagrangianInternal {
         self.do_residue_analysis(&result, &residue_setup)
     }
 
-    // Returns optimal response function(s) by performing different elimination
-    // rules. Optimal response function(s) has a minimal weight as determined
-    // by a user-defined weighting function. The weighting function takes
-    // (un)perturbed wave function parameters and Lagrangian multipliers as
-    // input.
-    //
-    // Otherwise, all possible extensive and intensive perturbations, and
-    // `min_wfn_exten_order` will be considered.
-    //
-    // `exten_perturbations` and `inten_perturbations` contain, respectively,
-    // extensive and intensive perturbations. The former must contain at least
-    // one extensive perturbation.
-    //
-    // `excluded_operators` contains operators that should be excluded from
-    // response functions. For example, a perturbed operator can or should be
-    // removed if users are not able to evaluate it afterwards.
-    //
-    // When a non-empty `residue_relations` is given, optimal residues will be found.
-    //
-    // Optimal response function(s) will be searched by varying the order of
-    // differentiated wave function parameters to be eliminated with respect to
-    // extensive perturbations
-    //
+    /// Finds optimal response functions or residues by varying elimination rules.
+    ///
+    /// This method searches for optimal results by varying the minimum order of
+    /// differentiated wave function parameters that are eliminated with respect
+    /// to **extensive perturbations**.
+    ///
+    /// In contrast to [`Lagrangian::find_optimal_response_function`], this
+    /// method assumes that the sets of extensive and intensive perturbations
+    /// are fixed, and only explores different elimination strategies.
+    ///
+    /// The optimality is determined by a user-provided weighting function.
+    ///
+    /// # Arguments
+    ///
+    /// * `excluded_operators` - Operators that must not appear in the final result
+    /// * `weight_fn` - Function that assigns a weight based on:
+    ///     - (un)differentiated wave function parameters
+    ///     - (un)differentiated Lagrangian multipliers
+    /// * `residue_relations` - If provided, computes optimal residues instead of
+    ///   response functions
+    /// * `parallel` - Whether to evaluate candidates in parallel
+    ///
+    /// Other arguments are identical to [`Lagrangian::response_function`].
+    ///
+    /// # Returns
+    ///
+    /// Returns:
+    ///
+    /// - `None` if no valid solution is found
+    /// - `Some((weight, results))` otherwise
+    ///
+    /// where:
+    ///
+    /// - `weight` is the minimal value obtained from `weight_fn`
+    /// - `results` is a collection of optimal solutions represented as
+    ///   [`ResponseDetail`]
+    ///
+    /// Each [`ResponseDetail`] contains:
+    /// - the resulting response function or residue
+    /// - the corresponding elimination rules used to obtain it
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if evaluation or elimination fails.
     //FIXME: add unit test for this method
     fn find_optimal_elimination_order(
         &self,
@@ -155,29 +208,32 @@ pub trait Lagrangian: std::fmt::Debug + Send + Sync + LagrangianInternal {
         )
     }
 
-    // Returns optimal response function(s) by performing different elimination
-    // rules. Optimal response function(s) has a minimal weight as determined
-    // by a user-defined weighting function. The weighting function takes
-    // (un)perturbed wave function parameters and Lagrangian multipliers as
-    // input.
-    //
-    // `avail_perturbations` contains perturbations that can either be
-    // extensive or intensive. When it is empty, optimal response function(s)
-    // will be searched with fixed extensive and intensive perturbations.
-    // Otherwise, all possible extensive and intensive perturbations, and
-    // `min_wfn_exten_order` will be considered.
-    //
-    // `exten_perturbations` and `inten_perturbations` contain, respectively,
-    // extensive and intensive perturbations. The former must contain at least
-    // one extensive perturbation when `avail_perturbations` is empty. The
-    // latter can be empty in any case.
-    //
-    // `excluded_operators` contains operators that should be excluded from
-    // response functions. For example, a perturbed operator can or should be
-    // removed if users are not able to evaluate it afterwards.
-    //
-    // When a non-empty `residue_relations` is given, optimal residues will be found.
-    //
+    /// Finds optimal response functions or residues by exploring perturbation partitions.
+    ///
+    /// This method extends [`Lagrangian::find_optimal_elimination_order`] by
+    /// additionally exploring different ways to partition perturbations into
+    /// **extensive** and **intensive** sets.
+    ///
+    /// - If `avail_perturbations` is empty, this method reduces to
+    ///   [`Lagrangian::find_optimal_elimination_order`].
+    /// - Otherwise, all valid partitions of perturbations are considered.
+    ///
+    /// The optimality is determined by the same weighting function.
+    ///
+    /// # Returns
+    ///
+    /// Returns:
+    ///
+    /// - `None` if no valid solution is found
+    /// - `Some((weight, results))` otherwise
+    ///
+    /// where:
+    ///
+    /// - `weight` is the minimal value obtained from `weight_fn`
+    /// - `results` is a collection of optimal solutions represented as
+    ///   [`ResponseDetail`]
+    ///
+    /// See [`ResponseDetail`] for details on the structure of each result.
     //FIXME: add unit test for this method
     fn find_optimal_response_function(
         &self,
@@ -318,12 +374,12 @@ pub trait Lagrangian: std::fmt::Debug + Send + Sync + LagrangianInternal {
         }
     }
 
-    // Returns the time-averaged quasi-energy (derivative) Lagrangian
+    /// Returns the symbolic expression of time-averaged quasi-energy (derivative) Lagrangian.
     fn get_lagrangian(&self) -> &Arc<dyn Expr>;
 
-    // Returns unperturbed wave function parameters
+    /// Returns unperturbed wave function parameters.
     fn get_wfn_parameters(&self) -> Vec<Arc<dyn Expr>>;
 
-    // Returns unperturbed Lagrangian multipliers
+    /// Returns unperturbed Lagrangian multipliers.
     fn get_lagrangian_multipliers(&self) -> Vec<Arc<dyn Expr>>;
 }

@@ -10,6 +10,21 @@ use crate::lagrangian::Lagrangian;
 use crate::lagrangian_internal::sealed::LagrangianInternal;
 use crate::types::LinearRhsInput;
 
+/// Coupled-cluster time-averaged quasienergy Lagrangian without orbital relaxation.
+///
+/// `LagrangianCc` builds and stores the symbolic ingredients needed to compute
+/// coupled-cluster response functions and residues through the [`Lagrangian`]
+/// interface.
+///
+/// The stored expression contains:
+///
+/// - coupled-cluster amplitudes as wave function parameters,
+/// - coupled-cluster Lagrangian multipliers,
+/// - the time-dependent cluster operator,
+/// - the Lambda, or de-excitation, operator,
+/// - the coupled-cluster quasienergy,
+/// - the equation used to build right-hand sides for multiplier responses, and
+/// - the full time-averaged quasienergy Lagrangian.
 #[derive(Clone, Debug, serde::Serialize, serde::Deserialize)]
 pub struct LagrangianCc {
     // Coupled-cluster amplitudes
@@ -20,24 +35,53 @@ pub struct LagrangianCc {
     cluster_operator: Arc<dyn Expr>,
     // Lambda operator or de-excitation operator
     cc_lambda_operator: Arc<dyn Expr>,
-    // Similarity-transformed Hamiltonian, or coupled-cluster quasi-energy. To
-    // compute Equation (28), J. Phys. Chem. A 2025, 129, 3709-3721.
+    // Similarity-transformed Hamiltonian, or coupled-cluster quasienergy. To
+    // compute equation (28), J. Phys. Chem. A 2025, 129, 3709-3721.
     cc_quasi_energy: Arc<dyn Expr>,
     // To compute the right-hand side of the response equation of Lagrangian
-    // multipliers, ses Equation (29), J. Phys. Chem. A 2025, 129, 3709-3721.
+    // multipliers, ses equation (29), J. Phys. Chem. A 2025, 129, 3709-3721.
     cc_multiplier_equation: Arc<dyn Expr>,
     lagrangian_expr: Arc<dyn Expr>,
 }
 
 impl LagrangianCc {
-    // Maximum commutator order
+    /// Returns the maximum commutator order used for the coupled-cluster
+    /// similarity transformation.
     #[inline]
     pub fn max_commutator_order() -> u32 {
         4
     }
 
-    // Builds time-averaged quasi-energy Lagrangian for coupled-cluster models
-    // without orbital relaxation.
+    /// Builds a coupled-cluster time-averaged quasienergy Lagrangian by
+    /// following equation (20), J. Phys. Chem. A 2025, 129, 3709-3721.
+    ///
+    /// This constructor builds the cluster operator, the Lambda operator, the
+    /// coupled-cluster quasienergy, the multiplier response equation, and the
+    /// full Lagrangian expression.
+    ///
+    /// Perturbing operators are required not to contain an unperturbed term.
+    /// The coupled-cluster amplitude must be a `tinned::WfnParameter`, the
+    /// excitation operator must be a `tinned::ExcitationOperator`, and the
+    /// multiplier must be a `tinned::LagMultiplier`.
+    ///
+    /// # Arguments
+    ///
+    /// * `unperturbed_hamiltonian` - Unperturbed Hamiltonian.
+    /// * `perturbing_operators` - Perturbing operators without zeroth-order
+    ///   terms.
+    /// * `cc_amplitude` - Coupled-cluster amplitudes.
+    /// * `cc_excitation_operator` - Coupled-cluster excitation operator.
+    /// * `cc_multiplier` - Coupled-cluster Lagrangian multipliers.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if:
+    ///
+    /// - any perturbing operator contains an unperturbed term,
+    /// - `cc_amplitude` is not a `tinned::WfnParameter`,
+    /// - `cc_excitation_operator` is not a `tinned::ExcitationOperator`,
+    /// - `cc_multiplier` is not a `tinned::LagMultiplier`, or
+    /// - construction of any symbolic expression fails.
     pub fn new(
         unperturbed_hamiltonian: Arc<dyn Expr>,
         perturbing_operators: &[Arc<dyn Expr>],
@@ -45,7 +89,7 @@ impl LagrangianCc {
         cc_excitation_operator: Arc<dyn Expr>,
         cc_multiplier: Arc<dyn Expr>,
     ) -> Result<Self, TinnedError> {
-        // Build terms for similarity-transformed Hamiltonian, or coupled-cluster quasi-energy
+        // Build terms for similarity-transformed Hamiltonian, or coupled-cluster quasienergy
         fn build_quasi_energy_term(
             cluster_operator: &Arc<dyn Expr>,
             electron_operator: &Arc<dyn Expr>,
@@ -133,7 +177,7 @@ impl LagrangianCc {
         let mut quasi_energy_terms = Vec::with_capacity(num_elec_operators);
         // Terms to construct Equation (29), J. Phys. Chem. A 2025, 129, 3709-3721.
         let mut multiplier_eq_terms = Vec::with_capacity(2 * num_elec_operators);
-        // Terms to construct coupled-cluster quasi-energy Lagrangian, Equation
+        // Terms to construct coupled-cluster quasienergy Lagrangian, Equation
         // (20), J. Phys. Chem. A 2025, 129, 3709-3721.
         let mut lagrangian_terms = Vec::with_capacity(2 * num_elec_operators + 1);
 
@@ -193,32 +237,54 @@ impl LagrangianCc {
         })
     }
 
-    // Returns right-hand side (RHS) of the (linear) response equation.
-    // `rsp_parameter`, which can be the type of `WfnParameter`
-    // (coupled-cluster amplitudes), `LagMultiplier` (Lagrangian multipliers),
-    // or `ResidueParameter` (for residues).
-    //
-    // (1) For types `WfnParameter` and `LagMultiplier`, we simply follow, for
-    //     example, Equations (28) and (29), J. Phys. Chem. A 2025, 129, 3709-3721.
-    //
-    // (2) For type `ResidueParameter`, we need to check its field
-    //     `parameter`, which must be either type WfnParameter` or `LagMultiplier`.
-    //
-    // 2a) If `parameter`'s derivative is equivalent to `perturbations` of
-    //     `ResidueParameter`, we have a residue CC amplitude or Lagrangian
-    //     multiplier, which may be solved from the left and right eigenvectors
-    //     of the nonsymmetric Jacobian, and users should not call this method.
-    //
-    // 2b) If `parameter`'s derivative is a superchain of `perturbations`, we
-    //     have a higher-order residue CC amplitude or Lagrangian multiplier.
-    //     We need to remove all terms not containing `parameter` or its
-    //     higher-order differentiated ones, and replace retained
-    //     (un)differentiated `parameter`'s with corresponding residue
-    //     `parameter`'s.
-    //
-    // Note that `rsp_parameter` should be a differentiated
-    // `self.cc_amplitude` or `self.multipliers`, otherwise the result will be
-    // incorrect.
+    /// Builds the right-hand side of a linear response equation for a given
+    /// response parameter.
+    ///
+    /// The response parameter is expected to be derived from this Lagrangian's
+    /// coupled-cluster amplitudes or Lagrangian multipliers, and must be one of:
+    ///
+    /// - a `tinned::WfnParameter` representing differentiated coupled-cluster
+    ///   amplitudes,
+    /// - a differentiated `tinned::LagMultiplier` representing Lagrangian
+    ///   multipliers, or
+    /// - a `tinned::ResidueParameter` whose inner parameter is either a
+    ///   `tinned::WfnParameter` or a `tinned::LagMultiplier`.
+    ///
+    /// For differentiated coupled-cluster amplitudes and Lagrangian
+    /// multipliers, equations (28) and (29) in J. Phys. Chem. A 2025,
+    /// 129, 3709–3721 are used to construct the right-hand side.
+    ///
+    /// When `rsp_parameter` is a `tinned::ResidueParameter`, this method
+    /// constructs the right-hand side of higher-order residues. It rejects
+    /// residue amplitudes or residue multipliers when
+    /// `tinned::ResidueParameter::parameter`'s derivative is equivalent to
+    /// `tinned::ResidueParameter::perturbations`; such cases should instead be
+    /// obtained from the left and right eigenvectors of the nonsymmetric
+    /// Jacobian.
+    ///
+    /// For higher-order residues,
+    /// `tinned::ResidueParameter::parameter`'s derivative is a superchain of
+    /// `tinned::ResidueParameter::perturbations`. All terms not containing
+    /// `tinned::ResidueParameter::parameter` or its higher-order derivatives
+    /// are removed, and the retained (un)differentiated
+    /// `tinned::ResidueParameter::parameter` instances are replaced with the
+    /// corresponding residue `tinned::ResidueParameter` instances.
+    ///
+    /// # Arguments
+    ///
+    /// * `rsp_parameter` - The response parameter for which the right-hand side
+    ///   is constructed.
+    /// * `num_tol` - Optional numerical tolerance used to determine whether a
+    ///   `tinned::Number` should be treated as zero.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if `rsp_parameter` has an unsupported type, if a
+    /// residue parameter wraps an unsupported inner parameter, if
+    /// `rsp_parameter` is not derived from this Lagrangian's coupled-cluster
+    /// amplitudes or Lagrangian multipliers, if the method is called for a
+    /// residue amplitude or residue multiplier, or if symbolic construction
+    /// fails.
     pub fn linear_response_rhs(
         &self,
         rsp_parameter: &Arc<dyn Expr>,
@@ -226,6 +292,17 @@ impl LagrangianCc {
     ) -> Result<Arc<dyn Expr>, TinnedError> {
         let rhs_input = if let Some(cc_amplitude) = downcast_from_arc::<WfnParameter>(rsp_parameter)
         {
+            if !cc_amplitude.match_one_self(&self.cc_amplitude, true) {
+                return Err(expression_error(
+                    format!(
+                        "Response parameter is not derived from this Lagrangian's coupled-cluster amplitude {}",
+                        &self.cc_amplitude
+                    ),
+                    rsp_parameter,
+                    None,
+                ));
+            }
+
             LinearRhsInput {
                 equation: &self.cc_quasi_energy,
                 derivative: cc_amplitude.derivative(),
@@ -233,6 +310,17 @@ impl LagrangianCc {
                 residue_info: None,
             }
         } else if let Some(multiplier) = downcast_from_arc::<LagMultiplier>(rsp_parameter) {
+            if !multiplier.match_one_self(&self.cc_multiplier, true) {
+                return Err(expression_error(
+                    format!(
+                        "Response parameter is not derived from this Lagrangian's multiplier {}",
+                        &self.cc_multiplier
+                    ),
+                    rsp_parameter,
+                    None,
+                ));
+            }
+
             LinearRhsInput {
                 equation: &self.cc_multiplier_equation,
                 derivative: multiplier.derivative(),
@@ -243,6 +331,17 @@ impl LagrangianCc {
             let diff_parameter = res_param.parameter();
 
             if let Some(cc_amplitude) = downcast_from_arc::<WfnParameter>(diff_parameter) {
+                if !cc_amplitude.match_one_self(&self.cc_amplitude, true) {
+                    return Err(expression_error(
+                        format!(
+                            "Residue response parameter is not derived from this Lagrangian's coupled-cluster amplitude {}",
+                            &self.cc_amplitude
+                        ),
+                        rsp_parameter,
+                        None,
+                    ));
+                }
+
                 // `ResidueParameter` ensures that `res_param.perturbations()`
                 // is a subchain of `cc_amplitude.derivative()`, so we check if
                 // the former is also a superchain of the latter.
@@ -261,6 +360,17 @@ impl LagrangianCc {
                     residue_info: Some((res_param, self.cc_amplitude.clone())),
                 }
             } else if let Some(multiplier) = downcast_from_arc::<LagMultiplier>(diff_parameter) {
+                if !multiplier.match_one_self(&self.cc_multiplier, true) {
+                    return Err(expression_error(
+                        format!(
+                            "Residue response parameter is not derived from this Lagrangian's multiplier {}",
+                            &self.cc_multiplier
+                        ),
+                        rsp_parameter,
+                        None,
+                    ));
+                }
+
                 if multiplier.derivative().is_superchain_vec(res_param.perturbations()) {
                     return Err(expression_error(
                         "linear_response_rhs() should not be called for a residue Lagrangian multiplier",
@@ -295,11 +405,13 @@ impl LagrangianCc {
         MatrixMul::new(vec![Number::minus_one(), rhs])
     }
 
+    /// Returns the time-dependent cluster operator.
     #[inline]
     pub fn cluster_operator(&self) -> &Arc<dyn Expr> {
         &self.cluster_operator
     }
 
+    /// Returns the Lambda, or de-excitation, operator.
     #[inline]
     pub fn cc_lambda_operator(&self) -> &Arc<dyn Expr> {
         &self.cc_lambda_operator

@@ -1,41 +1,93 @@
 # SymResponse
 
 A unified framework for response theory at different levels of
-electronic-structure theory. Theoretical background can be found in:
+electronic-structure theory.
 
-* Reference [[1]](#1) describes the implementation of atomic orbital (AO)
-  density matrix-based and coupled-cluster response theories, and numerical
-  evaluation of the AO density matrix-based response theory at Hartree-Fock
-  level.
+The theoretical background can be found in:
+
+\[1\] Bin Gao and Magnus Ringholm,
+    *Unified Framework for Molecular Response Functions of Different Electronic-Structure Models*,
+    *J. Phys. Chem. A* **2025**, *129*, 3709-3721.
+
+Reference \[1\] describes the computation of response functions by using
+- Atomic orbital density matrix-based response theory
+- Coupled-cluster response theory
+
+\[2\] Bin Gao, Magnus Ringholm amd Kenneth Ruud,
+    *A unified framework for the application of response theory using different electronic-structure models*,
+    *in manuscript* **2026**.
+
+Reference \[2\] describes the computation of residues by using
+- Atomic orbital density matrix-based response theory
+- Coupled-cluster response theory
+- Multi-configurational self-consistent field response theory
+
+---
 
 ## License
 
-SymResponse is licensed under Mozilla Public License Version 2.0, see the
-[LICENSE](LICENSE) for more information.
+SymResponse is licensed under the Mozilla Public License Version 2.0. See the
+`LICENSE` file for more information.
+
+---
 
 ## Installation
 
-SymResponse depends on libraries SymEngine and Tinned. Both of them require
-CMake and C++ compiler which supports C++11 standard.
+SymResponse depends on the symbolic computation crate
+[Tinned](https://github.com/bingao/tinned), and is a reimplementation of \[1\]
+using the Rust programming language.
 
-Clone and build [forked SymEngine library](https://github.com/bingao/symengine)
-first, which has implmented derivatives for different matrix expressions.
+### Build Rust library
 
-Then clone [Tinned library](https://github.com/bingao/tinned) and build it by
-setting `SymEngine_DIR` to the SymEngine installation or build directory.
+```bash
+cargo build -p symresponse_lib --release
+```
 
-For Rust library, run `cargo build-lib`, or `cargo build -p symresponse_lib --release`.
+or
 
-If you want C library, use `cargo build-ffi` or `cargo build -p symresponse_ffi --profile release-ffi`.
+```bash
+cargo build-lib
+```
 
-Optionally, run `cargo gen-headers `, or `cargo test --features c-headers --profile release-ffi -- --exact header_gen::generate_c_header --nocapture`.
+---
 
-## SymResponse APIs
+## Documentation
+
+The full API documentation can be generated with:
+
+```bash
+cargo doc -p symresponse_lib
+```
+
+To open it in a browser:
+
+```bash
+cargo doc -p symresponse_lib --open
+```
+
+---
 
 ## Examples
 
-## References
+Examples of using the SymResponse crate can be found in the `tests` folder:
 
-<a id="1">[1]</a>
-Bin Gao and Magnus Ringholm "Unified framework for simulating molecular
-response functions of different electronic-structure models", in manuscript.
+- `cc_response.rs` and `cc_residue.rs` demonstrate the computation of response
+  functions and residues at the level of coupled-cluster response theory.
+- `dao_response.rs` and `dao_residue.rs` demonstrate response function and
+  residue computations within atomic orbital density matrix–based response
+  theory.
+- `mcscf_response.rs` and `mcscf_residue.rs` demonstrate response function and
+  residue computations within multi-configurational self-consistent field
+  (MCSCF) response theory.
+- `orb_cc_response.rs` demonstrates response function computations within
+  orbital-relaxed coupled-cluster response theory.
+
+---
+
+## C FFI
+
+This project also provides a C-compatible interface in the `symresponse_ffi`
+crate, allowing the library to be used from C and other languages with FFI
+support.
+
+See the `symresponse_ffi` README for usage details and examples.

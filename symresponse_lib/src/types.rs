@@ -3,7 +3,7 @@ use std::sync::Arc;
 
 use tinned::{Expr, PertMultichain, Perturbation, ResidueParameter, TinnedError, generic_error};
 
-// Elimination scheme
+// Elimination scheme, internal use
 #[derive(Clone, Copy, Debug, serde::Serialize, serde::Deserialize)]
 pub(crate) struct EliminationScheme {
     num_perturbations: u32,
@@ -87,8 +87,9 @@ impl EliminationScheme {
     }
 }
 
-// `diff_params` contains differentiated parameters with respect to perturbations involved in a residue computation,
-// while `residue_map` contains relationship between each differentiated parameter and its residue
+// Internal use: `diff_params` contains differentiated parameters with respect
+// to perturbations involved in a residue computation, while `residue_map`
+// contains relationship between each differentiated parameter and its residue
 #[derive(Clone, Debug, serde::Serialize, serde::Deserialize)]
 pub struct ResidueSetup {
     diff_params: HashSet<Arc<dyn Expr>>,
@@ -117,9 +118,14 @@ impl ResidueSetup {
     }
 }
 
-// Detailed information of a response function, used by methods
-// `find_optimal_response_function()`, `response_function_with_weight()`,
-// `find_optimal_elimination_order()`
+/// Detailed information about an optimized response function or residue.
+///
+/// Includes:
+/// * `expression` - The resulting expression of response function or residue
+/// * `min_wfn_exten_order` - Minimum order of differentiated wave function
+///   parameters to eliminate with respect to extensive perturbations
+/// * `exten_perturbations` - Extensive perturbations (must contain at least one element)
+/// * `inten_perturbations` - Intensive perturbations (may be empty)
 #[derive(Clone, Debug, serde::Serialize, serde::Deserialize)]
 pub struct ResponseDetail {
     pub expression: Arc<dyn Expr>,
@@ -128,7 +134,7 @@ pub struct ResponseDetail {
     pub inten_perturbations: Vec<Arc<Perturbation>>,
 }
 
-// Use internally to prepare right-hand side (RHS) of linear response equation
+// Internal use: prepare right-hand side (RHS) of linear response equation
 pub struct LinearRhsInput<'a> {
     // Equation to be differentiated to get RHS
     pub(crate) equation: &'a Arc<dyn Expr>,

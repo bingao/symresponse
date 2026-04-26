@@ -74,6 +74,7 @@ fn dao_first_order_lr_residue() -> Result<(), TinnedError> {
     let general_ew_density =
         lag.general_ew_density().expect("Expect generalized energy-weighted density matrix");
     let general_ew_density_b = general_ew_density.differentiate(pert_b.clone())?;
+
     let expected_residue = subtract_exprs(
         generalized_energy_ab,
         Trace::new(MatrixMul::new(vec![overlap_a, general_ew_density_b])?)?,
@@ -83,12 +84,25 @@ fn dao_first_order_lr_residue() -> Result<(), TinnedError> {
     .retain_one(&density_b, true)?
     .replace_one(&density_b, res_density_b.clone(), true)?;
 
-    //FIXME: got an error for serde_json::to_string(...), Error("key must be a string", line: 0, column: 0)
-    //let json_residue = serde_json::to_string(&residue).unwrap();
-    //println!("Reside = {}", json_residue);
+    //match serde_json::to_string(&residue) {
+    //    Ok(json) => println!("Residue = {}", json),
+    //    Err(e) => {
+    //        eprintln!("Display: {}", e);
+    //        eprintln!("Debug: {:?}", e);
+    //        eprintln!("Category: {:?}", e.classify());
+    //        eprintln!("Line: {}, Column: {}", e.line(), e.column());
+    //    }
+    //}
 
-    //let json_expected_residue = serde_json::to_string(&expected_residue).unwrap();
-    //println!("Expected residue = {}", json_expected_residue);
+    //match serde_json::to_string(&expected_residue) {
+    //    Ok(json) => println!("Expected residue = {}", json),
+    //    Err(e) => {
+    //        eprintln!("Display: {}", e);
+    //        eprintln!("Debug: {:?}", e);
+    //        eprintln!("Category: {:?}", e.classify());
+    //        eprintln!("Line: {}, Column: {}", e.line(), e.column());
+    //    }
+    //}
 
     assert_eq!(&residue, &expected_residue);
 

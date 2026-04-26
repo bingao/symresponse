@@ -16,13 +16,15 @@ use crate::lagrangian::Lagrangian;
 use crate::lagrangian_internal::sealed::LagrangianInternal;
 use crate::types::LinearRhsInput;
 
+/// Controls whether DAO response functions are written in simplified and
+/// (almost) symmetric forms. See Sec. IV G 3, J. Chem. Phys. 2008, 129, 214108.
 #[derive(Clone, Copy, Debug, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
 pub enum SymmetrizeMode {
-    // (i) Always symmetrize
+    /// Always symmetrize
     Always,
-    // (ii) Never symmetrize
+    /// Never symmetrize
     Never,
-    // (iii) Symmetrize only when all perturbations are extensive
+    /// Symmetrize only when all perturbations are extensive
     Auto,
 }
 
@@ -32,6 +34,28 @@ impl Default for SymmetrizeMode {
     }
 }
 
+/// Time-averaged quasienergy derivative Lagrangian for density-matrix
+/// response theory in an atomic-orbital basis.
+///
+/// The Lagrangian can be built for either non-orthonormal basis sets, when an
+/// overlap matrix is provided, or orthonormal basis sets, when no overlap matrix
+/// is provided.
+///
+/// `LagrangianDao` builds and stores the symbolic ingredients needed to compute
+/// DAO response functions and residues through the [`Lagrangian`] interface.
+///
+/// The stored expression contains:
+///
+/// - perturbation (usually named as perturbation `a`) used to form the derivative Lagrangian,
+/// - atomic-orbital density matrix as wave function parameters,
+/// - optional overlap matrix,
+/// - differentiated generalized energy with respect to perturbation `a`,
+/// - generalized Fock matrix,
+/// - optional generalized energy-weighted density matrix when the overlap matrix is present,
+/// - time-dependent self-consistent-field (TDSCF) equation and idempotency
+///   constraints, as well as their Lagrangian multipliers,
+/// - symmetrization mode,
+/// - the full time-averaged quasienergy derivative Lagrangian.
 #[derive(Clone, Debug, serde::Serialize, serde::Deserialize)]
 pub struct LagrangianDao {
     perturbation_a: Arc<Perturbation>,
@@ -46,14 +70,47 @@ pub struct LagrangianDao {
     idemp_multiplier_proxy: Arc<dyn Expr>,
     idemp_multiplier: Arc<dyn Expr>,
     idempotency: Arc<dyn Expr>,
-    lagrangian_expr: Arc<dyn Expr>,
     symmetrize_mode: SymmetrizeMode,
+    lagrangian_expr: Arc<dyn Expr>,
 }
 
 impl LagrangianDao {
-    // Builds time-averaged quasi-energy derivative Lagrangian with
-    // either non-orthonormal or orthonormal (when `overlap_matrix` is `None`)
-    // basis sets.
+    /// Builds a time-averaged quasienergy derivative Lagrangian by following
+    /// equation (11), J. Phys. Chem. A 2025, 129, 3709-3721.
+    ///
+    /// If `overlap_matrix` is `Some`, the Lagrangian is built for a
+    /// non-orthonormal basis. If `overlap_matrix` is `None`, the Lagrangian is
+    /// built for an orthonormal basis.
+    ///
+    /// # Arguments
+    ///
+    /// * `perturbation_a` - Perturbation used to form the derivative
+    ///   Lagrangian.
+    /// * `density_matrix` - Atomic-orbital density matrix. It must be a
+    ///   `tinned::WfnParameter`.
+    /// * `overlap_matrix` - Optional overlap matrix. If present, it must be a
+    ///   `tinned::OneElecMatrix`.
+    /// * `one_elec_operators` - One-electron matrix contributions. Each entry
+    ///   must be either a `tinned::OneElecMatrix` or a
+    ///   `tinned::BasisTimeEvolution`.
+    /// * `two_elec_operator` - Optional two-electron matrix contribution. If
+    ///   present, it must be a `tinned::AoTwoElecMatrix`.
+    /// * `xc_energy` - Optional exchange-correlation energy contribution. If
+    ///   present, it must be a `tinned::ExchCorrEnergy`.
+    /// * `xc_potential` - Optional exchange-correlation potential contribution.
+    ///   If present, it must be a `tinned::ExchCorrPotential`.
+    /// * `h_nuc` - Optional nuclear contribution. If present, it must be a
+    ///   `tinned::NonElecFunction`.
+    /// * `symmetrize_mode` - Optional symmetrization mode. If omitted,
+    ///   `SymmetrizeMode::Auto` is used.
+    /// * `num_tol` - Optional numerical tolerance used to determine whether a
+    ///   `tinned::Number` should be treated as zero.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if any supplied expression has an unsupported type, or
+    /// if symbolic construction of the generalized energy, Fock matrix,
+    /// constraints, multipliers, or final Lagrangian fails.
     pub fn new(
         perturbation_a: Arc<Perturbation>,
         density_matrix: Arc<dyn Expr>,
@@ -162,7 +219,7 @@ impl LagrangianDao {
             generalized_energy.differentiate(perturbation_a.clone())?.remove_one(&density_a)?,
         );
 
-        // The time-averaged quasi-energy derivative Lagrangian
+        // The time-averaged quasienergy derivative Lagrangian
         let lagrangian_expr = subtract_exprs(generalized_energy_a.clone(), Add::new(lag_terms)?)?;
 
         Ok(Self {
@@ -178,8 +235,8 @@ impl LagrangianDao {
             idemp_multiplier_proxy,
             idemp_multiplier,
             idempotency,
-            lagrangian_expr,
             symmetrize_mode: symmetrize_mode.unwrap_or_default(),
+            lagrangian_expr,
         })
     }
 
@@ -481,29 +538,31 @@ impl LagrangianDao {
         Ok((tdscf_multiplier_expr, tdscf_equation_expr, idemp_multiplier_expr, idempotency_expr))
     }
 
-    // Returns the particular solution of a perturbed density matrix
-    // `freq_pert_density`, which can be the type of `WfnParameter` or
-    // `ResidueParameter`.
-    //
-    // (1) For the type `WfnParameter`, we simply follow, for example,
-    //     Equations (14) and (16), J. Phys. Chem. A 2025, 129, 3709-3721.
-    //
-    // (2) For the type `ResidueParameter`, we need to check its field
-    //     `parameter`, which must be the type WfnParameter`.
-    //
-    // 2a) If `parameter`'s derivative is equivalent to `perturbations` of
-    //     `ResidueParameter`, we have a residue density matrix and a
-    //     ZeroOperator will return because the particular solution does not
-    //     contribute to the residue density matrix.
-    //
-    // 2b) If `parameter`'s derivative is a superchain of `perturbations`, we
-    //     have a higher-order residue density matrix. We need to remove all
-    //     terms not containing `parameter` or its higher-order differentiated
-    //     ones, and replace retained (un)differentiated `parameter`'s with
-    //     corresponding residue density matrices.
-    //
-    // Note that `freq_pert_density` should be a differentiated
-    // `self.density_matrix`, otherwise the result will be incorrect.
+    /// Returns the particular solution of a perturbed density matrix.
+    ///
+    /// `freq_pert_density` must be either a differentiated
+    /// `tinned::WfnParameter` derived from this Lagrangian's density matrix, or
+    /// a `tinned::ResidueParameter` whose inner parameter is such a
+    /// `tinned::WfnParameter`.
+    ///
+    /// For a `tinned::WfnParameter`, the particular solution is constructed
+    /// from the differentiated idempotency constraint, see squations (14) and
+    /// (16), J. Phys. Chem. A 2025, 129, 3709-3721.
+    ///
+    /// For a `tinned::ResidueParameter`, this method first checks the wrapped
+    /// density parameter. If the wrapped parameter's derivative is equivalent
+    /// to the residue perturbations, the particular solution is zero. If the
+    /// wrapped parameter's derivative is a superchain of the residue
+    /// perturbations, only terms containing the wrapped parameter or its
+    /// higher-order derivatives are retained, and those terms are replaced by
+    /// the corresponding residue density matrices.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if `freq_pert_density` has an unsupported type, if a
+    /// residue parameter wraps an unsupported inner parameter, if
+    /// `freq_pert_density` is not derived from this Lagrangian's atomic-orbital
+    /// density matrix, or if symbolic construction fails.
     //
     //FIXME: add unit test for this function
     pub fn particular_density_solution(
@@ -514,6 +573,17 @@ impl LagrangianDao {
         let rhs_input = if let Some(wfn_param) =
             downcast_from_arc::<WfnParameter>(freq_pert_density)
         {
+            if !wfn_param.match_one_self(&self.density_matrix, true) {
+                return Err(expression_error(
+                    format!(
+                        "Response parameter is not derived from this Lagrangian's density matrix {}",
+                        &self.density_matrix
+                    ),
+                    freq_pert_density,
+                    None,
+                ));
+            }
+
             LinearRhsInput {
                 equation: &self.idempotency,
                 derivative: wfn_param.derivative(),
@@ -530,6 +600,17 @@ impl LagrangianDao {
                     None,
                 )
             })?;
+
+            if !wfn.match_one_self(&self.density_matrix, true) {
+                return Err(expression_error(
+                    format!(
+                        "Residue response parameter is not derived from this Lagrangian's density matrix {}",
+                        &self.density_matrix
+                    ),
+                    freq_pert_density,
+                    None,
+                ));
+            }
 
             // `ResidueParameter` ensures that `res_param.perturbations()`
             // is a subchain of `wfn.derivative()`, so we check if the
@@ -563,35 +644,43 @@ impl LagrangianDao {
         subtract_exprs(anticomm_idemp_dm, idemp_deriv)
     }
 
-    // Returns right-hand side (RHS) of the (linear) response equation.
-    // `freq_pert_density`, which can be the type of `WfnParameter` or
-    // `ResidueParameter`. `particular_solution` is the particular solution
-    // from the method `particular_density_solution()`.
-    //
-    // (1) For the type `WfnParameter`, we simply follow, for example, Equation
-    //     (19), J. Phys. Chem. A 2025, 129, 3709-3721.
-    //
-    // (2) For the type `ResidueParameter`, we need to check its field
-    //     `parameter`, which must be the type WfnParameter`.
-    //
-    // 2a) If `parameter`'s derivative is equivalent to `perturbations` of
-    //     `ResidueParameter`, we have a residue density matrix, and the
-    //     procedure is the same as (1). The RHS should be interpreted as that
-    //     the sum of perturbations' frequencies is equal to, or close to the
-    //     excitation energy, or its negative value depending on the field
-    //     `positive_frequency` of `ResidueParameter`.
-    //
-    // 2b) If `parameter`'s derivative is a superchain of `perturbations`, we
-    //     have a higher-order residue density matrix. We need to remove all
-    //     terms not containing `parameter` or its higher-order differentiated
-    //     ones, and replace retained (un)differentiated `parameter`'s with
-    //     corresponding residue density matrices. Note that
-    //     `particular_solution` should not be removed or replaced, and it is
-    //     actually particular solution for the higher-order residue density
-    //     matrix.
-    //
-    // Note that `freq_pert_density` should be a differentiated
-    // `self.density_matrix`, otherwise the result will be incorrect.
+    /// Builds the right-hand side of a linear response equation for a perturbed
+    /// density matrix.
+    ///
+    /// `freq_pert_density` must be either a differentiated
+    /// `tinned::WfnParameter` derived from this Lagrangian's density matrix,
+    /// or a `tinned::ResidueParameter` whose inner parameter is such a
+    /// `tinned::WfnParameter`.
+    ///
+    /// `particular_solution` is the particular solution returned by
+    /// `Self::particular_density_solution` for the same perturbed density
+    /// matrix.
+    ///
+    /// For a `tinned::WfnParameter`, this method differentiates the TDSCF
+    /// equation and replaces the perturbed density matrix by
+    /// `particular_solution`, see equation (19), J. Phys. Chem. A 2025, 129,
+    /// 3709-3721.
+    ///
+    /// For a `tinned::ResidueParameter`, this method checks the wrapped
+    /// density parameter. If the wrapped parameter's derivative is equivalent
+    /// to the residue perturbations, the same construction is used as for a
+    /// `tinned::WfnParameter`.
+    ///
+    /// If the wrapped parameter's derivative is a superchain of the residue
+    /// perturbations, only terms containing the wrapped parameter or its
+    /// higher-order derivatives are retained, and those terms are replaced by
+    /// the corresponding residue density matrices. Note that
+    /// `particular_solution` should not be removed or replaced, and it is
+    /// actually the particular solution for the higher-order residue density
+    /// matrix.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if `freq_pert_density` has an unsupported type, if a
+    /// residue parameter wraps an unsupported inner parameter, if
+    /// `freq_pert_density` is not derived from this Lagrangian's atomic-orbital
+    /// density matrix, or if symbolic differentiation, substitution,
+    /// retention, replacement, or construction fails.
     pub fn linear_response_rhs(
         &self,
         freq_pert_density: &Arc<dyn Expr>,
@@ -601,6 +690,17 @@ impl LagrangianDao {
         let (tdscf_deriv, replacement_target) = if let Some(wfn_param) =
             downcast_from_arc::<WfnParameter>(freq_pert_density)
         {
+            if !wfn_param.match_one_self(&self.density_matrix, true) {
+                return Err(expression_error(
+                    format!(
+                        "Response parameter is not derived from this Lagrangian's density matrix {}",
+                        &self.density_matrix
+                    ),
+                    freq_pert_density,
+                    None,
+                ));
+            }
+
             (
                 differentiate_expr(&self.tdscf_equation, wfn_param.derivative())?
                     .substitute_zero_perturbations(num_tol)?,
@@ -616,6 +716,17 @@ impl LagrangianDao {
                     None,
                 )
             })?;
+
+            if !wfn.match_one_self(&self.density_matrix, true) {
+                return Err(expression_error(
+                    format!(
+                        "Residue response parameter is not derived from this Lagrangian's density matrix {}",
+                        &self.density_matrix
+                    ),
+                    freq_pert_density,
+                    None,
+                ));
+            }
 
             // Clean `TimeEvolution` and unperturbed
             // `BasisTimeEvolution` objects first, then replace the
@@ -661,51 +772,61 @@ impl LagrangianDao {
         tdscf_deriv.replace_one(replacement_target, particular_solution, false)
     }
 
+    /// Returns the perturbation `a` used to build the derivative Lagrangian.
     #[inline]
     pub fn perturbation_a(&self) -> &Arc<Perturbation> {
         &self.perturbation_a
     }
 
+    /// Returns the optional overlap matrix.
     #[inline]
     pub fn overlap_matrix(&self) -> Option<&Arc<dyn Expr>> {
         self.overlap_matrix.as_ref()
     }
 
+    /// Returns the generalized Fock matrix.
     #[inline]
     pub fn fock_matrix(&self) -> &Arc<dyn Expr> {
         &self.fock_matrix
     }
 
+    /// Returns the differentiated generalized energy.
     #[inline]
     pub fn generalized_energy_a(&self) -> &Arc<dyn Expr> {
         &self.generalized_energy_a
     }
 
+    /// Returns the optional generalized energy-weighted density matrix.
     #[inline]
     pub fn general_ew_density(&self) -> Option<&Arc<dyn Expr>> {
         self.general_ew_density.as_ref()
     }
 
+    /// Returns the TDSCF multiplier expression.
     #[inline]
     pub fn tdscf_multiplier(&self) -> &Arc<dyn Expr> {
         &self.tdscf_multiplier
     }
 
+    /// Returns the TDSCF equation expression.
     #[inline]
     pub fn tdscf_equation(&self) -> &Arc<dyn Expr> {
         &self.tdscf_equation
     }
 
+    /// Returns the idempotency multiplier expression.
     #[inline]
     pub fn idemp_multiplier(&self) -> &Arc<dyn Expr> {
         &self.idemp_multiplier
     }
 
+    /// Returns the idempotency constraint expression.
     #[inline]
     pub fn idempotency(&self) -> &Arc<dyn Expr> {
         &self.idempotency
     }
 
+    /// Returns the symmetrization mode.
     #[inline]
     pub fn symmetrize_mode(&self) -> SymmetrizeMode {
         self.symmetrize_mode
@@ -718,7 +839,7 @@ impl LagrangianInternal for LagrangianDao {
         vec![self.perturbation_a.clone()]
     }
 
-    //FIXME: Refer to some euquations in our manuscript later
+    //FIXME: Refer to some equations in our manuscript later
     fn post_differentiation(
         &self,
         lagrangian: &Arc<dyn Expr>,
