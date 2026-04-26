@@ -37,6 +37,8 @@ SymResponse depends on the symbolic computation crate
 [Tinned](https://github.com/bingao/tinned), and is a reimplementation of \[1\]
 using the Rust programming language.
 
+The legacy C++ implementation can be found in the `symrsp-cxx` branch.
+
 ### Build Rust library
 
 ```bash
