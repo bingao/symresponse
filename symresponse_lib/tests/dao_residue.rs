@@ -7,6 +7,9 @@ use tinned::{
     differentiate_expr, subtract_exprs,
 };
 
+mod common;
+use common::make_perturbing_operator;
+
 // First-order residue of the linear response function, equation (286),
 // J. Chem. Phys. 129, 214108 (2008)
 #[test]
@@ -54,12 +57,18 @@ fn dao_first_order_lr_residue() -> Result<(), TinnedError> {
     let inten_perturbations: Vec<Arc<Perturbation>> = Vec::new();
 
     let excited_state = WfnParameter::builder("Xq").build()?;
-    let residue_info: HashMap<Arc<dyn Expr>, (bool, Vec<Arc<Perturbation>>)> =
+    let residue_relations: HashMap<Arc<dyn Expr>, (bool, Vec<Arc<Perturbation>>)> =
         HashMap::from([(excited_state.clone(), (true, vec![pert_b.clone()]))]);
 
     // Using `min_wfn_extern = 3` removes all Lagrangian multipliers
-    let residue =
-        lag.residue(&exten_perturbations, &inten_perturbations, 3, &residue_info, false, None)?;
+    let residue = lag.residue(
+        &exten_perturbations,
+        &inten_perturbations,
+        3,
+        &residue_relations,
+        false,
+        None,
+    )?;
 
     // Residue density matrix
     let density_b = density_matrix.differentiate(pert_b.clone())?;
@@ -192,16 +201,23 @@ fn lao_mcd() -> Result<(), TinnedError> {
 
     let excited_state_a = WfnParameter::builder("X-j").build()?;
     let excited_state_c = WfnParameter::builder("X+j").build()?;
-    let residue_info: HashMap<Arc<dyn Expr>, (bool, Vec<Arc<Perturbation>>)> = HashMap::from([
-        (excited_state_a.clone(), (false, vec![pert_a.clone()])),
-        (excited_state_c.clone(), (true, vec![pert_c.clone()])),
-    ]);
+    let residue_relations: HashMap<Arc<dyn Expr>, (bool, Vec<Arc<Perturbation>>)> =
+        HashMap::from([
+            (excited_state_a.clone(), (false, vec![pert_a.clone()])),
+            (excited_state_c.clone(), (true, vec![pert_c.clone()])),
+        ]);
 
     // Using `min_wfn_extern = 0` means it will be determined by SymResponse as
     // the next integer of the floor function of the half number of extensive
     // perturbations
-    let residue =
-        lag.residue(&exten_perturbations, &inten_perturbations, 0, &residue_info, false, None)?;
+    let residue = lag.residue(
+        &exten_perturbations,
+        &inten_perturbations,
+        0,
+        &residue_relations,
+        false,
+        None,
+    )?;
 
     //let json_residue = serde_json::to_string(&residue).unwrap();
     //println!("Reside = {}", json_residue);
@@ -218,7 +234,8 @@ fn lao_mcd() -> Result<(), TinnedError> {
     let res_density_c = ResidueParameter::builder(vec![pert_c], excited_state_c, density_c.clone())
         .positive_frequency(true)
         .build()?;
-    let density_ac_set = HashSet::from([density_a.clone(), density_c.clone()]);
+    let density_ac_sets =
+        vec![HashSet::from([density_a.clone()]), HashSet::from([density_c.clone()])];
 
     let res_density_ac_map: HashMap<Arc<dyn Expr>, Arc<dyn Expr>> =
         HashMap::from([(density_a.clone(), res_density_a), (density_c, res_density_c)]);
@@ -248,7 +265,7 @@ fn lao_mcd() -> Result<(), TinnedError> {
     ])?
     .eliminate(density_matrix, &exten_perturbations, 2)?
     .substitute_zero_perturbations(None)?
-    .retain_all(&density_ac_set, true)?
+    .retain_all(&density_ac_sets, true)?
     .replace_all(&res_density_ac_map, true)?;
 
     //let json_expected_residue = serde_json::to_string(&expected_residue).unwrap();
@@ -263,32 +280,15 @@ fn lao_mcd() -> Result<(), TinnedError> {
 // Equation (63), J. Chem. Phys. 134, 214104 (2011)
 #[test]
 fn dao_2p_tme() -> Result<(), TinnedError> {
-    let freq_a = Symbol::new("omega_a");
-    let pert_a = Perturbation::new("a", freq_a);
-    let freq_b = Symbol::new("omega_b");
-    let pert_b = Perturbation::new("b", freq_b.clone());
-    let freq_c = Symbol::new("omega_c");
-    let pert_c = Perturbation::new("c", freq_c.clone());
-    let freq_d = Symbol::new("omega_d");
-    let pert_d = Perturbation::new("d", freq_d.clone());
-
     let density_matrix = WfnParameter::builder("D").build()?;
 
     let overlap_matrix = OneElecMatrix::builder("S").build()?;
     let one_elec_hamiltonian = OneElecMatrix::builder("h").build()?;
 
-    let mu_a_deps = PertMultichain::from_map(BTreeMap::from([(pert_a.clone(), 1)]));
-    let mu_a =
-        OneElecMatrix::builder("mu_a").is_perturbing(true).dependencies(mu_a_deps).build()?;
-    let mu_b_deps = PertMultichain::from_map(BTreeMap::from([(pert_b.clone(), 1)]));
-    let mu_b =
-        OneElecMatrix::builder("mu_b").is_perturbing(true).dependencies(mu_b_deps).build()?;
-    let mu_c_deps = PertMultichain::from_map(BTreeMap::from([(pert_c.clone(), 1)]));
-    let mu_c =
-        OneElecMatrix::builder("mu_c").is_perturbing(true).dependencies(mu_c_deps).build()?;
-    let mu_d_deps = PertMultichain::from_map(BTreeMap::from([(pert_d.clone(), 1)]));
-    let mu_d =
-        OneElecMatrix::builder("mu_d").is_perturbing(true).dependencies(mu_d_deps).build()?;
+    let (pert_a, mu_a) = make_perturbing_operator("mu_a", "a", "omega_a")?;
+    let (pert_b, mu_b) = make_perturbing_operator("mu_b", "b", "omega_b")?;
+    let (pert_c, mu_c) = make_perturbing_operator("mu_c", "c", "omega_c")?;
+    let (pert_d, mu_d) = make_perturbing_operator("mu_d", "d", "omega_d")?;
 
     let one_elec_opers = vec![one_elec_hamiltonian, mu_a, mu_b, mu_c, mu_d];
 
@@ -313,13 +313,13 @@ fn dao_2p_tme() -> Result<(), TinnedError> {
     let inten_perturbations: Vec<Arc<Perturbation>> = Vec::new();
 
     let excited_state = WfnParameter::builder("Xn").build()?;
-    let residue_info: HashMap<Arc<dyn Expr>, (bool, Vec<Arc<Perturbation>>)> =
+    let residue_relations: HashMap<Arc<dyn Expr>, (bool, Vec<Arc<Perturbation>>)> =
         HashMap::from([(excited_state, (true, vec![pert_c.clone(), pert_d.clone()]))]);
     // The following is TPA between excited states, or excited state absorption
     //
     //let excited_state_f = WfnParameter::builder("Xf").build()?;
     //let excited_state_g = WfnParameter::builder("Xg").build()?;
-    //let residue_info: HashMap<Arc<dyn Expr>, (bool, Vec<Arc<Perturbation>>)> = HashMap::from([
+    //let residue_relations: HashMap<Arc<dyn Expr>, (bool, Vec<Arc<Perturbation>>)> = HashMap::from([
     //    (excited_state_f, (false, vec![pert_c.clone()])),
     //    (excited_state_g, (true, vec![pert_d.clone()])),
     //]);
@@ -327,8 +327,14 @@ fn dao_2p_tme() -> Result<(), TinnedError> {
     // Equation (63) is the trace of product between the right-hand side of
     // X^{ab} and X^{cd}. The only possible response function expression is
     // equation (240) in J. Chem. Phys. 129, 214108 (2008).
-    let residue =
-        lag.residue(&exten_perturbations, &inten_perturbations, 3, &residue_info, false, None)?;
+    let residue = lag.residue(
+        &exten_perturbations,
+        &inten_perturbations,
+        3,
+        &residue_relations,
+        false,
+        None,
+    )?;
 
     //FIXME: Not sure the correctness of equation (63), needs to figure out and compare
     println!("Reside = {}", residue);

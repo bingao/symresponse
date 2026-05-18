@@ -709,7 +709,7 @@ impl LagrangianDao {
         } else if let Some(res_param) = downcast_from_arc::<ResidueParameter>(freq_pert_density) {
             let diff_parameter = res_param.parameter();
 
-            let wfn = downcast_from_arc::<WfnParameter>(diff_parameter).ok_or_else(|| {
+            let wfn_param = downcast_from_arc::<WfnParameter>(diff_parameter).ok_or_else(|| {
                 expression_error(
                     "Invalid parameter type of residue density matrix",
                     freq_pert_density,
@@ -717,7 +717,7 @@ impl LagrangianDao {
                 )
             })?;
 
-            if !wfn.match_one_self(&self.density_matrix, true) {
+            if !wfn_param.match_one_self(&self.density_matrix, true) {
                 return Err(expression_error(
                     format!(
                         "Residue response parameter is not derived from this Lagrangian's density matrix {}",
@@ -734,7 +734,7 @@ impl LagrangianDao {
             // differentiated `TimeEvolution` (reflected by its
             // differentiated argument) will be incorrectly replaced by
             // an undifferentiated one and cleaned.
-            let result = differentiate_expr(&self.tdscf_equation, wfn.derivative())?
+            let result = differentiate_expr(&self.tdscf_equation, wfn_param.derivative())?
                 .substitute_zero_perturbations(num_tol)?;
 
             // `ResidueParameter` ensures that `res_param.perturbations()`
@@ -743,21 +743,22 @@ impl LagrangianDao {
             // replace the sum of frequencies of perturbations by the
             // excitation energy, nothing is different for the right-hand
             // side of the residue.
-            if wfn.derivative().is_superchain_vec(res_param.perturbations()) {
+            if wfn_param.derivative().is_superchain_vec(res_param.perturbations()) {
                 (result, diff_parameter)
             } else {
-                let residue_relations = HashMap::from([(
-                    res_param.excited_state().clone(),
-                    (res_param.positive_frequency(), res_param.perturbations().to_vec()),
-                )]);
-
-                let residue_setup = self
-                    .build_residue_parameters(&[self.density_matrix.clone()], &residue_relations)?;
+                let residue_map = self.build_first_order_residue_parameter(
+                    &self.density_matrix,
+                    res_param.excited_state(),
+                    res_param.positive_frequency(),
+                    res_param.perturbations(),
+                )?;
 
                 (
-                    result
-                        .retain_all(residue_setup.diff_params(), true)?
-                        .replace_all(residue_setup.residue_map(), true)?,
+                    result.retain_one(&residue_map.0, true)?.replace_one(
+                        &residue_map.0,
+                        residue_map.1,
+                        true,
+                    )?,
                     freq_pert_density,
                 )
             }
@@ -839,13 +840,31 @@ impl LagrangianInternal for LagrangianDao {
         vec![self.perturbation_a.clone()]
     }
 
-    //FIXME: Refer to some equations in our manuscript later
-    fn post_differentiation(
+    // We may need to perform symmetrization for the differentiated Lagrangian
+    fn differentiate_lagrangian(
         &self,
         lagrangian: &Arc<dyn Expr>,
         exten_perturbations: &[Arc<Perturbation>],
         inten_perturbations: &[Arc<Perturbation>],
+        validate_frequencies: bool,
+        num_tol: Option<NumberTolerance>,
     ) -> Result<Arc<dyn Expr>, TinnedError> {
+        // Validates perturbations
+        self.validate_perturbations(
+            exten_perturbations,
+            inten_perturbations,
+            validate_frequencies,
+            num_tol.clone(),
+        )?;
+
+        // Differentiates the quasi-energy (derivative) Lagrangian
+        let result =
+            self.do_differentiation(lagrangian, exten_perturbations, inten_perturbations)?;
+        // Usually the differentiated quasi-energy Lagrangian cannot be zero
+        if is_zero_expr(&result, num_tol) {
+            return Ok(result);
+        }
+
         let do_symmetrize: bool = match self.symmetrize_mode {
             SymmetrizeMode::Always => true,
             SymmetrizeMode::Never => false,
@@ -854,9 +873,10 @@ impl LagrangianInternal for LagrangianDao {
         };
 
         if !do_symmetrize {
-            return Ok(lagrangian.clone());
+            return Ok(result);
         }
 
+        //FIXME: Performs symmetrization according to some equations in our manuscript ...
         let fock_deriv =
             self.do_differentiation(&self.fock_matrix, exten_perturbations, inten_perturbations)?;
         let mut max_fs_derivs = HashSet::from([fock_deriv.clone()]);
@@ -879,7 +899,7 @@ impl LagrangianInternal for LagrangianDao {
         }
 
         // Removes terms containing maximum order derivatives of Fock and overlap matrices
-        simplified_terms.push(lagrangian.remove_all(&max_fs_derivs)?);
+        simplified_terms.push(result.remove_all(&max_fs_derivs)?);
 
         Add::new(simplified_terms)
     }

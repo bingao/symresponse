@@ -11,6 +11,47 @@ use symresponse::LagrangianCc;
 
 use crate::lagrangian::{LagrangianBox, LagrangianHandle};
 
+/// Creates a new coupled-cluster time-averaged quasienergy Lagrangian.
+///
+/// This function builds the symbolic ingredients needed to compute
+/// coupled-cluster response functions and residues through the generic
+/// Lagrangian C FFI functions.
+///
+/// The constructed Lagrangian contains the coupled-cluster amplitudes,
+/// Lagrangian multipliers, time-dependent cluster operator, Lambda operator,
+/// coupled-cluster quasienergy, multiplier response equation, and full
+/// time-averaged quasienergy Lagrangian.
+///
+/// Parameters:
+/// - `unperturbed_hamiltonian`: Unperturbed Hamiltonian expression. Must not
+///   be NULL.
+/// - `perturbing_operators`: Optional array of perturbing operator
+///   expressions. May be NULL, which is equivalent to an empty array. These
+///   operators must not contain zeroth-order/unperturbed terms.
+/// - `cc_amplitude`: Coupled-cluster amplitude expression. Must not be NULL
+///   and must be created using the function `tinned_wfn_parameter_new`.
+/// - `cc_excitation_operator`: Coupled-cluster excitation operator expression.
+///   Must not be NULL and must be created using the function
+///   `tinned_excitation_operator_new`.
+/// - `cc_multiplier`: Coupled-cluster Lagrangian multiplier expression. Must
+///   not be NULL and must be created using the function
+///   `tinned_lag_multiplier_new`.
+/// - `out_err`: Optional output error handle. May be NULL.
+///
+/// Returns:
+/// - A newly allocated Lagrangian handle on success.
+/// - NULL on failure.
+///
+/// Ownership:
+/// - The caller owns the returned handle and must free it with
+///   `symresponse_lagrangian_free`.
+///
+/// Errors:
+/// - If an error occurs, NULL is returned.
+/// - If `out_err` is not NULL, it is set to a newly allocated error handle.
+/// - Errors occur if any perturbing operator contains an unperturbed term, if
+///   any required expression has an unsupported type, or if symbolic
+///   construction fails.
 #[ffi_export]
 pub fn symresponse_lagrangian_cc_new(
     unperturbed_hamiltonian: &ExprHandle,
@@ -52,6 +93,37 @@ pub fn symresponse_lagrangian_cc_new(
     }
 }
 
+/// Builds the right-hand side of a coupled-cluster linear response equation.
+///
+/// The response parameter must be derived from this Lagrangian's
+/// coupled-cluster amplitude or Lagrangian multiplier. It may also be a
+/// residue parameter whose inner parameter is derived from one of those
+/// quantities.
+///
+/// Parameters:
+/// - `h`: Coupled-cluster Lagrangian handle. Must not be NULL and must refer to
+///   a Lagrangian created by `symresponse_lagrangian_cc_new`.
+/// - `rsp_parameter`: Response parameter expression. Must not be NULL. It must
+///   be a `tinned::WfnParameter`, `tinned::LagMultiplier`, or compatible
+///   `tinned::ResidueParameter`.
+/// - `num_tol`: Optional numerical tolerance. May be NULL.
+/// - `out_err`: Optional output error handle. May be NULL.
+///
+/// Returns:
+/// - A newly allocated expression handle on success.
+/// - NULL on failure.
+///
+/// Ownership:
+/// - The caller owns the returned expression handle and must free it with the
+///   corresponding Tinned FFI expression free function.
+///
+/// Errors:
+/// - If `h` is NULL, has the wrong Lagrangian type, or computation fails,
+///   NULL is returned.
+/// - If `rsp_parameter` has an unsupported type, is not derived from this
+///   Lagrangian's coupled-cluster amplitude or multiplier, or represents an
+///   invalid residue response parameter, NULL is returned.
+/// - If `out_err` is not NULL, it is set to a newly allocated error handle.
 #[ffi_export]
 pub extern "C" fn symresponse_cc_linear_response_rhs(
     h: Option<&LagrangianHandle>,

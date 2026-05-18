@@ -8,14 +8,20 @@ use tinned_ffi::{
 
 use symresponse::Lagrangian;
 
-/// An *opaque* handle that C can only pass around
+/// Opaque handle to a Lagrangian object.
+///
+/// This type is owned by the library. Users must not access its internals.
+/// Use the provided API functions to operate on it.
+///
+/// Ownership:
+/// - Must be freed using `symresponse_lagrangian_free`.
 #[derive_ReprC]
 #[repr(opaque)]
 pub struct LagrangianHandle {
     inner: Arc<dyn Lagrangian>,
 }
 
-/// Owned box by C after return
+// Owned box by C after return
 pub type LagrangianBox = repr_c::Box<LagrangianHandle>;
 
 impl LagrangianHandle {
@@ -37,12 +43,27 @@ impl LagrangianHandle {
     //}
 }
 
-// Free a Lagrangian (NULL-safe).
+/// Frees a Lagrangian handle.
+///
+/// This function is NULL-safe. Passing NULL has no effect.
 #[ffi_export]
 pub fn symresponse_lagrangian_free(lag: Option<LagrangianBox>) {
     drop(lag);
 }
 
+/// Returns the Lagrangian expression associated with `h`.
+///
+/// Parameters:
+/// - `h`: Lagrangian handle. Must not be NULL.
+/// - `out_err`: Optional output error handle. May be NULL.
+///
+/// Returns:
+/// - A newly allocated expression handle on success.
+/// - NULL on failure. If `out_err` is not NULL, it is set to an error object.
+///
+/// Ownership:
+/// - The caller owns the returned expression and must free it with the
+///   corresponding Tinned FFI free function.
 #[ffi_export]
 pub fn symresponse_get_lagrangian(
     h: Option<&LagrangianHandle>,
@@ -60,6 +81,25 @@ pub fn symresponse_get_lagrangian(
     }
 }
 
+/// Computes the response function.
+///
+/// Parameters:
+/// - `exten_perturbations`: Array of extensive perturbations (must not be empty)
+/// - `inten_perturbations`: Array of intensive perturbations (may be empty)
+/// - `min_wfn_exten_order`: Controls elimination of wave function parameters.
+///   See Rust documentation for detailed behavior.
+/// - `validate_frequencies`: Whether to validate perturbation frequencies
+/// - `num_tol`: Optional numerical tolerance (may be NULL)
+///
+/// Returns:
+/// - Expression handle on success
+/// - NULL on failure (see `out_err`)
+///
+/// Errors:
+/// - On failure, `out_err` (if not NULL) will be set.
+///
+/// See also:
+/// Rust API documentation for detailed semantics.
 #[ffi_export]
 pub fn symresponse_get_response_function(
     h: Option<&LagrangianHandle>,

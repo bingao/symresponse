@@ -1,38 +1,16 @@
-use std::collections::BTreeMap;
 use std::sync::Arc;
 
 use symresponse::{Lagrangian, LagrangianCc};
 use tinned::{
     AdjointMap, AdjointMode, ExcitationOperator, ExpAdjointMap, Expr, LagMultiplier, MatrixAdd,
-    MatrixMul, Number, OneElecMatrix, PertMultichain, Perturbation, Symbol, TinnedError,
-    WfnParameter, differentiate_expr,
+    MatrixMul, Number, OneElecMatrix, Perturbation, TinnedError, WfnParameter, differentiate_expr,
 };
 
-fn make_perturbing_operator(
-    op_name: &str,
-    pert_name: &str,
-    freq_name: &str,
-) -> Result<(Arc<Perturbation>, Arc<dyn Expr>), TinnedError> {
-    let freq = Symbol::new(freq_name);
-    let pert = Perturbation::new(pert_name, freq);
-    let deps = PertMultichain::from_map(BTreeMap::from([(pert.clone(), 1)]));
-    let op = OneElecMatrix::builder(op_name).is_perturbing(true).dependencies(deps).build()?;
+mod common;
+use common::{make_cc_st_operator, make_perturbing_operator};
 
-    Ok((pert, op))
-}
-
-fn make_st_operator(
-    cluster_operator: Arc<dyn Expr>,
-    operator: Arc<dyn Expr>,
-    max_commutator_order: u32,
-) -> Result<Arc<dyn Expr>, TinnedError> {
-    ExpAdjointMap::builder(cluster_operator, operator, Some(true))
-        .left_action(false)
-        .max_commutator_order(max_commutator_order)
-        .build()
-}
-
-fn make_st_commutator(
+// Builds the couple-cluster similarity-transformed commutator
+fn make_cc_st_commutator(
     cluster_operator: Arc<dyn Expr>,
     excitation_operator: Arc<dyn Expr>,
     operator: Arc<dyn Expr>,
@@ -96,22 +74,22 @@ fn cc_linear_quadratic_response() -> Result<(), TinnedError> {
     let max_commutator_order = LagrangianCc::max_commutator_order();
 
     // Similarity-transformed operators
-    let st_unperturbed_hamiltonian = make_st_operator(
+    let st_unperturbed_hamiltonian = make_cc_st_operator(
         cluster_operator.clone(),
         unperturbed_hamiltonian.clone(),
         max_commutator_order,
     )?;
-    let st_perturbing_oper_a = make_st_operator(
+    let st_perturbing_oper_a = make_cc_st_operator(
         cluster_operator.clone(),
         perturbing_oper_a.clone(),
         max_commutator_order,
     )?;
-    let st_perturbing_oper_b = make_st_operator(
+    let st_perturbing_oper_b = make_cc_st_operator(
         cluster_operator.clone(),
         perturbing_oper_b.clone(),
         max_commutator_order,
     )?;
-    let st_perturbing_oper_c = make_st_operator(
+    let st_perturbing_oper_c = make_cc_st_operator(
         cluster_operator.clone(),
         perturbing_oper_c.clone(),
         max_commutator_order,
@@ -127,6 +105,7 @@ fn cc_linear_quadratic_response() -> Result<(), TinnedError> {
         MatrixMul::new(vec![cc_lambda_operator.clone(), st_perturbing_oper_b])?,
         MatrixMul::new(vec![cc_lambda_operator.clone(), st_perturbing_oper_c])?,
     ])?;
+
     let expected_linear_response = differentiate_expr(&lagrangian_energy, &exten_perturbations)?
         .eliminate(cc_amplitude.clone(), &exten_perturbations, 2)?
         .eliminate(cc_multiplier.clone(), &exten_perturbations, 1)?
@@ -193,25 +172,25 @@ fn cc_linear_quadratic_response() -> Result<(), TinnedError> {
     //}
 
     // Similarity-transformed commutator between operators and the excitation operator
-    let st_comm_unperturbed_hamiltonian = make_st_commutator(
+    let st_comm_unperturbed_hamiltonian = make_cc_st_commutator(
         cluster_operator.clone(),
         cc_excitation_operator.clone(),
         unperturbed_hamiltonian,
         max_commutator_order,
     )?;
-    let st_comm_perturbing_oper_a = make_st_commutator(
+    let st_comm_perturbing_oper_a = make_cc_st_commutator(
         cluster_operator.clone(),
         cc_excitation_operator.clone(),
         perturbing_oper_a,
         max_commutator_order,
     )?;
-    let st_comm_perturbing_oper_b = make_st_commutator(
+    let st_comm_perturbing_oper_b = make_cc_st_commutator(
         cluster_operator.clone(),
         cc_excitation_operator.clone(),
         perturbing_oper_b,
         max_commutator_order,
     )?;
-    let st_comm_perturbing_oper_c = make_st_commutator(
+    let st_comm_perturbing_oper_c = make_cc_st_commutator(
         cluster_operator,
         cc_excitation_operator,
         perturbing_oper_c,

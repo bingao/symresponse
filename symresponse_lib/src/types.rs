@@ -87,29 +87,29 @@ impl EliminationScheme {
     }
 }
 
-// Internal use: `diff_params` contains differentiated parameters with respect
+// Internal use: `diff_parameters` contains differentiated parameters with respect
 // to perturbations involved in a residue computation, while `residue_map`
 // contains relationship between each differentiated parameter and its residue
 #[derive(Clone, Debug, serde::Serialize, serde::Deserialize)]
 pub struct ResidueSetup {
-    diff_params: HashSet<Arc<dyn Expr>>,
+    diff_parameters: Vec<HashSet<Arc<dyn Expr>>>,
     residue_map: HashMap<Arc<dyn Expr>, Arc<dyn Expr>>,
 }
 
 impl ResidueSetup {
     pub(crate) fn new(
-        diff_params: HashSet<Arc<dyn Expr>>,
+        diff_parameters: Vec<HashSet<Arc<dyn Expr>>>,
         residue_map: HashMap<Arc<dyn Expr>, Arc<dyn Expr>>,
     ) -> Self {
         Self {
-            diff_params,
+            diff_parameters,
             residue_map,
         }
     }
 
     #[inline]
-    pub(crate) fn diff_params(&self) -> &HashSet<Arc<dyn Expr>> {
-        &self.diff_params
+    pub(crate) fn diff_parameters(&self) -> &[HashSet<Arc<dyn Expr>>] {
+        &self.diff_parameters
     }
 
     #[inline]

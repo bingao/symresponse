@@ -41,6 +41,9 @@ pub struct LagrangianCc {
     // To compute the right-hand side of the response equation of Lagrangian
     // multipliers, ses equation (29), J. Phys. Chem. A 2025, 129, 3709-3721.
     cc_multiplier_equation: Arc<dyn Expr>,
+    //FIXME: Check if we need to perform the action of the symmetrizer, equation (26),
+    // J. Chem. Phys., 108, 8331-8354 (1998).
+    //apply_symmetrizer: bool,
     lagrangian_expr: Arc<dyn Expr>,
 }
 

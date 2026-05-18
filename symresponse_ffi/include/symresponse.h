@@ -14,7 +14,13 @@ extern "C" {
 #endif
 
 /** \brief
- *  An *opaque* handle that C can only pass around
+ *  Opaque handle to a Lagrangian object.
+ *
+ *  This type is owned by the library. Users must not access its internals.
+ *  Use the provided API functions to operate on it.
+ *
+ *  Ownership:
+ *  - Must be freed using `symresponse_lagrangian_free`.
  */
 typedef struct LagrangianHandle LagrangianHandle_t;
 
@@ -31,7 +37,39 @@ typedef struct NumberToleranceHandle NumberToleranceHandle_t;
  */
 typedef struct TinnedErrorHandle TinnedErrorHandle_t;
 
-/** <No documentation available> */
+/** \brief
+ *  Builds the right-hand side of a coupled-cluster linear response equation.
+ *
+ *  The response parameter must be derived from this Lagrangian's
+ *  coupled-cluster amplitude or Lagrangian multiplier. It may also be a
+ *  residue parameter whose inner parameter is derived from one of those
+ *  quantities.
+ *
+ *  Parameters:
+ *  - `h`: Coupled-cluster Lagrangian handle. Must not be NULL and must refer to
+ *  a Lagrangian created by `symresponse_lagrangian_cc_new`.
+ *  - `rsp_parameter`: Response parameter expression. Must not be NULL. It must
+ *  be a `tinned::WfnParameter`, `tinned::LagMultiplier`, or compatible
+ *  `tinned::ResidueParameter`.
+ *  - `num_tol`: Optional numerical tolerance. May be NULL.
+ *  - `out_err`: Optional output error handle. May be NULL.
+ *
+ *  Returns:
+ *  - A newly allocated expression handle on success.
+ *  - NULL on failure.
+ *
+ *  Ownership:
+ *  - The caller owns the returned expression handle and must free it with the
+ *  corresponding Tinned FFI expression free function.
+ *
+ *  Errors:
+ *  - If `h` is NULL, has the wrong Lagrangian type, or computation fails,
+ *  NULL is returned.
+ *  - If `rsp_parameter` has an unsupported type, is not derived from this
+ *  Lagrangian's coupled-cluster amplitude or multiplier, or represents an
+ *  invalid residue response parameter, NULL is returned.
+ *  - If `out_err` is not NULL, it is set to a newly allocated error handle.
+ */
 ExprHandle_t *
 symresponse_cc_linear_response_rhs (
     LagrangianHandle_t const * h,
@@ -39,7 +77,33 @@ symresponse_cc_linear_response_rhs (
     NumberToleranceHandle_t const * num_tol,
     TinnedErrorHandle_t * * out_err);
 
-/** <No documentation available> */
+/** \brief
+ *  Computes the right-hand side of the DAO linear response equation.
+ *
+ *  Parameters:
+ *  - `h`: DAO Lagrangian handle. Must not be NULL and must refer to a DAO
+ *  Lagrangian created by `symresponse_lagrangian_dao_new`.
+ *  - `density_freq`: Perturbed density matrix or residue density matrix. Must
+ *  not be NULL.
+ *  - `density_part`: Particular solution returned by
+ *  `symresponse_dao_particular_density_solution` for the same perturbed density
+ *  matrix. Must not be NULL.
+ *  - `num_tol`: Optional numerical tolerance. May be NULL.
+ *  - `out_err`: Optional output error handle. May be NULL.
+ *
+ *  Returns:
+ *  - A newly allocated expression handle on success.
+ *  - NULL on failure.
+ *
+ *  Ownership:
+ *  - The caller owns the returned expression handle and must free it with the
+ *  corresponding Tinned FFI expression free function.
+ *
+ *  Errors:
+ *  - If `h` is NULL, has the wrong Lagrangian type, or computation fails,
+ *  NULL is returned.
+ *  - If `out_err` is not NULL, it is set to a newly allocated error handle.
+ */
 ExprHandle_t *
 symresponse_dao_linear_response_rhs (
     LagrangianHandle_t const * h,
@@ -48,7 +112,30 @@ symresponse_dao_linear_response_rhs (
     NumberToleranceHandle_t const * num_tol,
     TinnedErrorHandle_t * * out_err);
 
-/** <No documentation available> */
+/** \brief
+ *  Computes the particular density solution for a DAO Lagrangian.
+ *
+ *  Parameters:
+ *  - `h`: DAO Lagrangian handle. Must not be NULL and must refer to a DAO
+ *  Lagrangian created by `symresponse_lagrangian_dao_new`.
+ *  - `density_freq`: Perturbed density matrix or residue density matrix. Must
+ *  not be NULL.
+ *  - `num_tol`: Optional numerical tolerance. May be NULL.
+ *  - `out_err`: Optional output error handle. May be NULL.
+ *
+ *  Returns:
+ *  - A newly allocated expression handle on success.
+ *  - NULL on failure.
+ *
+ *  Ownership:
+ *  - The caller owns the returned expression handle and must free it with the
+ *  corresponding Tinned FFI expression free function.
+ *
+ *  Errors:
+ *  - If `h` is NULL, has the wrong Lagrangian type, or computation fails,
+ *  NULL is returned.
+ *  - If `out_err` is not NULL, it is set to a newly allocated error handle.
+ */
 ExprHandle_t *
 symresponse_dao_particular_density_solution (
     LagrangianHandle_t const * h,
@@ -56,7 +143,21 @@ symresponse_dao_particular_density_solution (
     NumberToleranceHandle_t const * num_tol,
     TinnedErrorHandle_t * * out_err);
 
-/** <No documentation available> */
+/** \brief
+ *  Returns the Lagrangian expression associated with `h`.
+ *
+ *  Parameters:
+ *  - `h`: Lagrangian handle. Must not be NULL.
+ *  - `out_err`: Optional output error handle. May be NULL.
+ *
+ *  Returns:
+ *  - A newly allocated expression handle on success.
+ *  - NULL on failure. If `out_err` is not NULL, it is set to an error object.
+ *
+ *  Ownership:
+ *  - The caller owns the returned expression and must free it with the
+ *  corresponding Tinned FFI free function.
+ */
 ExprHandle_t *
 symresponse_get_lagrangian (
     LagrangianHandle_t const * h,
@@ -85,7 +186,27 @@ typedef struct PerturbationSlice {
 
 #include <stdbool.h>
 
-/** <No documentation available> */
+/** \brief
+ *  Computes the response function.
+ *
+ *  Parameters:
+ *  - `exten_perturbations`: Array of extensive perturbations (must not be empty)
+ *  - `inten_perturbations`: Array of intensive perturbations (may be empty)
+ *  - `min_wfn_exten_order`: Controls elimination of wave function parameters.
+ *  See Rust documentation for detailed behavior.
+ *  - `validate_frequencies`: Whether to validate perturbation frequencies
+ *  - `num_tol`: Optional numerical tolerance (may be NULL)
+ *
+ *  Returns:
+ *  - Expression handle on success
+ *  - NULL on failure (see `out_err`)
+ *
+ *  Errors:
+ *  - On failure, `out_err` (if not NULL) will be set.
+ *
+ *  See also:
+ *  Rust API documentation for detailed semantics.
+ */
 ExprHandle_t *
 symresponse_get_response_function (
     LagrangianHandle_t const * h,
@@ -107,7 +228,49 @@ typedef struct ExprSlice {
     size_t len;
 } ExprSlice_t;
 
-/** <No documentation available> */
+/** \brief
+ *  Creates a new coupled-cluster time-averaged quasienergy Lagrangian.
+ *
+ *  This function builds the symbolic ingredients needed to compute
+ *  coupled-cluster response functions and residues through the generic
+ *  Lagrangian C FFI functions.
+ *
+ *  The constructed Lagrangian contains the coupled-cluster amplitudes,
+ *  Lagrangian multipliers, time-dependent cluster operator, Lambda operator,
+ *  coupled-cluster quasienergy, multiplier response equation, and full
+ *  time-averaged quasienergy Lagrangian.
+ *
+ *  Parameters:
+ *  - `unperturbed_hamiltonian`: Unperturbed Hamiltonian expression. Must not
+ *  be NULL.
+ *  - `perturbing_operators`: Optional array of perturbing operator
+ *  expressions. May be NULL, which is equivalent to an empty array. These
+ *  operators must not contain zeroth-order/unperturbed terms.
+ *  - `cc_amplitude`: Coupled-cluster amplitude expression. Must not be NULL
+ *  and must be created using the function `tinned_wfn_parameter_new`.
+ *  - `cc_excitation_operator`: Coupled-cluster excitation operator expression.
+ *  Must not be NULL and must be created using the function
+ *  `tinned_excitation_operator_new`.
+ *  - `cc_multiplier`: Coupled-cluster Lagrangian multiplier expression. Must
+ *  not be NULL and must be created using the function
+ *  `tinned_lag_multiplier_new`.
+ *  - `out_err`: Optional output error handle. May be NULL.
+ *
+ *  Returns:
+ *  - A newly allocated Lagrangian handle on success.
+ *  - NULL on failure.
+ *
+ *  Ownership:
+ *  - The caller owns the returned handle and must free it with
+ *  `symresponse_lagrangian_free`.
+ *
+ *  Errors:
+ *  - If an error occurs, NULL is returned.
+ *  - If `out_err` is not NULL, it is set to a newly allocated error handle.
+ *  - Errors occur if any perturbing operator contains an unperturbed term, if
+ *  any required expression has an unsupported type, or if symbolic
+ *  construction fails.
+ */
 LagrangianHandle_t *
 symresponse_lagrangian_cc_new (
     ExprHandle_t const * unperturbed_hamiltonian,
@@ -117,17 +280,25 @@ symresponse_lagrangian_cc_new (
     ExprHandle_t const * cc_multiplier,
     TinnedErrorHandle_t * * out_err);
 
-/** <No documentation available> */
+/** \brief
+ *  Symmetrization mode used when constructing a DAO Lagrangian.
+ */
 /** \remark Has the same ABI as `uint8_t` **/
 #ifdef DOXYGEN
 typedef
 #endif
 enum SymmetrizeModeReprC {
-    /** <No documentation available> */
+    /** \brief
+     *  Always symmetrize when applicable.
+     */
     SYMMETRIZE_MODE_REPR_C_ALWAYS = 0,
-    /** <No documentation available> */
+    /** \brief
+     *  Never symmetrize.
+     */
     SYMMETRIZE_MODE_REPR_C_NEVER = 1,
-    /** <No documentation available> */
+    /** \brief
+     *  Let the library decide whether symmetrization should be used.
+     */
     SYMMETRIZE_MODE_REPR_C_AUTO = 2,
 }
 #ifndef DOXYGEN
@@ -135,7 +306,37 @@ enum SymmetrizeModeReprC {
 #endif
 SymmetrizeModeReprC_t;
 
-/** <No documentation available> */
+/** \brief
+ *  Creates a new DAO Lagrangian.
+ *
+ *  Parameters:
+ *  - `perturbation_a`: Perturbation used to form the derivative Lagrangian.
+ *  Must not be NULL.
+ *  - `density_matrix`: Atomic-orbital density matrix. Must not be NULL.
+ *  - `overlap_matrix`: Optional overlap matrix. May be NULL.
+ *  - `one_elec_operators`: Optional array of one-electron operator expressions.
+ *  May be NULL, which is equivalent to an empty array.
+ *  - `two_elec_operator`: Optional two-electron operator expression. May be NULL.
+ *  - `xc_energy`: Optional exchange-correlation energy expression. May be NULL.
+ *  - `xc_potential`: Optional exchange-correlation potential expression. May be NULL.
+ *  - `h_nuc`: Optional nuclear Hamiltonian contribution. May be NULL.
+ *  - `symmetrize_mode`: Optional symmetrization mode. May be NULL to use the
+ *  library default.
+ *  - `num_tol`: Optional numerical tolerance. May be NULL.
+ *  - `out_err`: Optional output error handle. May be NULL.
+ *
+ *  Returns:
+ *  - A newly allocated Lagrangian handle on success.
+ *  - NULL on failure.
+ *
+ *  Ownership:
+ *  - The caller owns the returned handle and must free it with
+ *  `symresponse_lagrangian_free`.
+ *
+ *  Errors:
+ *  - If an error occurs, NULL is returned.
+ *  - If `out_err` is not NULL, it is set to a newly allocated error handle.
+ */
 LagrangianHandle_t *
 symresponse_lagrangian_dao_new (
     PerturbationHandle_t const * perturbation_a,
@@ -150,7 +351,11 @@ symresponse_lagrangian_dao_new (
     NumberToleranceHandle_t const * num_tol,
     TinnedErrorHandle_t * * out_err);
 
-/** <No documentation available> */
+/** \brief
+ *  Frees a Lagrangian handle.
+ *
+ *  This function is NULL-safe. Passing NULL has no effect.
+ */
 void
 symresponse_lagrangian_free (
     LagrangianHandle_t * lag);

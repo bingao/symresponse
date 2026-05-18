@@ -11,12 +11,16 @@ use symresponse::{LagrangianDao, SymmetrizeMode};
 
 use crate::lagrangian::{LagrangianBox, LagrangianHandle};
 
+/// Symmetrization mode used when constructing a DAO Lagrangian.
 #[derive_ReprC]
 #[repr(u8)]
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum SymmetrizeModeReprC {
+    /// Always symmetrize when applicable.
     Always = 0,
+    /// Never symmetrize.
     Never = 1,
+    /// Let the library decide whether symmetrization should be used.
     Auto = 2,
 }
 
@@ -30,6 +34,35 @@ impl From<SymmetrizeModeReprC> for SymmetrizeMode {
     }
 }
 
+/// Creates a new DAO Lagrangian.
+///
+/// Parameters:
+/// - `perturbation_a`: Perturbation used to form the derivative Lagrangian.
+///   Must not be NULL.
+/// - `density_matrix`: Atomic-orbital density matrix. Must not be NULL.
+/// - `overlap_matrix`: Optional overlap matrix. May be NULL.
+/// - `one_elec_operators`: Optional array of one-electron operator expressions.
+///   May be NULL, which is equivalent to an empty array.
+/// - `two_elec_operator`: Optional two-electron operator expression. May be NULL.
+/// - `xc_energy`: Optional exchange-correlation energy expression. May be NULL.
+/// - `xc_potential`: Optional exchange-correlation potential expression. May be NULL.
+/// - `h_nuc`: Optional nuclear Hamiltonian contribution. May be NULL.
+/// - `symmetrize_mode`: Optional symmetrization mode. May be NULL to use the
+///   library default.
+/// - `num_tol`: Optional numerical tolerance. May be NULL.
+/// - `out_err`: Optional output error handle. May be NULL.
+///
+/// Returns:
+/// - A newly allocated Lagrangian handle on success.
+/// - NULL on failure.
+///
+/// Ownership:
+/// - The caller owns the returned handle and must free it with
+///   `symresponse_lagrangian_free`.
+///
+/// Errors:
+/// - If an error occurs, NULL is returned.
+/// - If `out_err` is not NULL, it is set to a newly allocated error handle.
 #[ffi_export]
 pub fn symresponse_lagrangian_dao_new(
     perturbation_a: &PerturbationHandle,
@@ -86,37 +119,28 @@ pub fn symresponse_lagrangian_dao_new(
     }
 }
 
-#[ffi_export]
-pub extern "C" fn symresponse_dao_linear_response_rhs(
-    h: Option<&LagrangianHandle>,
-    density_freq: &ExprHandle,
-    density_part: &ExprHandle,
-    num_tol: Option<&NumberToleranceHandle>,
-    out_err: Option<Out<'_, TinnedErrorBox>>,
-) -> Option<ExprBox> {
-    match try_with_handle(h, "symresponse_dao_linear_response_rhs", "LagrangianHandle", |lh| {
-        if let Some(lag) = lh.as_ref().as_any().downcast_ref::<LagrangianDao>() {
-            let dens_freq_arc: Arc<dyn Expr> = density_freq.clone_arc();
-            let dens_part_arc: Arc<dyn Expr> = density_part.clone_arc();
-            let num_tolerance: Option<NumberTolerance> = num_tol.map(|h| h.as_ref().clone());
-
-            lag.linear_response_rhs(&dens_freq_arc, dens_part_arc, num_tolerance)
-                .map(|arc| ExprBox::new(ExprHandle::new(arc)))
-        } else {
-            Err(generic_error(
-                "Invalid Lagrangian type in symresponse_dao_linear_response_rhs",
-                None,
-            ))
-        }
-    }) {
-        Ok(expr) => Some(expr),
-        Err(e) => {
-            tinned_error_new(out_err, e);
-            None
-        },
-    }
-}
-
+/// Computes the particular density solution for a DAO Lagrangian.
+///
+/// Parameters:
+/// - `h`: DAO Lagrangian handle. Must not be NULL and must refer to a DAO
+///   Lagrangian created by `symresponse_lagrangian_dao_new`.
+/// - `density_freq`: Perturbed density matrix or residue density matrix. Must
+///   not be NULL.
+/// - `num_tol`: Optional numerical tolerance. May be NULL.
+/// - `out_err`: Optional output error handle. May be NULL.
+///
+/// Returns:
+/// - A newly allocated expression handle on success.
+/// - NULL on failure.
+///
+/// Ownership:
+/// - The caller owns the returned expression handle and must free it with the
+///   corresponding Tinned FFI expression free function.
+///
+/// Errors:
+/// - If `h` is NULL, has the wrong Lagrangian type, or computation fails,
+///   NULL is returned.
+/// - If `out_err` is not NULL, it is set to a newly allocated error handle.
 #[ffi_export]
 pub extern "C" fn symresponse_dao_particular_density_solution(
     h: Option<&LagrangianHandle>,
@@ -143,6 +167,62 @@ pub extern "C" fn symresponse_dao_particular_density_solution(
             }
         },
     ) {
+        Ok(expr) => Some(expr),
+        Err(e) => {
+            tinned_error_new(out_err, e);
+            None
+        },
+    }
+}
+
+/// Computes the right-hand side of the DAO linear response equation.
+///
+/// Parameters:
+/// - `h`: DAO Lagrangian handle. Must not be NULL and must refer to a DAO
+///   Lagrangian created by `symresponse_lagrangian_dao_new`.
+/// - `density_freq`: Perturbed density matrix or residue density matrix. Must
+///   not be NULL.
+/// - `density_part`: Particular solution returned by
+///   `symresponse_dao_particular_density_solution` for the same perturbed density
+///   matrix. Must not be NULL.
+/// - `num_tol`: Optional numerical tolerance. May be NULL.
+/// - `out_err`: Optional output error handle. May be NULL.
+///
+/// Returns:
+/// - A newly allocated expression handle on success.
+/// - NULL on failure.
+///
+/// Ownership:
+/// - The caller owns the returned expression handle and must free it with the
+///   corresponding Tinned FFI expression free function.
+///
+/// Errors:
+/// - If `h` is NULL, has the wrong Lagrangian type, or computation fails,
+///   NULL is returned.
+/// - If `out_err` is not NULL, it is set to a newly allocated error handle.
+#[ffi_export]
+pub extern "C" fn symresponse_dao_linear_response_rhs(
+    h: Option<&LagrangianHandle>,
+    density_freq: &ExprHandle,
+    density_part: &ExprHandle,
+    num_tol: Option<&NumberToleranceHandle>,
+    out_err: Option<Out<'_, TinnedErrorBox>>,
+) -> Option<ExprBox> {
+    match try_with_handle(h, "symresponse_dao_linear_response_rhs", "LagrangianHandle", |lh| {
+        if let Some(lag) = lh.as_ref().as_any().downcast_ref::<LagrangianDao>() {
+            let dens_freq_arc: Arc<dyn Expr> = density_freq.clone_arc();
+            let dens_part_arc: Arc<dyn Expr> = density_part.clone_arc();
+            let num_tolerance: Option<NumberTolerance> = num_tol.map(|h| h.as_ref().clone());
+
+            lag.linear_response_rhs(&dens_freq_arc, dens_part_arc, num_tolerance)
+                .map(|arc| ExprBox::new(ExprHandle::new(arc)))
+        } else {
+            Err(generic_error(
+                "Invalid Lagrangian type in symresponse_dao_linear_response_rhs",
+                None,
+            ))
+        }
+    }) {
         Ok(expr) => Some(expr),
         Err(e) => {
             tinned_error_new(out_err, e);

@@ -92,6 +92,28 @@ pub(crate) mod sealed {
             Ok(())
         }
 
+        // Validates given extensive and intensive perturbations
+        fn validate_perturbations(
+            &self,
+            exten_perturbations: &[Arc<Perturbation>],
+            inten_perturbations: &[Arc<Perturbation>],
+            validate_frequencies: bool,
+            num_tol: Option<NumberTolerance>,
+        ) -> Result<(), TinnedError> {
+            // Validate that: (i) at least one extensive perturbation, (ii) sum of
+            // all perturbations' frequencies is zero, and (iii) extensive and
+            // intensive perturbations are disjoint
+            if exten_perturbations.is_empty() {
+                return Err(generic_error("At least one extensive perturbation is required", None));
+            }
+
+            if validate_frequencies {
+                self.is_non_zero_sum_freqs(exten_perturbations, inten_perturbations, num_tol)?;
+            }
+
+            self.has_common_perturbation(exten_perturbations, inten_perturbations)
+        }
+
         // Perform differentiation with respect to extensive and intensive perturbations
         #[inline]
         fn do_differentiation(
@@ -116,17 +138,6 @@ pub(crate) mod sealed {
             })
         }
 
-        // Post operations after differentiating the Lagrangian
-        #[inline]
-        fn post_differentiation(
-            &self,
-            lagrangian: &Arc<dyn Expr>,
-            _exten_perturbations: &[Arc<Perturbation>],
-            _inten_perturbations: &[Arc<Perturbation>],
-        ) -> Result<Arc<dyn Expr>, TinnedError> {
-            Ok(lagrangian.clone())
-        }
-
         // Return differentiated Lagrangian with respect to given extensive and
         // intensive perturbations.
         //
@@ -141,46 +152,19 @@ pub(crate) mod sealed {
             validate_frequencies: bool,
             num_tol: Option<NumberTolerance>,
         ) -> Result<Arc<dyn Expr>, TinnedError> {
-            // Validate that: (i) at least one extensive perturbation, (ii) sum of
-            // all perturbations' frequencies is zero, and (iii) extensive and
-            // intensive perturbations are disjoint
-            if exten_perturbations.is_empty() {
-                return Err(generic_error(
-                    "Lagrangian requires at least one extensive perturbation",
-                    None,
-                ));
-            }
+            // Validates perturbations
+            self.validate_perturbations(
+                exten_perturbations,
+                inten_perturbations,
+                validate_frequencies,
+                num_tol,
+            )?;
 
-            if validate_frequencies {
-                self.is_non_zero_sum_freqs(
-                    exten_perturbations,
-                    inten_perturbations,
-                    num_tol.clone(),
-                )?;
-            }
-
-            self.has_common_perturbation(exten_perturbations, inten_perturbations)?;
-
-            // Differentiate the quasi-energy (derivative) Lagrangian
-            let result =
-                self.do_differentiation(lagrangian, exten_perturbations, inten_perturbations)?;
-            // Usually the differentiated quasi-energy Lagrangian cannot be zero
-            if is_zero_expr(&result, num_tol) {
-                return Ok(result);
-            }
-
-            // Used, for example symmetrization in DAO response theory
-            self.post_differentiation(&result, exten_perturbations, inten_perturbations).map_err(
-                |e| {
-                    generic_error(
-                        "Post operations after differentiating the Lagrangian failed",
-                        Some(Box::new(e)),
-                    )
-                },
-            )
+            // Differentiates the quasi-energy (derivative) Lagrangian
+            self.do_differentiation(lagrangian, exten_perturbations, inten_perturbations)
         }
 
-        // Eliminate differentiated wave function parameter with respect to
+        // Eliminates differentiated wave function parameter with respect to
         // extensive perturbations `exten_perturbations` from the derivative of
         // quasi-energy Lagrangian. Orders of differentiated wave function
         // parameter to be eliminated are from the minimum one `min_wfn_order` to
@@ -192,7 +176,7 @@ pub(crate) mod sealed {
             min_wfn_order: u32,
         ) -> Result<Arc<dyn Expr>, TinnedError>;
 
-        // Eliminate differentiated Lagrangian multipliers with respect to
+        // Eliminates differentiated Lagrangian multipliers with respect to
         // extensive perturbations `exten_perturbations` from the derivative of
         // quasi-energy Lagrangian. Orders of differentiated Lagrangian multipliers
         // to be eliminated are from the minimum one `min_multiplier_order` to the
@@ -204,7 +188,7 @@ pub(crate) mod sealed {
             min_multiplier_order: u32,
         ) -> Result<Arc<dyn Expr>, TinnedError>;
 
-        // Return response function from the given differentiated `lagrangian`
+        // Returns response function from the given differentiated `lagrangian`
         // by eliminating differentiated wave function parameters and/or
         // Lagrangian multipliers, and evaluating at zero perturbation strength.
         //
@@ -312,6 +296,36 @@ pub(crate) mod sealed {
             Ok(())
         }
 
+        // For the given first order residue information (excited state,
+        // frequency direction of approach and perturbations), and an
+        // unperturbed `parameter`, returns differentiated parameter and its
+        // residue with respect to the `perturbations`.
+        //
+        // The differentiated parameter can be used to retain the
+        // differentiated parameter itself and its higher-order ones in an
+        // expression.
+        //
+        // The residue parameter can be used as a replacement of the
+        // differentiated parameter.
+        fn build_first_order_residue_parameter(
+            &self,
+            parameter: &Arc<dyn Expr>,
+            excited_state: &Arc<dyn Expr>,
+            positive_frequency: bool,
+            perturbations: &[Arc<Perturbation>],
+        ) -> Result<(Arc<dyn Expr>, Arc<dyn Expr>), TinnedError> {
+            let diff_parameter = differentiate_expr(parameter, &perturbations)?;
+            let residue_parameter = ResidueParameter::builder(
+                perturbations.to_vec(),
+                excited_state.clone(),
+                diff_parameter.clone(),
+            )
+            .positive_frequency(positive_frequency)
+            .build()?;
+
+            Ok((diff_parameter, residue_parameter))
+        }
+
         // Returns differentiated response parameters with respect to
         // perturbations involved in residue computation specified by
         // `residue_relations`, and a map between each differentiated response
@@ -329,36 +343,46 @@ pub(crate) mod sealed {
             parameters: &[Arc<dyn Expr>],
             residue_relations: &HashMap<Arc<dyn Expr>, (bool, Vec<Arc<Perturbation>>)>,
         ) -> Result<ResidueSetup, TinnedError> {
-            let mut diff_params: HashSet<Arc<dyn Expr>> =
-                HashSet::with_capacity(parameters.len() * residue_relations.len());
+            let mut all_diff_parameters: Vec<HashSet<Arc<dyn Expr>>> =
+                Vec::with_capacity(residue_relations.len());
             let mut residue_map: HashMap<Arc<dyn Expr>, Arc<dyn Expr>> =
-                HashMap::with_capacity(diff_params.capacity());
+                HashMap::with_capacity(parameters.len() * residue_relations.len());
 
-            for param in parameters {
-                for (excited_state, (positive_frequency, perturbations)) in residue_relations {
-                    let param_deriv = differentiate_expr(param, perturbations)?;
-                    let residue_param = ResidueParameter::builder(
-                        perturbations.clone(),
-                        excited_state.clone(),
-                        param_deriv.clone(),
-                    )
-                    .positive_frequency(*positive_frequency)
-                    .build()?;
+            // Applies the retain operation to the expression for each residue relation in turn
+            for (excited_state, (positive_frequency, perturbations)) in residue_relations {
+                let mut diff_parameters: HashSet<Arc<dyn Expr>> =
+                    HashSet::with_capacity(parameters.len());
 
-                    if residue_map.contains_key(&param_deriv) {
+                // Retains an expression if it contains any differentiated parameter,
+                // not necessarily all differentiated parameters.
+                for parameter in parameters {
+                    let (diff_parameter, residue_parameter) = self
+                        .build_first_order_residue_parameter(
+                            parameter,
+                            excited_state,
+                            *positive_frequency,
+                            perturbations,
+                        )?;
+
+                    if residue_map.contains_key(&diff_parameter) {
                         return Err(expression_error(
-                            format!("Duplicate differentiated parameter detected {}", param_deriv),
-                            param,
+                            format!(
+                                "Duplicate differentiated parameter detected {}",
+                                diff_parameter
+                            ),
+                            parameter,
                             None,
                         ));
                     }
 
-                    diff_params.insert(param_deriv.clone());
-                    residue_map.insert(param_deriv, residue_param);
+                    diff_parameters.insert(diff_parameter.clone());
+                    residue_map.insert(diff_parameter, residue_parameter);
                 }
+
+                all_diff_parameters.push(diff_parameters);
             }
 
-            Ok(ResidueSetup::new(diff_params, residue_map))
+            Ok(ResidueSetup::new(all_diff_parameters, residue_map))
         }
 
         // Validates given extensive and intensive perturbations, and residue
@@ -381,7 +405,7 @@ pub(crate) mod sealed {
                 residue_relations,
             )?;
 
-            // Sets up `diff_params` and `residue_map` for retaining and replacing
+            // Sets up `diff_parameters` and `residue_map` for retaining and replacing
             // differentiated parameters and their higher-order ones.
             let mut parameters =
                 Vec::with_capacity(wfn_parameters.len() + lagrangian_multipliers.len());
@@ -407,7 +431,7 @@ pub(crate) mod sealed {
             // Retains differentiated parameters specified by `residue_relations`,
             // as well as their higher-order ones while removes other
             // (un)differentiated parameters.
-            let result = rsp_function.retain_all(residue_setup.diff_params(), true)?;
+            let result = rsp_function.retain_all(residue_setup.diff_parameters(), true)?;
 
             //FIXME: `result` may become zero after `retain()`, we could consider the "complementary" residue parameters
 
@@ -571,7 +595,7 @@ pub(crate) mod sealed {
                 return Ok(None);
             }
 
-            // Find all response functions with minimal weight
+            // Finds all response functions with minimal weight
             let min_weight = results.iter().map(|(w, _)| *w).min().ok_or_else(|| {
                 generic_error(
                     "Unexpected: non-empty results but failed to compute minimum weight",
@@ -607,21 +631,18 @@ pub(crate) mod sealed {
                 return Ok(result);
             };
 
-            let residue_relations: HashMap<Arc<dyn Expr>, (bool, Vec<Arc<Perturbation>>)> =
-                HashMap::from([(
-                    residue_parameter.excited_state().clone(),
-                    (
-                        residue_parameter.positive_frequency(),
-                        residue_parameter.perturbations().to_vec(),
-                    ),
-                )]);
+            let (diff_parameter, residue_parameter) = self.build_first_order_residue_parameter(
+                &unperturbed_parameter,
+                residue_parameter.excited_state(),
+                residue_parameter.positive_frequency(),
+                residue_parameter.perturbations(),
+            )?;
 
-            let residue_setup =
-                self.build_residue_parameters(&[unperturbed_parameter], &residue_relations)?;
-
-            result
-                .retain_all(residue_setup.diff_params(), true)?
-                .replace_all(residue_setup.residue_map(), true)
+            result.retain_one(&diff_parameter, true)?.replace_one(
+                &diff_parameter,
+                residue_parameter,
+                true,
+            )
         }
     }
 }
