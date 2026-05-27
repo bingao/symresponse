@@ -6,8 +6,13 @@ use tinned::{
     ResidueParameter, TinnedError, WfnParameter, differentiate_expr,
 };
 
-mod common;
-use common::{make_cc_st_operator, make_perturbing_operator};
+#[path = "helpers/perturbation.rs"]
+mod perturbation_helpers;
+use perturbation_helpers::make_perturbing_operator;
+
+#[path = "helpers/cc.rs"]
+mod cc_helpers;
+use cc_helpers::make_cc_st_operator;
 
 #[test]
 fn cc_first_order_lr_residue() -> Result<(), TinnedError> {

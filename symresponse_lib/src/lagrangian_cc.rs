@@ -97,10 +97,15 @@ impl LagrangianCc {
             cluster_operator: &Arc<dyn Expr>,
             electron_operator: &Arc<dyn Expr>,
         ) -> Result<Arc<dyn Expr>, TinnedError> {
-            ExpAdjointMap::builder(cluster_operator.clone(), electron_operator.clone(), Some(true))
-                .left_action(false)
-                .max_commutator_order(LagrangianCc::max_commutator_order())
-                .build()
+            ExpAdjointMap::builder(
+                cluster_operator.clone(),
+                electron_operator.clone(),
+                Some(true),
+                None,
+            )
+            .left_action(false)
+            .max_commutator_order(LagrangianCc::max_commutator_order())
+            .build()
         }
 
         // Build terms for the right-hand side of the response equation of Lagrangian multipliers

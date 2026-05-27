@@ -6,8 +6,13 @@ use tinned::{
     MatrixMul, Number, OneElecMatrix, Perturbation, TinnedError, WfnParameter, differentiate_expr,
 };
 
-mod common;
-use common::{make_cc_st_operator, make_perturbing_operator};
+#[path = "helpers/perturbation.rs"]
+mod perturbation_helpers;
+use perturbation_helpers::make_perturbing_operator;
+
+#[path = "helpers/cc.rs"]
+mod cc_helpers;
+use cc_helpers::make_cc_st_operator;
 
 // Builds the couple-cluster similarity-transformed commutator
 fn make_cc_st_commutator(
@@ -25,6 +30,7 @@ fn make_cc_st_commutator(
             Some(AdjointMode::Commutative),
         )?,
         Some(true),
+        None,
     )
     .left_action(false)
     .max_commutator_order(max_commutator_order)

@@ -2,8 +2,8 @@ use std::sync::Arc;
 
 use tinned::{
     Add, AdjointMap, AdjointMode, DotProduct, ExcitationOperator, ExpAdjointMap, Expr,
-    HermitianTranspose, LagMultiplier, MatrixAdd, MatrixMul, Number, NumberTolerance, Perturbation,
-    SubExpr, TinnedError, Trace, WfnParameter, differentiate_expr, downcast_from_arc,
+    LagMultiplier, MatrixAdd, MatrixMul, Number, NumberTolerance, Perturbation, SubExpr,
+    TinnedError, Trace, Transpose, WfnParameter, differentiate_expr, downcast_from_arc,
     expression_error, is_expr_type,
 };
 
@@ -101,21 +101,26 @@ impl LagrangianOrbCc {
             kappa_operator.clone(),
             excitation_operator.clone(),
             Some(false),
+            None,
         )
         .left_action(true)
         .build()?;
-        let cc_transformed_oper =
-            ExpAdjointMap::builder(cluster_operator.clone(), kappa_transformed_oper, Some(true))
-                .left_action(false)
-                .max_commutator_order(Self::max_commutator_order())
-                .build()?;
+        let cc_transformed_oper = ExpAdjointMap::builder(
+            cluster_operator.clone(),
+            kappa_transformed_oper,
+            Some(true),
+            None,
+        )
+        .left_action(false)
+        .max_commutator_order(Self::max_commutator_order())
+        .build()?;
         // Set one- or two-electron density matrix
         let density_expr = MatrixAdd::new(vec![
             cc_transformed_oper.clone(),
             MatrixMul::new(vec![cc_lambda_operator.clone(), cc_transformed_oper])?,
         ])?;
 
-        Ok(SubExpr::new(name, density_expr))
+        SubExpr::new(name, density_expr)
     }
 
     /// Builds an orbital-relaxed coupled-cluster quasienergy Lagrangian.
@@ -271,12 +276,22 @@ impl LagrangianOrbCc {
 
         // Similarity-transformed Hamiltonian, e^{kappa} * H * e^{-kappa}
         let kappa_transformed_hamiltonian = MatrixAdd::new(vec![
-            ExpAdjointMap::builder(kappa_operator.clone(), one_elec_matrix.clone(), Some(false))
-                .left_action(true)
-                .build()?,
-            ExpAdjointMap::builder(kappa_operator.clone(), two_elec_matrix.clone(), Some(false))
-                .left_action(true)
-                .build()?,
+            ExpAdjointMap::builder(
+                kappa_operator.clone(),
+                one_elec_matrix.clone(),
+                Some(false),
+                None,
+            )
+            .left_action(true)
+            .build()?,
+            ExpAdjointMap::builder(
+                kappa_operator.clone(),
+                two_elec_matrix.clone(),
+                Some(false),
+                None,
+            )
+            .left_action(true)
+            .build()?,
         ])?;
 
         // [E_{pq}-E_{qp}, e^{kappa} * H * e^{-kappa}], equation (41),
@@ -293,11 +308,12 @@ impl LagrangianOrbCc {
         // Response equation for coupled-cluster amplitude, equation (42),
         // J. Chem. Phys. 92, 4924-4940 (1990)
         let cc_amplitude_equation = MatrixMul::new(vec![
-            HermitianTranspose::new(cc_excitation_operator.clone())?,
+            Transpose::new(cc_excitation_operator.clone(), true)?,
             ExpAdjointMap::builder(
                 cluster_operator.clone(),
                 kappa_transformed_hamiltonian.clone(),
                 Some(true),
+                None,
             )
             .left_action(false)
             .max_commutator_order(max_commutator_order)
@@ -314,6 +330,7 @@ impl LagrangianOrbCc {
                 Some(AdjointMode::Commutative),
             )?,
             Some(true),
+            None,
         )
         .left_action(false)
         .max_commutator_order(max_commutator_order)
@@ -339,6 +356,7 @@ impl LagrangianOrbCc {
                 Some(AdjointMode::Symmetrized),
             )?,
             Some(false),
+            None,
         )
         .left_action(true)
         .build()?;
@@ -348,6 +366,7 @@ impl LagrangianOrbCc {
             cluster_operator.clone(),
             diff_kappa_transformed_hamiltonian.clone(),
             Some(true),
+            None,
         )
         .left_action(false)
         .max_commutator_order(max_commutator_order)

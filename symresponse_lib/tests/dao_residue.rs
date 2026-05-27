@@ -7,8 +7,9 @@ use tinned::{
     differentiate_expr, subtract_exprs,
 };
 
-mod common;
-use common::make_perturbing_operator;
+#[path = "helpers/perturbation.rs"]
+mod perturbation_helpers;
+use perturbation_helpers::make_perturbing_operator;
 
 // First-order residue of the linear response function, equation (286),
 // J. Chem. Phys. 129, 214108 (2008)

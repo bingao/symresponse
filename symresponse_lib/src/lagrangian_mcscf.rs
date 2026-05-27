@@ -127,25 +127,35 @@ impl LagrangianMcscf {
         let mut lag_terms = Vec::with_capacity(len_lag_terms);
         let mut rhs_terms = Vec::with_capacity(len_lag_terms);
 
-        let mut term =
-            ExpAdjointMap::builder(lambda_operator.clone(), unperturbed_hamiltonian, Some(false))
-                .left_action(false)
-                .build()?;
+        let mut term = ExpAdjointMap::builder(
+            lambda_operator.clone(),
+            unperturbed_hamiltonian,
+            Some(false),
+            Some(true),
+        )
+        .left_action(false)
+        .build()?;
         lag_terms.push(term.clone());
         // Note that `rhs_terms` should be multiplied by `Number::imaginary_unit()`
         rhs_terms.push(build_rhs_term(&rotation_operators, term)?);
 
         for oper in perturbing_operators {
-            term = ExpAdjointMap::builder(lambda_operator.clone(), oper.clone(), Some(false))
-                .left_action(false)
-                .build()?;
+            term = ExpAdjointMap::builder(
+                lambda_operator.clone(),
+                oper.clone(),
+                Some(false),
+                Some(true),
+            )
+            .left_action(false)
+            .build()?;
             lag_terms.push(term.clone());
             rhs_terms.push(build_rhs_term(&rotation_operators, term)?);
         }
 
-        term = ExpAdjointMap::builder_time_evolution(lambda_operator, false, Some(false))
-            .left_action(false)
-            .build()?;
+        term =
+            ExpAdjointMap::builder_time_evolution(lambda_operator, false, Some(false), Some(true))
+                .left_action(false)
+                .build()?;
         lag_terms.push(term.clone());
         rhs_terms.push(build_rhs_term(&rotation_operators, term)?);
 

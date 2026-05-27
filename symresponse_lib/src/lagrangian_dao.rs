@@ -192,12 +192,12 @@ impl LagrangianDao {
         };
 
         let tdscf_multiplier_name = "tdscf-multiplier";
-        let tdscf_multiplier = SubExpr::new(tdscf_multiplier_name, tdscf_multiplier_expr);
-        let tdscf_equation = SubExpr::new("tdscf-equation", tdscf_equation_expr);
+        let tdscf_multiplier = SubExpr::new(tdscf_multiplier_name, tdscf_multiplier_expr)?;
+        let tdscf_equation = SubExpr::new("tdscf-equation", tdscf_equation_expr)?;
 
         let idemp_multiplier_name = "idempotency-multiplier";
-        let idemp_multiplier = SubExpr::new(idemp_multiplier_name, idemp_multiplier_expr);
-        let idempotency = SubExpr::new("idempotency-constraint", idempotency_expr);
+        let idemp_multiplier = SubExpr::new(idemp_multiplier_name, idemp_multiplier_expr)?;
+        let idempotency = SubExpr::new("idempotency-constraint", idempotency_expr)?;
 
         // Make proxies of Lagrangian multipliers for elimination
         let tdscf_multiplier_proxy = LagMultiplier::builder(tdscf_multiplier_name).build()?;
@@ -217,7 +217,7 @@ impl LagrangianDao {
         let generalized_energy_a = SubExpr::new(
             "generalized-energy-a",
             generalized_energy.differentiate(perturbation_a.clone())?.remove_one(&density_a)?,
-        );
+        )?;
 
         // The time-averaged quasienergy derivative Lagrangian
         let lagrangian_expr = subtract_exprs(generalized_energy_a.clone(), Add::new(lag_terms)?)?;
@@ -315,7 +315,7 @@ impl LagrangianDao {
         let generalized_energy = Add::new(energy_terms)?;
 
         let fock_expr = MatrixAdd::new(fock_terms)?;
-        let fock_matrix = SubExpr::new("generalized-fock-matrix", fock_expr);
+        let fock_matrix = SubExpr::new("generalized-fock-matrix", fock_expr)?;
 
         Ok((generalized_energy, fock_matrix))
     }
@@ -439,7 +439,7 @@ impl LagrangianDao {
                 let general_ew_density = SubExpr::new(
                     "generalized-energy-weighted-density-matrix",
                     general_ew_density_expr,
-                );
+                )?;
                 // Pulay term
                 let pulay_term = Trace::new(MatrixMul::new(vec![
                     overlap_a.clone(),

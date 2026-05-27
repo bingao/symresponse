@@ -3,11 +3,12 @@ use std::sync::Arc;
 use symresponse::{Lagrangian, LagrangianOrbCc};
 use tinned::{
     Add, AdjointMap, AdjointMode, DotProduct, ExcitationOperator, ExpAdjointMap, Expr,
-    HermitianTranspose, LagMultiplier, MatrixAdd, MatrixMul, Number, OneElecMatrix, PertMultichain,
-    Perturbation, SubExpr, Symbol, TinnedError, Trace, TwoElecMatrix, WfnParameter,
+    LagMultiplier, MatrixAdd, MatrixMul, Number, OneElecMatrix, PertMultichain, Perturbation,
+    SubExpr, Symbol, TinnedError, Trace, Transpose, TwoElecMatrix, WfnParameter,
     differentiate_expr, downcast_from_arc, is_expr_type,
 };
 
+#[inline]
 fn normalize_response_expr(
     expr: Arc<dyn Expr>,
     orb_rot_parameter: Arc<dyn Expr>,
@@ -23,22 +24,27 @@ fn normalize_response_expr(
         .substitute_zero_perturbations(None)
 }
 
+#[inline]
 fn expect_subexpr_derivative<'a>(expr: &'a Arc<dyn Expr>) -> &'a PertMultichain {
     downcast_from_arc::<SubExpr>(expr).expect("expression must be SubExpr").derivative()
 }
 
+#[inline]
 fn expect_matrix_mul(expr: &Arc<dyn Expr>) -> &MatrixMul {
     downcast_from_arc::<MatrixMul>(expr).expect("expression must be MatrixMul")
 }
 
+#[inline]
 fn expect_matrix_add(expr: &Arc<dyn Expr>) -> &MatrixAdd {
     downcast_from_arc::<MatrixAdd>(expr).expect("expression must be MatrixAdd")
 }
 
+#[inline]
 fn expect_exp_adjoint_map(expr: &Arc<dyn Expr>) -> &ExpAdjointMap {
     downcast_from_arc::<ExpAdjointMap>(expr).expect("expression must be ExpAdjointMap")
 }
 
+#[inline]
 fn split_two_terms_by_types<'a, A: 'static, B: 'static>(
     terms: &'a [Arc<dyn Expr>],
 ) -> (&'a Arc<dyn Expr>, &'a Arc<dyn Expr>) {
@@ -54,6 +60,7 @@ fn split_two_terms_by_types<'a, A: 'static, B: 'static>(
     }
 }
 
+#[inline]
 fn assert_matrix_mul_has_factor_pair_unordered(
     matrix_mul: &MatrixMul,
     expected_left: &Arc<dyn Expr>,
@@ -69,6 +76,13 @@ fn assert_matrix_mul_has_factor_pair_unordered(
         (left == expected_left && right == expected_right)
             || (left == expected_right && right == expected_left)
     );
+}
+
+#[inline]
+fn build_bch_expansion(op: &ExpAdjointMap) -> Result<Arc<dyn Expr>, TinnedError> {
+    let bch_expansion = op.bch_expansion().clone();
+    let terms = bch_expansion.into_values().flatten().collect();
+    MatrixAdd::new(terms)
 }
 
 #[test]
@@ -333,13 +347,13 @@ fn orb_cc_linear_response() -> Result<(), TinnedError> {
             assert_eq!(rhs_factors.len(), 2);
 
             let (tau_dagger, kappa_transformed_hamiltonian_x) =
-                split_two_terms_by_types::<HermitianTranspose, ExpAdjointMap>(rhs_factors);
+                split_two_terms_by_types::<Transpose, ExpAdjointMap>(rhs_factors);
 
-            assert_eq!(tau_dagger, &HermitianTranspose::new(cc_excitation_operator.clone())?);
+            assert_eq!(tau_dagger, &Transpose::new(cc_excitation_operator.clone(), true)?);
 
             let exp_ad_map = expect_exp_adjoint_map(kappa_transformed_hamiltonian_x);
             assert_eq!(exp_ad_map.generator(), lag.cluster_operator());
-            assert_eq!(exp_ad_map.result(), &eff_hamiltonian_x);
+            assert_eq!(&build_bch_expansion(exp_ad_map)?, &eff_hamiltonian_x);
         }
     }
 
@@ -363,7 +377,7 @@ fn orb_cc_linear_response() -> Result<(), TinnedError> {
             let exp_ad_map = expect_exp_adjoint_map(&rhs.factors()[0]);
             assert_eq!(exp_ad_map.generator(), lag.cluster_operator());
             assert_eq!(
-                exp_ad_map.result(),
+                &build_bch_expansion(exp_ad_map)?,
                 // Equation (49), J. Chem. Phys. 92, 4924-4940 (1990)
                 &AdjointMap::new(
                     vec![cc_excitation_operator.clone()],
@@ -397,7 +411,7 @@ fn orb_cc_linear_response() -> Result<(), TinnedError> {
 
         assert_eq!(exp_ad_map.generator(), lag.cluster_operator());
         assert_eq!(
-            exp_ad_map.result(),
+            &build_bch_expansion(exp_ad_map)?,
             &MatrixAdd::new(vec![
                 // [[H^(0), tau], T^(1)] = [T^(1), [tau, H^(0)]]
                 AdjointMap::new(
@@ -459,7 +473,7 @@ fn orb_cc_linear_response() -> Result<(), TinnedError> {
             let matrix_mul = expect_matrix_mul(matrix_mul_term);
 
             assert_eq!(exp_ad_map.generator(), lag.cluster_operator());
-            assert_eq!(exp_ad_map.result(), &unperturbed_brillouin_equation);
+            assert_eq!(&build_bch_expansion(exp_ad_map)?, &unperturbed_brillouin_equation);
 
             assert_matrix_mul_has_factor_pair_unordered(
                 matrix_mul,
@@ -514,7 +528,7 @@ fn orb_cc_linear_response() -> Result<(), TinnedError> {
             rhs_hartree_fock_x.clone(),
         ])?;
         assert_eq!(
-            exp_ad_map.expect("one term must be ExpAdjointMap").result(),
+            &build_bch_expansion(exp_ad_map.expect("one term must be ExpAdjointMap"))?,
             &diff_kappa_transformed_hamiltonian_x
         );
 
@@ -557,7 +571,7 @@ fn orb_cc_linear_response() -> Result<(), TinnedError> {
             if &term.factors()[0] == lag.cc_lambda_operator() {
                 let oper = expect_exp_adjoint_map(&term.factors()[1]);
                 assert_eq!(oper.generator(), lag.cluster_operator());
-                assert_eq!(oper.result(), &diff_kappa_transformed_hamiltonian_x);
+                assert_eq!(&build_bch_expansion(oper)?, &diff_kappa_transformed_hamiltonian_x);
                 exist_eff_hamiltonian_x = true;
             } else if &term.factors()[0] == &cc_lambda_operator_x {
                 // The last line of equation (54), but there are two typos in
@@ -565,7 +579,7 @@ fn orb_cc_linear_response() -> Result<(), TinnedError> {
                 // and Hamiltonian should be undifferentiated.
                 let oper = expect_exp_adjoint_map(&term.factors()[1]);
                 assert_eq!(oper.generator(), lag.cluster_operator());
-                assert_eq!(oper.result(), &unperturbed_brillouin_equation);
+                assert_eq!(&build_bch_expansion(oper)?, &unperturbed_brillouin_equation);
                 exist_cc_multiplier_x = true;
             } else if &term.factors()[0] == &unperturbed_brillouin_equation {
                 assert_eq!(&term.factors()[1], &cc_lambda_operator_x);
@@ -573,7 +587,7 @@ fn orb_cc_linear_response() -> Result<(), TinnedError> {
             } else {
                 let oper = expect_exp_adjoint_map(&term.factors()[0]);
                 assert_eq!(oper.generator(), lag.cluster_operator());
-                assert_eq!(oper.result(), &diff_kappa_transformed_hamiltonian_x);
+                assert_eq!(&build_bch_expansion(oper)?, &diff_kappa_transformed_hamiltonian_x);
                 assert_eq!(&term.factors()[1], lag.cc_lambda_operator());
                 exist_eff_hamiltonian_x = true;
             }
