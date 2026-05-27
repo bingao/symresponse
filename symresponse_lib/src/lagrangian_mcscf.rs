@@ -33,6 +33,8 @@ pub struct LagrangianMcscf {
     // To compute the right-hand side of the response equation of orbital- and
     // state-rotation parameters, ses equation (xx), Reference [2].
     rhs_parameters: Arc<dyn Expr>,
+    // Lambda operator as the product of rotation operators and parameters
+    lambda_operator: Arc<dyn Expr>,
     lagrangian_expr: Arc<dyn Expr>,
 }
 
@@ -152,10 +154,14 @@ impl LagrangianMcscf {
             rhs_terms.push(build_rhs_term(&rotation_operators, term)?);
         }
 
-        term =
-            ExpAdjointMap::builder_time_evolution(lambda_operator, false, Some(false), Some(true))
-                .left_action(false)
-                .build()?;
+        term = ExpAdjointMap::builder_time_evolution(
+            lambda_operator.clone(),
+            false,
+            Some(false),
+            Some(true),
+        )
+        .left_action(false)
+        .build()?;
         lag_terms.push(term.clone());
         rhs_terms.push(build_rhs_term(&rotation_operators, term)?);
 
@@ -165,12 +171,14 @@ impl LagrangianMcscf {
         Ok(Self {
             rotation_parameters,
             rhs_parameters,
+            lambda_operator,
             lagrangian_expr,
         })
     }
 
-    /// Builds the right-hand side of a linear response equation for a given
-    /// response parameter.
+    /// Builds the right-hand side (RHS) of a linear response equation for a
+    /// given response parameter. Note that RHS should be by multiplied by the
+    /// factor imaginary unit.
     ///
     /// The response parameter must be derived from this Lagrangian's
     /// orbital- and state-rotation parameters, and must be one of:
@@ -281,6 +289,11 @@ impl LagrangianMcscf {
         };
 
         self.build_linear_rhs(rhs_input, num_tol)
+    }
+
+    #[inline]
+    pub fn lambda_operator(&self) -> &Arc<dyn Expr> {
+        &self.lambda_operator
     }
 }
 
