@@ -1,12 +1,16 @@
+use anyhow::Context;
 use std::collections::BTreeMap;
 use std::sync::Arc;
 use symresponse::{Lagrangian, LagrangianOrbCc};
 use tinned::{
     ExcitationOperator, LagMultiplier, OneElecMatrix, PertMultichain, Perturbation, Symbol,
-    TinnedError, TwoElecMatrix, WfnParameter,
+    TwoElecMatrix, WfnParameter, walk_expr_postorder,
 };
 
-fn main() -> Result<(), TinnedError> {
+mod code_generator;
+use code_generator::CodeGenerator;
+
+fn main() -> anyhow::Result<()> {
     let freq_x = Symbol::new("omega_x");
     let pert_x = Perturbation::new("x", freq_x);
     let freq_y = Symbol::new("omega_y");
@@ -31,6 +35,7 @@ fn main() -> Result<(), TinnedError> {
     let orb_rot_generator = ExcitationOperator::new("E-");
     let brillouin_multiplier = LagMultiplier::builder("kbar").build()?;
 
+    // Build Lagrangian
     let lag = LagrangianOrbCc::new(
         one_elec_matrix.clone(),
         single_excitation_operator,
@@ -53,23 +58,37 @@ fn main() -> Result<(), TinnedError> {
 
     match serde_json::to_string(&linear_response) {
         Ok(json) => println!("L^{{xy}} = {}\n", json),
-        Err(err) => {
-            eprintln!("Serialization of L^{{xy}} failed: {err}");
-        },
+        Err(err) => eprintln!("Serialization of L^{{xy}} failed: {err}"),
     }
+
+    // Generate eT Fortran subroutine for the calculation of response function
+    let mut code_generator = CodeGenerator::new().context("Failed to create code generator")?;
+
+    //FIXME: we should change `one_elec_matrix` to `linear_response` after
+    //`CodeGenerator` is completely implemented
+    match walk_expr_postorder(&one_elec_matrix, &mut code_generator) {
+        Ok(()) => println!("\nResponse function processed\n"),
+        Err(err) => eprintln!("\nFailed to process response function: {err}"),
+    }
+
+    //FIXME: we may also need to consider how to handle unknown perturbed
+    //parameters in the generated code
+    code_generator
+        .print_et_code("symresponse_demo")
+        .context("Failed to generate Fortran subroutines for eT")?;
+
+    code_generator.reset();
 
     // Find all perturbed orbital rotation parameters, unperturbed one is zero
     let orb_rot_parameters = linear_response.find_all(&orb_rot_parameter);
 
     for (order, parameters) in &orb_rot_parameters {
-        println!("Order of (un)perturbed orbital rotation parameters {}\n", *order);
+        println!("\nOrder of (un)perturbed orbital rotation parameters {}\n", *order);
 
         for parameter in parameters {
             match serde_json::to_string(parameter) {
                 Ok(json) => println!("Orbital rotation parameter = {}\n", json),
-                Err(err) => {
-                    eprintln!("Serialization of orbital rotation parameter failed: {err}");
-                },
+                Err(err) => eprintln!("Serialization of orbital rotation parameter failed: {err}"),
             }
 
             // Get the right-hand side of the response equation of perturbed
@@ -79,11 +98,9 @@ fn main() -> Result<(), TinnedError> {
 
                 match serde_json::to_string(&rhs_parameter) {
                     Ok(json) => println!("RHS of orbital rotation parameter = {}\n", json),
-                    Err(err) => {
-                        eprintln!(
-                            "Serialization of RHS of orbital rotation parameter failed: {err}"
-                        );
-                    },
+                    Err(err) => eprintln!(
+                        "Serialization of RHS of orbital rotation parameter failed: {err}"
+                    ),
                 }
             }
         }
@@ -98,9 +115,7 @@ fn main() -> Result<(), TinnedError> {
         for amplitude in amplitudes {
             match serde_json::to_string(amplitude) {
                 Ok(json) => println!("Coupled-cluster amplitude = {}\n", json),
-                Err(err) => {
-                    eprintln!("Serialization of coupled-cluster amplitude failed: {err}");
-                },
+                Err(err) => eprintln!("Serialization of coupled-cluster amplitude failed: {err}"),
             }
 
             // Get the right-hand side of the response equation of perturbed
@@ -111,9 +126,7 @@ fn main() -> Result<(), TinnedError> {
                 match serde_json::to_string(&rhs_amplitude) {
                     Ok(json) => println!("RHS of coupled-cluster amplitude = {}\n", json),
                     Err(err) => {
-                        eprintln!(
-                            "Serialization of RHS of coupled-cluster amplitude failed: {err}"
-                        );
+                        eprintln!("Serialization of RHS of coupled-cluster amplitude failed: {err}")
                     },
                 }
             }
@@ -129,9 +142,7 @@ fn main() -> Result<(), TinnedError> {
         for multiplier in multipliers {
             match serde_json::to_string(multiplier) {
                 Ok(json) => println!("Coupled-cluster multiplier = {}\n", json),
-                Err(err) => {
-                    eprintln!("Serialization of coupled-cluster multiplier failed: {err}");
-                },
+                Err(err) => eprintln!("Serialization of coupled-cluster multiplier failed: {err}"),
             }
 
             let rhs_multiplier = lag.linear_response_rhs(multiplier, None)?;
@@ -139,7 +150,7 @@ fn main() -> Result<(), TinnedError> {
             match serde_json::to_string(&rhs_multiplier) {
                 Ok(json) => println!("RHS of coupled-cluster multiplier = {}\n", json),
                 Err(err) => {
-                    eprintln!("Serialization of RHS of coupled-cluster multiplier failed: {err}");
+                    eprintln!("Serialization of RHS of coupled-cluster multiplier failed: {err}")
                 },
             }
         }
@@ -155,7 +166,7 @@ fn main() -> Result<(), TinnedError> {
             match serde_json::to_string(multiplier) {
                 Ok(json) => println!("Brillouin condition multiplier = {}\n", json),
                 Err(err) => {
-                    eprintln!("Serialization of Brillouin condition multiplier failed: {err}");
+                    eprintln!("Serialization of Brillouin condition multiplier failed: {err}")
                 },
             }
 
